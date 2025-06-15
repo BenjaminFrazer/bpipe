@@ -1,0 +1,175 @@
+= SPEC-001: Modular Real-Time Telemetry Data Processing Framework
+:sectnums:
+:toc:
+
+== Background
+
+As part of a comprehensive test framework for embedded systems, there is a need for a modular, high-performance real-time telemetry data processing framework. This system must process streamed data from various embedded system outputs, which may include sensor signals, debug data, and communications telemetry. The framework must be scriptable in Python for ease of integration into existing test infrastructure, but may be implemented in a more performant language underneath.
+
+The framework is expected to support flexible and composable data flow graphs involving sources, transforms, filters, and output sinks. Data transformations such as FFTs, convolutions, and resampling are integral, along with the capability to handle irregular sampling rates and preserve metadata like timestamps.
+
+This framework will help accelerate development and validation cycles by enabling real-time signal analysis, filtering, and visualization, while also supporting batch-style post-analysis and test result archiving.
+
+== Requirements
+
+The framework must meet the following requirements:
+
+=== Must Have
+- Modular pipeline with plug-and-play components: sources, transforms, filters, and sinks
+- High throughput and low-latency processing
+- Support for parallel and/or distributed processing
+- Scriptable and configurable entirely via Python
+- Support for common signal processing operations (FFTs, convolutions)
+- Handle both upsampling and downsampling operations
+- Handle irregular or variable data rates without data loss
+- Preserve and propagate metadata such as timestamps throughout the pipeline
+- Real-time plotting and monitoring capabilities
+- Support for live telemetry data sources (e.g., UART, CAN, TCP, etc.)
+
+=== Should Have
+- Dynamically reconfigurable pipelines (e.g., insert/remove stages during runtime)
+- Pluggable logging and metrics interfaces
+- Minimal dependency on external libraries to reduce deployment complexity
+- Optional batch/offline mode for post-run analysis
+
+=== Could Have
+- Integration with embedded hardware simulators or emulators
+- Basic fault tolerance for components (auto-restart, retry logic)
+- Support for custom plugin development in other languages (e.g., C++ modules)
+
+=== Won’t Have
+- Built-in machine learning model training (assumed to be external)
+- Cloud-native deployment features (Kubernetes, autoscaling) in MVP
+
+== Method
+
+The core of the system is a real-time, push-based data processing framework. Components are connected in a directed acyclic graph (DAG), and each component has its own dedicated input queue. The system allows backpressure handling by configuring input queues to either block producers or drop incoming samples if full.
+
+Each component is implemented as a self-contained Python object backed by a C struct and a pthread. Users wire components directly using `.connect()`.
+
+=== Data Model
+
+.DataPacket Struct
+[source,c]
+----
+typedef struct {
+    uint64_t timestamp_ns;
+    uint32_t source_id;
+    uint32_t sequence_number;
+    uint8_t* payload;
+    size_t payload_size;
+    void* user_metadata; // Optional opaque pointer
+} DataPacket;
+----
+
+=== Python Interface
+
+[source,python]
+----
+from telemetryflow import DummySource, PassthroughFilter, StdoutSink
+
+src = DummySource(rate_hz=1000)
+filt = PassthroughFilter(queue_size=64, on_overflow="block")
+sink = StdoutSink()
+
+src.connect(filt)
+filt.connect(sink)
+
+src.start()
+filt.start()
+sink.start()
+----
+
+=== Storage Sink Architecture
+
+Sinks include local file formats (CSV, JSONL, Parquet) and database writers (SQLite, PostgreSQL). These operate using background flush threads.
+
+=== Plotting Sink
+
+Matplotlib-based sink that maintains a sliding buffer and updates a line plot in real time. Future variants may include web or GPU-based plotting.
+
+=== Built-in Transforms
+
+- FFT using FFTW
+- Convolution using FIR circular buffers
+- Downsampling/Upsampling with polyphase filters
+- Normalization and statistical reduction filters
+
+== Implementation
+
+=== Component Interface
+
+Each component:
+- Owns an input queue
+- Launches a pthread in `.start()`
+- Forwards `DataPacket`s via `.connect()`
+
+=== MVP Goals
+
+- Dummy source emitting test data
+- Passthrough filter
+- Stdout sink printing packet metadata
+- All implemented in C and wrapped via CPython API
+
+=== Build Plan
+
+- Shared C lib: `libtelemetryflow.so`
+- Python C Extension: `telemetryflow`
+- Build system: Makefile or CMake + setup.py
+
+== Milestones
+
+=== Milestone 1: Core Framework Bootstrap
+- [ ] Define `DataPacket` structure and allocator in C
+- [ ] Implement `RingBufferQueue` with drop/block behavior
+- [ ] Define base `Component` interface (init/start/connect)
+- [ ] Build shared C library (`libtelemetryflow.so`)
+- [ ] Wrap base component types as Python classes via CPython API
+
+=== Milestone 2: MVP Component Set
+- [ ] Implement `DummySource`
+- [ ] Implement `PassthroughFilter`
+- [ ] Implement `StdoutSink`
+- [ ] Wire up `connect()` method
+- [ ] Support `.start()` to launch threads from Python
+- [ ] Build unit tests for queue behavior
+
+=== Milestone 3: Real-Time Runtime Integration
+- [ ] Timing control in `DummySource`
+- [ ] Validate metadata and timestamps
+- [ ] Add logging/error handling
+
+=== Milestone 4: Developer Utilities
+- [ ] Implement `make`, `setup.py`
+- [ ] Add debug and status outputs
+- [ ] Document Python API
+
+=== Optional Milestone 5: Extensions
+- [ ] Plugin support for C filters
+- [ ] FFT filter prototype
+- [ ] Basic plot sink
+
+== Gathering Results
+
+=== Functional Validation
+- Source → Filter → Sink prints ordered metadata
+- `.connect()` wiring works
+- Metadata is preserved
+
+=== Performance Benchmarks
+- Throughput: target 10k packets/sec
+- Latency: under 5ms end-to-end
+- Stress test with 100kHz loads
+
+=== Fault Testing
+- Overflow modes (drop/block)
+- Long-duration memory test
+
+=== Extensibility
+- Add new filter/sink types easily
+- Validate compatibility of plugin filters
+
+=== Success Metrics
+- MVP stable for 1+ hour runs
+- Works with Python wiring only
+- Matches all “Must Have” requirements
