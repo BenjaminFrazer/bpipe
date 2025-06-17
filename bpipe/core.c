@@ -136,6 +136,28 @@ PyObject* BpFilterPy_transform(PyObject *self, PyObject *args){
 	Py_RETURN_NONE; // None in this API means no change to timestamp or sample rate.
 }
 
+/* C-level transform that simply copies input batch to output batch */
+void BpPassThroughTransform(Bp_Filter_t* filt, Bp_Batch_t *input_batch, Bp_Batch_t *output_batch){
+        size_t available = input_batch->head - input_batch->tail;
+        size_t space     = output_batch->capacity - output_batch->head;
+        size_t ncopy     = available < space ? available : space;
+
+        if(ncopy){
+                void* src = (char*)input_batch->data + input_batch->tail * filt->data_width;
+                void* dst = (char*)output_batch->data + output_batch->head * filt->data_width;
+                memcpy(dst, src, ncopy * filt->data_width);
+        }
+
+        output_batch->t_ns      = input_batch->t_ns;
+        output_batch->period_ns = input_batch->period_ns;
+        output_batch->dtype     = input_batch->dtype;
+        output_batch->meta      = input_batch->meta;
+        output_batch->ec        = input_batch->ec;
+
+        input_batch->tail  += ncopy;
+        output_batch->head += ncopy;
+}
+
 void BpPyTransform(Bp_Filter_t* filt, Bp_Batch_t *input_batch, Bp_Batch_t *output_batch){
 	PyGILState_STATE gstate = PyGILState_Ensure();
 
