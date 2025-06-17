@@ -1,10 +1,9 @@
 #include "core.h"
-#include "object.h"
 #include <stdio.h>
 
-PyObject* DP_set_sink(PyObject *self, PyObject *args){
-	DP_Filter_t* consumer;
-	DP_Filter_t* obj = (DP_Filter_t*)self;
+PyObject* Bp_set_sink(PyObject *self, PyObject *args){
+	Bp_Filter_t* consumer;
+	Bp_Filter_t* obj = (Bp_Filter_t*)self;
 	if (!PyArg_ParseTuple(args, "O!", &consumer))
 		return NULL;
 	assert(consumer);
@@ -16,8 +15,8 @@ PyObject* DP_set_sink(PyObject *self, PyObject *args){
 	Py_RETURN_NONE;
 }
 
-PyObject* DP_start(PyObject* self, PyObject *args){
-	DP_Filter_t* obj = (DP_Filter_t*)self;
+PyObject* Bp_start(PyObject* self, PyObject *args){
+	Bp_Filter_t* obj = (Bp_Filter_t*)self;
 
 	if (obj->running){
     PyErr_SetString(PyExc_ValueError, "Already running.");
@@ -28,43 +27,43 @@ PyObject* DP_start(PyObject* self, PyObject *args){
 	pthread_t * thread;
 
 	// Create the thread
-	if (pthread_create(thread, NULL, &DataPipe_Worker, (void*)obj) != 0) {
+	if (pthread_create(thread, NULL, &Bp_Worker, (void*)obj) != 0) {
 		perror("pthread_create worker");
 		return PyErr_SetFromErrno(PyExc_OSError);
 	}
 	Py_RETURN_NONE;
 }
 
-PyObject* DP_stop(PyObject* self, PyObject *args){
-	DP_Filter_t* obj = (DP_Filter_t*)self;
+PyObject* Bp_stop(PyObject* self, PyObject *args){
+	Bp_Filter_t* obj = (Bp_Filter_t*)self;
 	obj->running = false;
 	if(pthread_join(obj->worker_thread, NULL)<0)
 		return PyErr_SetFromErrno(PyExc_OSError);
 	Py_RETURN_NONE;
 }
 
-static PyMethodDef DPFilterBase_methods[] = {
-		{"set_sink", 		DP_set_sink, 		METH_VARARGS, "Send data over UDP"},
-		{"run", 		DP_start, 		METH_VARARGS, "Start worker thread"},
-		{"stop", 		DP_stop, 		METH_VARARGS, "Start worker thread"},
+static PyMethodDef BpFilterBase_methods[] = {
+		{"set_sink", 		Bp_set_sink, 		METH_VARARGS, "Send data over UDP"},
+		{"run", 		Bp_start, 		METH_VARARGS, "Start worker thread"},
+		{"stop", 		Bp_stop, 		METH_VARARGS, "Start worker thread"},
     //{"purge", UdpCom_purge, METH_NOARGS, "Clear buffers."},
     {NULL}  // Sentinel
 };
 
-static void DP_dealoc(PyObject *self) {
+static void Bp_dealoc(PyObject *self) {
 	Py_TYPE(self)->tp_free(self);
 }
 
-static PyTypeObject DpFilterBase = {
+static PyTypeObject BpFilterBase = {
     PyVarObject_HEAD_INIT(NULL, 0)
-    .tp_name = "dpcore.DpFilterBase",
-    .tp_basicsize = sizeof(DP_Filter_t),
+    .tp_name = "dpcore.BpFilterBase",
+    .tp_basicsize = sizeof(Bp_Filter_t),
     .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
     .tp_doc = "Data Pipe Filter Base class.",
-    .tp_methods = DPFilterBase_methods,
+    .tp_methods = BpFilterBase_methods,
     .tp_new = PyType_GenericNew,
-		.tp_init = DP_init,
-		.tp_dealloc = DP_dealoc,
+		.tp_init = Bp_init,
+		.tp_dealloc = Bp_dealoc,
     //.tp_hash = UdpCom_hash,  // <-- add this line
 		//.tp_repr = UdpCom_repr,
 };
@@ -86,8 +85,8 @@ PyObject* c_array_to_numpy(float* c_buffer, int size) {
 }
 
 /* Dummy filter which does nothing other than copy input to output */
-PyObject* DpFilterPy_transform(PyObject *self, PyObject *args){
-	//DP_Filter_t* obj = (DP_Filter_t*)self;
+PyObject* BpFilterPy_transform(PyObject *self, PyObject *args){
+	//Bp_Filter_t* obj = (Bp_Filter_t*)self;
 	long long ts;
 	PyArrayObject *input;
 	PyArrayObject *output;
@@ -108,7 +107,7 @@ PyObject* DpFilterPy_transform(PyObject *self, PyObject *args){
 	Py_RETURN_NONE; // None in this API means no change to timestamp or sample rate.
 }
 
-void DpPyTransform(DP_Filter_t* filt, DP_Batch_t *input_batch, DP_Batch_t *output_batch){
+void BpPyTransform(Bp_Filter_t* filt, Bp_Batch_t *input_batch, Bp_Batch_t *output_batch){
 	PyGILState_STATE gstate = PyGILState_Ensure();
 
 	/* Create input numpy array */
@@ -118,13 +117,13 @@ void DpPyTransform(DP_Filter_t* filt, DP_Batch_t *input_batch, DP_Batch_t *outpu
 	void* oputput_start = input_batch->data + input_batch->tail*filt->data_width;
 	npy_intp dims_in[1] = {input_len};
 	PyObject* input_arr = PyArray_SimpleNewFromData(1, dims_in, NPY_FLOAT32, input_start);
-	DP_ASSERT(filt, input_arr, DP_EC_BAD_PYOBJECT, "Failed to create input numpy array");
+	Bp_ASSERT(filt, input_arr, Bp_EC_BAD_PYOBJECT, "Failed to create input numpy array");
 
 	PyObject* output_arr= PyArray_SimpleNewFromData(1, dims_in, NPY_FLOAT32, input_start);
-	DP_ASSERT(filt, input_arr, DP_EC_BAD_PYOBJECT, "Failed to create oputput numpy array");
+	Bp_ASSERT(filt, input_arr, Bp_EC_BAD_PYOBJECT, "Failed to create oputput numpy array");
 
-	PyObject* py_bytearray = PyByteArray_FromStringAndSize((const char*)input_batch, sizeof(DP_Batch_t));
-	DP_ASSERT(filt, py_bytearray, DP_EC_BAD_PYOBJECT, "Failed to create bytes array");
+	PyObject* py_bytearray = PyByteArray_FromStringAndSize((const char*)input_batch, sizeof(Bp_Batch_t));
+	Bp_ASSERT(filt, py_bytearray, Bp_EC_BAD_PYOBJECT, "Failed to create bytes array");
 
 	/* Call python filter method */
 	PyObject* result = PyObject_CallMethod((PyObject*)filt, "transform", "OOLi", input_arr, output_arr, input_batch->t_ns, input_batch->period_ns);
@@ -155,8 +154,8 @@ void DpPyTransform(DP_Filter_t* filt, DP_Batch_t *input_batch, DP_Batch_t *outpu
 	if (result!=Py_None){
 		long long ts;
 		int period;
-		DP_ASSERT(filt, PyTuple_Check(result), EC_TYPE_MISMATCH, "Expected a tuple return value");
-		DP_ASSERT(filt, PyArg_ParseTuple(result, "Li", &ts, &period), EC_TYPE_MISMATCH, "Expected a tuple return value");
+		Bp_ASSERT(filt, PyTuple_Check(result), EC_TYPE_MISMATCH, "Expected a tuple return value");
+		Bp_ASSERT(filt, PyArg_ParseTuple(result, "Li", &ts, &period), EC_TYPE_MISMATCH, "Expected a tuple return value");
 		output_batch->t_ns = (long long)ts;
 		output_batch->period_ns = (unsigned)period;
 	}
@@ -169,22 +168,22 @@ void DpPyTransform(DP_Filter_t* filt, DP_Batch_t *input_batch, DP_Batch_t *outpu
 }
 
 static PyMethodDef DPFilterPy_methods[] = {
-		{"transform", 		DpFilterPy_transform, 		METH_VARARGS, "Transform input data to output data."},
+		{"transform", 		BpFilterPy_transform, 		METH_VARARGS, "Transform input data to output data."},
     //{"purge", UdpCom_purge, METH_NOARGS, "Clear buffers."},
     {NULL}  // Sentinel
 };
 
-static PyTypeObject DpFilterPy= {
+static PyTypeObject BpFilterPy= {
     PyVarObject_HEAD_INIT(NULL, 0)
-    .tp_name = "dpcore.DpFilterPy",
-    .tp_basicsize = sizeof(DpFilterPy_t),
+    .tp_name = "dpcore.BpFilterPy",
+    .tp_basicsize = sizeof(BpFilterPy_t),
     .tp_flags = Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,
     .tp_doc = "Data Pipe Filter using Python transform method.",
     .tp_methods = DPFilterPy_methods,
     .tp_new = PyType_GenericNew,
-		.tp_init = DpFilterPy_init, // TODO: custom init function needed.
-		.tp_dealloc = DP_dealoc, // TODO: this will need to be modified.
-		.tp_base = &DpFilterBase,
+		.tp_init = BpFilterPy_init, // TODO: custom init function needed.
+		.tp_dealloc = Bp_dealoc, // TODO: this will need to be modified.
+		.tp_base = &BpFilterBase,
     //.tp_hash = UdpCom_hash,  // <-- add this line
 		//.tp_repr = UdpCom_repr,
 };
@@ -199,15 +198,15 @@ static struct PyModuleDef dpcore_module = {
 
 PyMODINIT_FUNC PyInit_dpcore(void) {
     PyObject *m;
-    if (PyType_Ready(&DpFilterBase) < 0)
+    if (PyType_Ready(&BpFilterBase) < 0)
         return NULL;
 
     m = PyModule_Create(&dpcore_module);
     if (!m) return NULL;
 
-    Py_INCREF(&DpFilterBase);
-    Py_INCREF(&DpFilterPy);
-    PyModule_AddObject(m, "DpFilterBase", (PyObject *)&DpFilterBase);
-    PyModule_AddObject(m, "DpFilterPy", (PyObject *)&DpFilterPy);
+    Py_INCREF(&BpFilterBase);
+    Py_INCREF(&BpFilterPy);
+    PyModule_AddObject(m, "BpFilterBase", (PyObject *)&BpFilterBase);
+    PyModule_AddObject(m, "BpFilterPy", (PyObject *)&BpFilterPy);
     return m;
 }

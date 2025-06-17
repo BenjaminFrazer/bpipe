@@ -45,11 +45,11 @@ The framework must meet the following requirements:
 
 The core of the system is a real-time, push-based data processing framework. Components are connected in a directed acyclic graph (DAG), and each component has its own dedicated input queue. The system allows backpressure handling by configuring input queues to either block producers or drop incoming samples if full.
 
-Each component is implemented as a self-contained Python object backed by a C struct and a pthread. Users wire components directly using `.connect()`.
+Each component is implemented as a self-contained Python object backed by a C struct and a pthread. Users wire components directly using `.set_sink()`.
 
 === Data Model
 
-.DataPacket Struct
+.Bpipe_Batch_t Struct
 [source,c]
 ----
 typedef struct {
@@ -59,21 +59,21 @@ typedef struct {
     uint8_t* payload;
     size_t payload_size;
     void* user_metadata; // Optional opaque pointer
-} DataPacket;
+} Bpipe_Batch_t;
 ----
 
 === Python Interface
 
 [source,python]
 ----
-from telemetryflow import DummySource, PassthroughFilter, StdoutSink
+from bpipe import DummySource, PassthroughFilter, StdoutSink
 
 src = DummySource(rate_hz=1000)
 filt = PassthroughFilter(queue_size=64, on_overflow="block")
 sink = StdoutSink()
 
-src.connect(filt)
-filt.connect(sink)
+src.set_sink(filt)
+filt.set_sink(sink)
 
 src.start()
 filt.start()
@@ -102,7 +102,7 @@ Matplotlib-based sink that maintains a sliding buffer and updates a line plot in
 Each component:
 - Owns an input queue
 - Launches a pthread in `.start()`
-- Forwards `DataPacket`s via `.connect()`
+- Forwards `Bpipe_Batch_t`s via `.set_sink()`
 
 === MVP Goals
 
@@ -113,14 +113,14 @@ Each component:
 
 === Build Plan
 
-- Shared C lib: `libtelemetryflow.so`
+1. build 
 - Python C Extension: `telemetryflow`
 - Build system: Makefile or CMake + setup.py
 
 == Milestones
 
 === Milestone 1: Core Framework Bootstrap
-- [ ] Define `DataPacket` structure and allocator in C
+- [ ] Define `Bpipe_Batch_t` structure and allocator in C
 - [ ] Implement `RingBufferQueue` with drop/block behavior
 - [ ] Define base `Component` interface (init/start/connect)
 - [ ] Build shared C library (`libtelemetryflow.so`)
