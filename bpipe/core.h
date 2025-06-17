@@ -1,6 +1,3 @@
-#include <Python.h>
-#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
-#include <numpy/arrayobject.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -30,11 +27,7 @@ typedef enum _SampleType {
 	DTYPE_MAX,
 } SampleDtype_t;
 
-size_t _data_size_lut [] = {
-	[DTYPE_FLOAT]  	= sizeof(float),
-	[DTYPE_INT]    	= sizeof(int),
-	[DTYPE_UNSIGNED] = sizeof(unsigned),
-};
+extern const size_t _data_size_lut[];
 
 typedef enum _Bp_EC {
 	Bp_EC_OK = 0,
@@ -60,7 +53,6 @@ typedef struct _Batch {
 
 /* Forward declarations */
 typedef struct _DataPipe Bp_Filter_t;
-static PyTypeObject BpFilterBase;
 
 typedef void (TransformFcn_t)(Bp_Filter_t* filt, Bp_Batch_t *input_batch, Bp_Batch_t *output_batch);
 
@@ -74,9 +66,8 @@ typedef struct _err_info {
 
 
 typedef struct _DataPipe {
-	PyObject_HEAD
-	bool running;
-	TransformFcn_t* transform;
+        bool running;
+        TransformFcn_t* transform;
 	Err_info worker_err_info;
 	struct timespec timeout;
 	struct _DataPipe* source;
@@ -119,9 +110,6 @@ static inline void set_filter_error(Bp_Filter_t* filt, Bp_EC code, const char* m
         }                                                          \
     } while (0)
 
-typedef struct {
-	Bp_Filter_t base;
-}BpFilterPy_t;
 
 static inline size_t Bp_tail_idx(Bp_Filter_t* dpipe){
 	return atomic_load(&dpipe->n_out) & dpipe->modulo_mask;
@@ -163,52 +151,11 @@ static inline Bp_EC Bp_deallocate_buffers(Bp_Filter_t* dpipe){
 	return Bp_EC_OK;
 }
 
-//static int UdpCom_init(PyObject *self, PyObject *args, PyObject *kwds) {
-static inline int Bp_init(PyObject *self, PyObject *args, PyObject *kwds){
-	//size_t data_size, size_t capacity_expo
-	Bp_Filter_t* dpipe =  (Bp_Filter_t*)self;
-
-	static char *kwlist[] = {"capacity_exp", "dtype" , NULL};
-
-	if (!PyArg_ParseTupleAndKeywords(args, kwds, "u|$i", kwlist,
-																	&dpipe->ring_capacity_expo, &dpipe->dtype)) {
-		return -1;  // Signal failure
-	}
-
-	assert(dpipe->ring_capacity_expo < MAX_CAPACITY_EXPO);
-	assert(dpipe->dtype < DTYPE_MAX);
-
-
-	assert(dpipe->ring_capacity_expo > 0 && dpipe->ring_capacity_expo < MAX_CAPACITY_EXPO);
-
-	dpipe->n_in = 0;
-	dpipe->n_out = 0;
-	dpipe->modulo_mask = (1u << dpipe->ring_capacity_expo) - 1;
-	dpipe->data_width = _data_size_lut[dpipe->dtype];
-
-	pthread_mutex_init(&dpipe->cond_mutex, NULL);
-	pthread_cond_init(&dpipe->cond_not_full, NULL);
-	pthread_cond_init(&dpipe->cond_not_empty, NULL);
-	
-	return Bp_allocate_buffers(dpipe);
-
-}
-
 /* Applies a transform using a python filter */
 TransformFcn_t BpPyTransform;
 /* Simple pass-through transform that copies input to output */
 TransformFcn_t BpPassThroughTransform;
 
-static inline int BpFilterPy_init(PyObject *self, PyObject *args, PyObject *kwds){
- if (BpFilterBase.tp_init) {
-        if (BpFilterBase.tp_init(self, args, kwds) < 0) {
-            return -1;  // propagate base init failure
-        }
-    }
-	BpFilterPy_t* filter = (BpFilterPy_t*)self;
-	filter->base.transform = BpPyTransform;
-	return 0;
-}
 
 static inline bool Bp_empty(Bp_Filter_t* dpipe){
 	size_t n_in = atomic_load(&dpipe->n_in);

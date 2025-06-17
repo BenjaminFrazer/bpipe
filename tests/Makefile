@@ -1,10 +1,8 @@
 CC = gcc
-CFLAGS = -I../ -I../external/unity -std=c99 -Wall -Werror $(shell python3-config --includes)
-LDFLAGS = $(shell python3-config --ldflags) -lpython3.10
+CFLAGS = -I../ -std=c99 -Wall -Werror -pthread
+LDFLAGS = -pthread
 
-UNITY_ROOT=../lib/Unity/
-
-SRC = ../bpipe/core.c $(UNITY_ROOT)/src/unity.c
+SRC = ../bpipe/core.c
 TEST = test_core_filter.c
 
 all: test_core_filter
