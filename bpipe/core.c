@@ -1,6 +1,35 @@
 #include "core.h"
 #include <stdio.h>
 
+void* Bp_Worker(void* filter) {
+	Bp_Filter_t* f = (Bp_Filter_t*)filter;
+	Bp_Batch_t input_batch = f->has_input ? Bp_head(f)       : (Bp_Batch_t){ .data = NULL, .capacity = 0, .ec=Bp_EC_NOINPUT};
+	Bp_Batch_t output_batch = f->sink ? Bp_allocate(f->sink) : (Bp_Batch_t){ .data = malloc(1024 * f->data_width), .capacity = 1024 };
+
+	while (f->running) {
+		f->transform(filter, &input_batch, &output_batch);
+
+		if (f->has_input && (input_batch.head >= input_batch.capacity)) {
+			Bp_delete_tail(f);
+			input_batch = Bp_head(f);
+		}
+		assert(output_batch.head <= output_batch.capacity);
+		assert(output_batch.tail <= output_batch.capacity);
+		assert(output_batch.tail <= output_batch.head);
+
+		if (output_batch.head >= output_batch.capacity) {
+			if (f->sink) {
+				Bp_submit_batch(f->sink, &output_batch);
+				output_batch = Bp_allocate(f->sink);
+			} else {
+				output_batch.head = 0;
+				output_batch.tail = 0;
+			}
+		}
+	}
+	return NULL;
+}
+
 PyObject* Bp_set_sink(PyObject *self, PyObject *args){
 	Bp_Filter_t* consumer;
 	Bp_Filter_t* obj = (Bp_Filter_t*)self;

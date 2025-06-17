@@ -207,7 +207,6 @@ static inline int BpFilterPy_init(PyObject *self, PyObject *args, PyObject *kwds
 	return 0;
 }
 
-
 static inline bool Bp_empty(Bp_Filter_t* dpipe){
 	size_t n_in = atomic_load(&dpipe->n_in);
 	size_t n_out = atomic_load(&dpipe->n_out);
@@ -282,33 +281,4 @@ static inline Bp_Batch_t Bp_head(Bp_Filter_t* dpipe) {
 static inline void Bp_delete_tail(Bp_Filter_t* dpipe) {
 	atomic_fetch_add(&dpipe->n_out, 1);
 	pthread_cond_signal(&dpipe->cond_not_full);
-}
-
-void* Bp_Worker(void* filter) {
-	Bp_Filter_t* f = (Bp_Filter_t*)filter;
-	Bp_Batch_t input_batch = f->has_input ? Bp_head(f)       : (Bp_Batch_t){ .data = NULL, .capacity = 0, .ec=Bp_EC_NOINPUT};
-	Bp_Batch_t output_batch = f->sink ? Bp_allocate(f->sink) : (Bp_Batch_t){ .data = malloc(1024 * f->data_width), .capacity = 1024 };
-
-	while (f->running) {
-		f->transform(filter, &input_batch, &output_batch);
-
-		if (f->has_input && (input_batch.head >= input_batch.capacity)) {
-			Bp_delete_tail(f);
-			input_batch = Bp_head(f);
-		}
-		assert(output_batch.head <= output_batch.capacity);
-		assert(output_batch.tail <= output_batch.capacity);
-		assert(output_batch.tail <= output_batch.head);
-
-		if (output_batch.head >= output_batch.capacity) {
-			if (f->sink) {
-				Bp_submit_batch(f->sink, &output_batch);
-				output_batch = Bp_allocate(f->sink);
-			} else {
-				output_batch.head = 0;
-				output_batch.tail = 0;
-			}
-		}
-	}
-	return NULL;
 }
