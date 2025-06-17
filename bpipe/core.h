@@ -1,4 +1,5 @@
 #include <Python.h>
+#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
 #include <numpy/arrayobject.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -60,7 +61,6 @@ typedef struct _Batch {
 /* Forward declarations */
 typedef struct _DataPipe Bp_Filter_t;
 static PyTypeObject BpFilterBase;
-static PyTypeObject BpFilterPy;
 
 typedef void (TransformFcn_t)(Bp_Filter_t* filt, Bp_Batch_t *input_batch, Bp_Batch_t *output_batch);
 
@@ -88,7 +88,8 @@ typedef struct _DataPipe {
 	size_t batch_capacity_expo;
 	unsigned long modulo_mask;
 	size_t data_width;
-	bool has_input; // does this filter operate on an input buffer?
+	int overflow_behaviour; // TODO: Move this to an enumeraton.
+	bool has_input_buffer; // Controls if the filter instantiates an input buffer.
 	SampleDtype_t dtype;
 	pthread_cond_t cond_not_full;
 	pthread_cond_t cond_not_empty;

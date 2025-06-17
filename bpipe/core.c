@@ -3,13 +3,13 @@
 
 void* Bp_Worker(void* filter) {
 	Bp_Filter_t* f = (Bp_Filter_t*)filter;
-	Bp_Batch_t input_batch = f->has_input ? Bp_head(f)       : (Bp_Batch_t){ .data = NULL, .capacity = 0, .ec=Bp_EC_NOINPUT};
+	Bp_Batch_t input_batch = f->has_input_buffer ? Bp_head(f)       : (Bp_Batch_t){ .data = NULL, .capacity = 0, .ec=Bp_EC_NOINPUT};
 	Bp_Batch_t output_batch = f->sink ? Bp_allocate(f->sink) : (Bp_Batch_t){ .data = malloc(1024 * f->data_width), .capacity = 1024 };
 
 	while (f->running) {
 		f->transform(filter, &input_batch, &output_batch);
 
-		if (f->has_input && (input_batch.head >= input_batch.capacity)) {
+		if (f->has_input_buffer && (input_batch.head >= input_batch.capacity)) {
 			Bp_delete_tail(f);
 			input_batch = Bp_head(f);
 		}
@@ -53,10 +53,9 @@ PyObject* Bp_start(PyObject* self, PyObject *args){
 	}
 
 	obj->running = true;
-	pthread_t * thread;
 
 	// Create the thread
-	if (pthread_create(thread, NULL, &Bp_Worker, (void*)obj) != 0) {
+	if (pthread_create(&obj->worker_thread, NULL, &Bp_Worker, (void*)obj) != 0) {
 		perror("pthread_create worker");
 		return PyErr_SetFromErrno(PyExc_OSError);
 	}
@@ -163,14 +162,15 @@ void BpPyTransform(Bp_Filter_t* filt, Bp_Batch_t *input_batch, Bp_Batch_t *outpu
 
 	/* Create input numpy array */
 	size_t input_len = input_batch->head-input_batch->tail;
-	size_t oputput_len = input_batch->capacity-input_batch->head;
+	size_t output_len = input_batch->capacity-input_batch->head;
 	void* input_start = input_batch->data + input_batch->tail*filt->data_width;
 	void* oputput_start = input_batch->data + input_batch->tail*filt->data_width;
 	npy_intp dims_in[1] = {input_len};
+	npy_intp dims_out[1] = {output_len};
 	PyObject* input_arr = PyArray_SimpleNewFromData(1, dims_in, NPY_FLOAT32, input_start);
 	Bp_ASSERT(filt, input_arr, Bp_EC_BAD_PYOBJECT, "Failed to create input numpy array");
 
-	PyObject* output_arr= PyArray_SimpleNewFromData(1, dims_in, NPY_FLOAT32, input_start);
+	PyObject* output_arr= PyArray_SimpleNewFromData(1, dims_out, NPY_FLOAT32, oputput_start);
 	Bp_ASSERT(filt, input_arr, Bp_EC_BAD_PYOBJECT, "Failed to create oputput numpy array");
 
 	PyObject* py_bytearray = PyByteArray_FromStringAndSize((const char*)input_batch, sizeof(Bp_Batch_t));
@@ -248,6 +248,7 @@ static struct PyModuleDef dpcore_module = {
 };
 
 PyMODINIT_FUNC PyInit_dpcore(void) {
+    import_array();  // MUST be called to init NumPy
     PyObject *m;
     if (PyType_Ready(&BpFilterBase) < 0)
         return NULL;
