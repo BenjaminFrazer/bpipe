@@ -195,6 +195,8 @@ static inline int Bp_init(PyObject *self, PyObject *args, PyObject *kwds){
 
 /* Applies a transform using a python filter */
 TransformFcn_t BpPyTransform;
+/* Simple pass-through transform that copies input to output */
+TransformFcn_t BpPassThroughTransform;
 
 static inline int BpFilterPy_init(PyObject *self, PyObject *args, PyObject *kwds){
  if (BpFilterBase.tp_init) {
