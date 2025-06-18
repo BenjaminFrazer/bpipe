@@ -57,15 +57,12 @@ int Bp_init(PyObject *self, PyObject *args, PyObject *kwds){
     Bp_Filter_t* dpipe = &filter->base;
     static char *kwlist[] = {"capacity_exp", "dtype" , NULL};
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "u|$i", kwlist,
-                                     &dpipe->ring_capacity_expo, &dpipe->dtype))
+                                     &dpipe->buffer.ring_capacity_expo, &dpipe->dtype))
         return -1;
-    dpipe->n_in = 0;
-    dpipe->n_out = 0;
-    dpipe->modulo_mask = (1u << dpipe->ring_capacity_expo) - 1u;
     dpipe->data_width = _data_size_lut[dpipe->dtype];
-    pthread_mutex_init(&dpipe->cond_mutex, NULL);
-    pthread_cond_init(&dpipe->cond_not_full, NULL);
-    pthread_cond_init(&dpipe->cond_not_empty, NULL);
+    pthread_mutex_init(&dpipe->buffer.mutex, NULL);
+    pthread_cond_init(&dpipe->buffer.not_full, NULL);
+    pthread_cond_init(&dpipe->buffer.not_empty, NULL);
     return Bp_allocate_buffers(dpipe);
 }
 
