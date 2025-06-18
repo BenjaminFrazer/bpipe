@@ -30,25 +30,28 @@ typedef enum _SampleType {
 extern const size_t _data_size_lut[];
 
 typedef enum _Bp_EC {
-	Bp_EC_OK = 0,
-	Bp_EC_TIMEOUT = -1,
-	Bp_EC_NOINPUT = -2,
-	Bp_EC_NOSPACE = -3,
-	EC_TYPE_MISMATCH = -4,
-	Bp_EC_BAD_PYOBJECT = -5,
+        Bp_EC_OK = 0,
+        Bp_EC_TIMEOUT = -1,
+        Bp_EC_NOINPUT = -2,
+        Bp_EC_NOSPACE = -3,
+        EC_TYPE_MISMATCH = -4,
+        Bp_EC_BAD_PYOBJECT = -5,
+        /* Stream termination sentinel */
+        Bp_EC_COMPLETE = 1,
 } Bp_EC;
 
 typedef struct _Batch {
-	size_t head;
-	size_t tail;
-	int capacity;
-	long long t_ns;
-	unsigned period_ns;
-	size_t batch_id;
-	Bp_EC ec;
-	void* meta;
-	SampleDtype_t dtype;
-	void* data;
+        size_t head;
+        size_t tail;
+        int capacity;
+        long long t_ns;
+        unsigned period_ns;
+        size_t batch_id;
+        /* Error code or control indicator. Use Bp_EC_COMPLETE to signal end of stream */
+        Bp_EC ec;
+        void* meta;
+        SampleDtype_t dtype;
+        void* data;
 } Bp_Batch_t;
 
 /* Forward declarations */
@@ -229,6 +232,9 @@ static inline Bp_Batch_t Bp_head(Bp_Filter_t* dpipe) {
 }
 
 static inline void Bp_delete_tail(Bp_Filter_t* dpipe) {
-	atomic_fetch_add(&dpipe->n_out, 1);
-	pthread_cond_signal(&dpipe->cond_not_full);
+        atomic_fetch_add(&dpipe->n_out, 1);
+        pthread_cond_signal(&dpipe->cond_not_full);
 }
+
+/* Worker thread entry point */
+void* Bp_Worker(void* filter);
