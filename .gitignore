@@ -1,1 +1,3 @@
 .cache
+tests/test_core_filter
+tests/test_signal_gen
