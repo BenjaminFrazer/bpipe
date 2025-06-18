@@ -4,7 +4,7 @@ LDFLAGS = -pthread -lm
 
 SRC = ../bpipe/core.c ../bpipe/signal_gen.c
 
-all: test_core_filter test_signal_gen
+all: test_core_filter test_signal_gen test_sentinel
 
 # existing test
 TEST_CORE = test_core_filter.c
@@ -25,4 +25,12 @@ run_gen: test_signal_gen
 	./test_signal_gen
 
 clean:
-	rm -f test_core_filter test_signal_gen
+	rm -f test_core_filter test_signal_gen test_sentinel
+
+TEST_SENTINEL = test_sentinel.c
+
+test_sentinel: $(SRC) $(TEST_SENTINEL)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+run_sentinel: test_sentinel
+	./test_sentinel
