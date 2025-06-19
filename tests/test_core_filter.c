@@ -15,13 +15,12 @@ static void init_filter(Bp_Filter_t* f)
 {
     memset(f, 0, sizeof(*f));
     f->transform = BpPassThroughTransform;
-    f->ring_capacity_expo = 4;
+    f->buffer.ring_capacity_expo = 4;
     /* User requirement states batch_capacity_expo=8 with capacity 64. */
     /* To match capacity 64 we use exponent 6. */
-    f->batch_capacity_expo = 6;
+    f->buffer.batch_capacity_expo = 6;
     f->dtype = DTYPE_UNSIGNED;
     f->data_width = sizeof(unsigned);
-    f->modulo_mask = (1u << f->ring_capacity_expo) - 1u;
     Bp_allocate_buffers(f);
 }
 

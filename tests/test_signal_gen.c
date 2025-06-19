@@ -7,15 +7,14 @@ static void init_pass_through(Bp_Filter_t* f)
 {
     memset(f, 0, sizeof(*f));
     f->transform = BpPassThroughTransform;
-    f->ring_capacity_expo = 4;
-    f->batch_capacity_expo = 6;
+    f->buffer.ring_capacity_expo = 4;
+    f->buffer.batch_capacity_expo = 6;
     f->dtype = DTYPE_UNSIGNED;
     f->data_width = sizeof(unsigned);
-    f->modulo_mask = (1u << f->ring_capacity_expo) - 1u;
     f->has_input_buffer = true;
-    pthread_mutex_init(&f->cond_mutex, NULL);
-    pthread_cond_init(&f->cond_not_full, NULL);
-    pthread_cond_init(&f->cond_not_empty, NULL);
+    pthread_mutex_init(&f->buffer.mutex, NULL);
+    pthread_cond_init(&f->buffer.not_full, NULL);
+    pthread_cond_init(&f->buffer.not_empty, NULL);
     Bp_allocate_buffers(f);
 }
 
