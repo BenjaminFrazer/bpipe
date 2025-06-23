@@ -7,33 +7,55 @@ const size_t _data_size_lut[] = {
     [DTYPE_UNSIGNED] = sizeof(unsigned),
 };
 
+/* Worker thread loop. Processes input batches until a completion sentinel is
+ * received or the running flag is cleared. A completion batch is forwarded to
+ * the sink on exit. */
 void* Bp_Worker(void* filter) {
         Bp_Filter_t* f = (Bp_Filter_t*)filter;
-        Bp_Batch_t input_batch = f->has_input_buffer ? Bp_head(f, &f->buffer)       : (Bp_Batch_t){ .data = NULL, .capacity = 0, .ec=Bp_EC_NOINPUT};
-        Bp_Batch_t output_batch = f->sink ? Bp_allocate(f->sink, &f->sink->buffer) : (Bp_Batch_t){ .data = malloc(1024 * f->data_width), .capacity = 1024 };
+        Bp_Batch_t input_batch = f->has_input_buffer ?
+                Bp_head(f, &f->buffer) :
+                (Bp_Batch_t){ .data = NULL, .capacity = 0, .ec = Bp_EC_NOINPUT };
+        Bp_Batch_t output_batch = f->sink ?
+                Bp_allocate(f->sink, &f->sink->buffer) :
+                (Bp_Batch_t){ .data = malloc(1024 * f->data_width), .capacity = 1024 };
 
-	while (f->running) {
-		f->transform(filter, &input_batch, &output_batch);
+        if (f->has_input_buffer && input_batch.ec == Bp_EC_COMPLETE)
+                f->running = false;
 
-                if (f->has_input_buffer && (input_batch.head >= input_batch.capacity)) {
+        while (f->running) {
+                f->transform(filter, &input_batch, &output_batch);
+
+                if (f->has_input_buffer &&
+                    (input_batch.head >= input_batch.capacity)) {
                         Bp_delete_tail(f, &f->buffer);
                         input_batch = Bp_head(f, &f->buffer);
+                        if (input_batch.ec == Bp_EC_COMPLETE) {
+                                f->running = false;
+                                break;
+                        }
                 }
-		assert(output_batch.head <= output_batch.capacity);
-		assert(output_batch.tail <= output_batch.capacity);
-		assert(output_batch.tail <= output_batch.head);
+                assert(output_batch.head <= output_batch.capacity);
+                assert(output_batch.tail <= output_batch.capacity);
+                assert(output_batch.tail <= output_batch.head);
 
-		if (output_batch.head >= output_batch.capacity) {
-			if (f->sink) {
-                                Bp_submit_batch(f->sink, &f->sink->buffer, &output_batch);
-                                output_batch = Bp_allocate(f->sink, &f->sink->buffer);
-			} else {
-				output_batch.head = 0;
-				output_batch.tail = 0;
-			}
-		}
-	}
-	return NULL;
+                if (output_batch.head >= output_batch.capacity) {
+                        if (f->sink) {
+                                Bp_submit_batch(f->sink, &f->sink->buffer,
+                                                &output_batch);
+                                output_batch = Bp_allocate(f->sink,
+                                                          &f->sink->buffer);
+                        } else {
+                                output_batch.head = 0;
+                                output_batch.tail = 0;
+                        }
+                }
+        }
+
+        if (f->sink) {
+                Bp_Batch_t done = { .ec = Bp_EC_COMPLETE };
+                Bp_submit_batch(f->sink, &f->sink->buffer, &done);
+        }
+        return NULL;
 }
 
 

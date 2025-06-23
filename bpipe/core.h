@@ -29,25 +29,28 @@ typedef enum _SampleType {
 extern const size_t _data_size_lut[];
 
 typedef enum _Bp_EC {
-	Bp_EC_OK = 0,
-	Bp_EC_TIMEOUT = -1,
-	Bp_EC_NOINPUT = -2,
-	Bp_EC_NOSPACE = -3,
-	EC_TYPE_MISMATCH = -4,
-	Bp_EC_BAD_PYOBJECT = -5,
+        Bp_EC_OK = 0,
+        Bp_EC_TIMEOUT = -1,
+        Bp_EC_NOINPUT = -2,
+        Bp_EC_NOSPACE = -3,
+        EC_TYPE_MISMATCH = -4,
+        Bp_EC_BAD_PYOBJECT = -5,
+        /* Stream termination sentinel. Indicates no further data will be sent */
+        Bp_EC_COMPLETE = 1,
 } Bp_EC;
 
 typedef struct _Batch {
-	size_t head;
-	size_t tail;
-	int capacity;
-	long long t_ns;
-	unsigned period_ns;
-	size_t batch_id;
-	Bp_EC ec;
-	void* meta;
-	SampleDtype_t dtype;
-	void* data;
+        size_t head;
+        size_t tail;
+        int capacity;
+        long long t_ns;
+        unsigned period_ns;
+        size_t batch_id;
+        /* Error code or control indicator. Use Bp_EC_COMPLETE to signal end of stream */
+        Bp_EC ec;
+        void* meta;
+        SampleDtype_t dtype;
+        void* data;
 } Bp_Batch_t;
 
 /* Forward declarations */
@@ -237,3 +240,6 @@ static inline void Bp_delete_tail(Bp_Filter_t* dpipe, Bp_BatchBuffer_t* buf) {
         buf->tail++;
         pthread_cond_signal(&buf->not_full);
 }
+
+/* Worker thread entry point */
+void* Bp_Worker(void* filter);
