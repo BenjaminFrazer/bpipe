@@ -9,8 +9,6 @@
     - Propose alternative aproaches to achieve goal.
 
 ## NOISE_SOURCE - Noise source
-
-## Noise source
 Implement a child class of `Bp_Filter_t`  which can be used to generate noise with configurable characteristics.
 - Standard deviation.
 - Distribution 0=gausian.
