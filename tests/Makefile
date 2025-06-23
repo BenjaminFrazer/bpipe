@@ -34,3 +34,9 @@ test_sentinel: $(SRC) $(TEST_SENTINEL)
 
 run_sentinel: test_sentinel
 	./test_sentinel
+
+run: test_core_filter test_signal_gen test_sentinel
+	./test_core_filter
+	./test_signal_gen
+	./test_sentinel
+
