@@ -1,32 +1,33 @@
 # Tasks
+- Goal
+- Considerations
+- Tests
 
-## Core pass-through test cases
-Implement a suite of Unity test cases on the Bp_Filter_t object instantiated with the following configurations:
+- Task specification blurb.
+    - Propose implementation to achieve goal: X
+    - Identify Challenges and Impacts of changes.
+    - Propose alternative aproaches to achieve goal.
 
-- `transform` = `BpPassThroughTransform`.
-- `ring_capacity_expo` = 4 (ring capacity of 16)
-- `batch_capacity_expo` = 8 (capacity of 64)
-- `overflow_behaviour` = BLOCKING (0)
-- `dtype` = UNSIGNED
+## NOISE_SOURCE - Noise source
+Implement a child class of `Bp_Filter_t`  which can be used to generate noise with configurable characteristics.
+- Standard deviation.
+- Distribution 0=gausian.
+- Cumulative density. Integral of the distribution.
 
-Test cases should include:
-- Sawtooth:
-    - Input Vector should: 
-        - Increasing in steps of 1 from 0-255 and wrapping back arround to 0.
-        - Total number of samples = 64*16*10
-        - Sample period of 1ns
-        - equal sample spacing.
-        - Starting time stamp =0
-    - Pass criterion:
-        - Output vector is equal to input vector including sample timestamps, rate, magnitude etc.
-        - Total processing time is less than 1ms.
-- Partial batch
-    - Input Vector:
-        - As above but only 32 samples.
-    - Pass criterion:
-        - As above.
+## PYTHON_WRAPPERS - Create Python Wrappers for the following Filters
 
-## Drop samples on overflow
+## OBJ_INIT - Propose Convention for initiating
+
+## C_TEST_HARNESS - Propose Test framework for Pure C based
+
+### Goals
+Create test harness for filter components which achieves the following goals:
+- Clear centrelized test configuration info.
+- Low maintainance. - Ideally ag
+
+## OVERFLOW_BEHAVIOU - Drop samples on overflow
 Implement a behaviour whereby samples are dropped if the `sink` overflows controlled by the `overflow_behaviour` flag.
 
-## 
+
+
+
