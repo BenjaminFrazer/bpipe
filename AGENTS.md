@@ -36,6 +36,56 @@ For ever set of changes that is made as a result of user prompt record both the 
 - ##<MM-DD-YY>_<MM:SS> - <5 word Summary>
 - Unless specified otherwise unit tests should be created for every new piece of functionality.
 
+### Instructions for Using sed in Linux
+
+sed (Stream Editor) is a powerful command-line utility used for parsing and transforming text in files. Below are specific examples and guidelines for its use.
+
+#### Basic Syntax:
+```bash
+sed -i 'COMMAND' filename
+
+```
+- **`-i`**: Edit the file in place. Make changes directly to the file without the need to output to a new file.
+- **`COMMAND`**: The editing command you want to perform.
+- **`filename`**: The file you want to edit.
+
+#### Common Commands:
+
+1. **Insert Text at the Beginning of a File**:
+   To add a line at the start of the file:
+
+       sed -i '1i# Your text here' filename
+2. **Insert Text Before a Specific Line**:
+   To insert a line before a specific line number:
+
+       sed -i 'LINE_NUMBERi# Your text here' filename
+3. **Replace Text**:
+   To replace all instances of "old_text" with "new_text":
+
+       sed -i 's/old_text/new_text/g' filename
+4. **Delete a Line**:
+   To delete a specific line number:
+
+       sed -i 'LINE_NUMBERd' filename
+
+#### Example Uses:
+
+**Add an Include Directive**: To add `#include <stdio.h>` in a header file:
+
+```bash
+sed -i '1i#include <stdio.h>' path/to/header.h
+```
+**Add Multiple Includes** : If you want to add two lines:
+```bash
+sed -i '1i#include <stdio.h>\n#include "unity.h"' path/to/file.c
+```
+
+#### Important Notes:
+
+- Always back up files before using `-i`, as changes are immediate and irreversible.
+- Ensure single quotes (`'`) are used around the command to avoid shell interpretation.
+- Use `\n` for new lines if adding multiple lines at once.
+
 ### Compiling
 - Compile with `make all`
 - Make re-directs all diagnostics information to stderr.
