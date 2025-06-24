@@ -17,6 +17,17 @@ Where a filter is a sub-class of another filter it should call the parent class 
 ### Notes
 - Object initialisation function should initialise pthread mutex and cond variables.
 
+## OBJ_INIT
+
+### Goals
+
+Implement an initialisation function for each `c` filter variant. This function should initialise the filter struct and leave it ready to use.
+
+### Notes
+- Where a filter is a sub-class of another filter it should call the parent class initialiser as well as doing it's own subsiquent initialisaiton.
+- c Initialisation function should initialise pthread mutex and cond variables.
+- Do not write tests for the python functionality.
+
 ## PYTHON_WRAPPERS - Create Python Wrappers for the following Filters
 
 
