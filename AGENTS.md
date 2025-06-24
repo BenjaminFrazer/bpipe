@@ -36,6 +36,10 @@ For ever set of changes that is made as a result of user prompt record both the 
 - ##<MM-DD-YY>_<MM:SS> - <5 word Summary>
 - Unless specified otherwise unit tests should be created for every new piece of functionality.
 
+### Compiling
+- Compile with `make all`
+- Make re-directs all diagnostics information to stderr.
+
 ### Where to request user confirmation
 - When a task cannot be completed due to missing context about the goals, key inputs or development environment.
 - When a task is believed to be complete.
@@ -53,7 +57,6 @@ For ever set of changes that is made as a result of user prompt record both the 
 ## Tests
 
 ### Running `c` Tests
-- Change directory into `tests` directory
 - Run tests by executing: `make run`
 
 ## Project Structure
