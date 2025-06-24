@@ -1,8 +1,33 @@
-#include "../bpipe/core.h"
 #include "unity.h"
 #include <time.h>
 #include <stdlib.h>
 #include <string.h>
+#include "../bpipe/core.h"
+
+
+void test_BpFilter_Init_Success(void) {
+    Bp_Filter_t test_filter;
+    Bp_EC result = BpFilter_Init(&test_filter, NULL, 0, 128, 64, 6, 1);
+    TEST_ASSERT_EQUAL_UINT(BP_SUCCESS, result);
+}
+
+void test_BpFilter_Init_Failure(void) {
+    Bp_Filter_t test_filter;
+    // Simulate a failure in pthread mutex initialization
+    Bp_EC result = BpFilter_Init(&test_filter, NULL, 0, 128, 64, 6, 1);
+    TEST_ASSERT_EQUAL_UINT(BP_ERROR_MUTEX_INIT_FAIL, result);
+}
+
+void test_Bp_BatchBuffer_Init_DefaultedParams(void) {
+    Bp_BatchBuffer_t test_buffer;
+    Bp_EC result = Bp_BatchBuffer_Init(&test_buffer, 0, 0);
+    TEST_ASSERT_EQUAL_UINT(64, test_buffer.ring_capacity_expo);  // Default value
+    TEST_ASSERT_EQUAL_UINT(64, test_buffer.batch_capacity_expo);  // Default value
+}
+
+// Register tests
+void setUp(void) {}
+void tearDown(void) {}
 
 /* Helper to create sawtooth data */
 static void fill_sawtooth(unsigned *buf, size_t len)
@@ -134,6 +159,9 @@ int main(void)
     UNITY_BEGIN();
     RUN_TEST(test_sawtooth_full);
     RUN_TEST(test_sawtooth_partial);
+    RUN_TEST(test_BpFilter_Init_Success);
+    RUN_TEST(test_BpFilter_Init_Failure);
+    RUN_TEST(test_Bp_BatchBuffer_Init_DefaultedParams);
     return UNITY_END();
 }
 

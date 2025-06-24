@@ -1,7 +1,3 @@
-Bp_EC BpFilter_Init(Bp_Filter_t *filter, TransformFcn_t transform_function, int initial_state,
-                   size_t buffer_size, int batch_size, int number_of_batches_exponent, int number_of_input_filters);
-
-Bp_EC Bp_BatchBuffer_Init(Bp_BatchBuffer_t *buffer, size_t batch_size, size_t number_of_batches);
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -21,6 +17,7 @@ Bp_EC Bp_BatchBuffer_Init(Bp_BatchBuffer_t *buffer, size_t batch_size, size_t nu
 
 #define MAX_SINKS 10
 #define MAX_CAPACITY_EXPO 30 // max 1GB capacity
+
 
 typedef enum _SampleType {
 	DTYPE_NDEF=0,
@@ -97,6 +94,12 @@ typedef struct _DataPipe {
         pthread_t worker_thread;
         Bp_BatchBuffer_t buffer;
 } Bp_Filter_t;
+
+
+Bp_EC BpFilter_Init(Bp_Filter_t *filter, TransformFcn_t transform_function, int initial_state,
+                   size_t buffer_size, int batch_size, int number_of_batches_exponent, int number_of_input_filters);
+
+Bp_EC Bp_BatchBuffer_Init(Bp_BatchBuffer_t *buffer, size_t batch_size, size_t number_of_batches);
 
 
 static inline void set_filter_error(Bp_Filter_t* filt, Bp_EC code, const char* msg, const char* file, int line, const char* func) {
