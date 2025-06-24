@@ -13,10 +13,20 @@ Implement a child class of `Bp_Filter_t`  which can be used to generate noise wi
 - Standard deviation.
 - Distribution 0=gausian.
 - Cumulative density. Integral of the distribution.
+=======
+## OBJ_INIT
+
+### Goals
+
+Implement an initialisation function for each of the existing types of `c` filters. This function should take a filter object as an input argument and leave it ready to use.
+
+### Notes
+- Where a filter is a sub-class of another filter it should call the parent class initialiser as well as doing it's own subsiquent initialisaiton.
+- c Initialisation function should initialise pthread mutex and cond variables.
+- Do not write tests for the python functionality.
 
 ## PYTHON_WRAPPERS - Create Python Wrappers for the following Filters
 
-## OBJ_INIT - Propose Convention for initiating
 
 ## C_TEST_HARNESS - Propose Test framework for Pure C based
 
