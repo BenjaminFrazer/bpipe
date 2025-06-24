@@ -1,5 +1,13 @@
 # Agents
 
+## Architecture
+
+- The core of the system is a real-time, push-based data processing framework.
+- Components are connected in a directed acyclic graph (DAG), and each component has its own dedicated input queue. 
+- The system allows backpressure handling by configuring input queues to either block producers or drop incoming samples if full.
+- The user interacts with a C Python object wrapping a a C struct and a pthread. 
+- Users wire components directly using `.set_sink()`.
+
 ## Context 
 - Top-level requirements are held in `requirements.adoc`.
 
