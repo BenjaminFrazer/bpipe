@@ -1,3 +1,7 @@
+Bp_EC BpFilter_Init(Bp_Filter_t *filter, TransformFcn_t transform_function, int initial_state,
+                   size_t buffer_size, int batch_size, int number_of_batches_exponent, int number_of_input_filters);
+
+Bp_EC Bp_BatchBuffer_Init(Bp_BatchBuffer_t *buffer, size_t batch_size, size_t number_of_batches);
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
