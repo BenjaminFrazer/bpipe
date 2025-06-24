@@ -1,7 +1,7 @@
 # Makefile for running tests from the root directory
 
 CC=gcc
-CFLAGS=-I./bpipe -std=c99 -Wall -Werror -pthread -pipe
+CFLAGS=-I./bpipe -std=c99 -Wall -Werror -pthread -save-temps
 SRC_DIR=bpipe
 TEST_SRC_DIR=tests
 TESTS=$(TEST_SRC_DIR)/test_core_filter.c $(TEST_SRC_DIR)/test_signal_gen.c $(TEST_SRC_DIR)/test_sentinel.c

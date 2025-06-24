@@ -1,11 +1,15 @@
-Bp_EC Bp_BatchBuffer_Init(Bp_BatchBuffer_t *buffer, size_t batch_size, size_t number_of_batches) {
-    if (batch_size <= 0) batch_size = 64;
-    if (number_of_batches <= 0) number_of_batches = 64;
+#include "core.h"
+#include <stdio.h>
 
-    buffer->batch_size = batch_size;
-    buffer->number_of_batches = number_of_batches;
+ Bp_EC Bp_Filter_Init(Bp_Filter_t *filter, TransformFcn_t transform_function, int initial_state, 
+                     size_t buffer_size_expo, int batch_size_expo, int number_of_batches_exponent, int number_of_input_filters) {
+     if (buffer_size_expo <= 0) buffer_size_expo = 10;
+     if (number_of_batches_exponent <= 0) number_of_batches_exponent = 10;
+     
+    filter->buffer.ring_capacity_expo= buffer_size_expo;
+    filter->buffer.batch_capacity_expo= number_of_batches_exponent;
     // Assuming other initializations are successful for this example.
-    return BP_SUCCESS;
+    return Bp_EC_OK;
 }
 
 Bp_EC BpFilter_Init(Bp_Filter_t *filter, TransformFcn_t transform_function, int initial_state, 
@@ -13,39 +17,16 @@ Bp_EC BpFilter_Init(Bp_Filter_t *filter, TransformFcn_t transform_function, int 
     if (batch_size <= 0) batch_size = 64;
     if (number_of_batches_exponent <= 0) number_of_batches_exponent = 64;
 
-    int res;
-    res = pthread_mutex_init(&(filter->mutex), NULL);
-    if (res != 0) return BP_ERROR_MUTEX_INIT_FAIL;
-
-    res = pthread_cond_init(&(filter->not_full), NULL);
-    if (res != 0) {
-        pthread_mutex_destroy(&(filter->mutex));
-        return BP_ERROR_COND_INIT_FAIL;
-    }
-    res = pthread_cond_init(&(filter->not_empty), NULL);
-    if (res != 0) {
-        pthread_mutex_destroy(&(filter->mutex));
-        pthread_cond_destroy(&(filter->not_full));
-        return BP_ERROR_COND_INIT_FAIL;
-    }
-    
-    Bp_EC buffer_init_res = Bp_BatchBuffer_Init(&(filter->batch_buffer), batch_size, 1 << number_of_batches_exponent);
-    if (buffer_init_res != BP_SUCCESS) {
-        pthread_mutex_destroy(&(filter->mutex));
-        pthread_cond_destroy(&(filter->not_full));
-        pthread_cond_destroy(&(filter->not_empty));
-        return BP_ERROR_BUFFER_INIT_FAIL;
+    Bp_EC buffer_init_res = Bp_BatchBuffer_Init(&(filter->buffer), batch_size, 1 << number_of_batches_exponent);
+    if (buffer_init_res != Bp_EC_OK) {
+        return buffer_init_res;
     }
 
-    filter->buffer_size = buffer_size;
-    filter->state = initial_state;
     filter->transform = transform_function;
-    filter->number_of_input_filters = number_of_input_filters;
+    filter->n_input_buffers = number_of_input_filters;
     // Additional initialization may be required depending on structure specifics
-    return BP_SUCCESS;
+    return Bp_EC_OK;
 }
-#include "core.h"
-#include <stdio.h>
 
 const size_t _data_size_lut[] = {
     [DTYPE_FLOAT] = sizeof(float),

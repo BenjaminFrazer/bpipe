@@ -36,6 +36,8 @@ typedef enum _Bp_EC {
         Bp_EC_NOSPACE = -3,
         EC_TYPE_MISMATCH = -4,
         Bp_EC_BAD_PYOBJECT = -5,
+				BP_ERROR_COND_INIT_FAIL,
+				BP_ERROR_MUTEX_INIT_FAIL,
         /* Stream termination sentinel. Indicates no further data will be sent */
         Bp_EC_COMPLETE = 1,
 } Bp_EC;
@@ -91,6 +93,7 @@ typedef struct _DataPipe {
         int overflow_behaviour; // TODO: Move this to an enumeraton.
         bool has_input_buffer; // Controls if the filter instantiates an input buffer.
         SampleDtype_t dtype;
+				int n_input_buffers;
         pthread_t worker_thread;
         Bp_BatchBuffer_t buffer;
 } Bp_Filter_t;
