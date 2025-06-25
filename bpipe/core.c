@@ -146,8 +146,13 @@ void* Bp_Worker(void* filter) {
         Bp_Batch_t output_batch_storage[MAX_SINKS];
         
         // Initialize input batches from our own input buffers
-        for (int i = 0; i < f->n_sources && i < MAX_SOURCES; i++) {
-            if (f->has_input_buffer) {
+        if (f->has_input_buffer) {
+            // Read from our own input buffers (at least buffer 0)
+            input_batches[0] = &input_batch_storage[0];
+            *input_batches[0] = Bp_head(f, &f->input_buffers[0]);
+            
+            // If we have additional source connections, read from those too
+            for (int i = 1; i < f->n_sources && i < MAX_SOURCES; i++) {
                 input_batches[i] = &input_batch_storage[i];
                 *input_batches[i] = Bp_head(f, &f->input_buffers[i]);
             }
@@ -171,10 +176,17 @@ void* Bp_Worker(void* filter) {
         
         // Check for completion on startup
         bool has_complete = false;
-        for (int i = 0; i < f->n_sources; i++) {
-            if (input_batches[i] && input_batches[i]->ec == Bp_EC_COMPLETE) {
+        if (f->has_input_buffer) {
+            // Check at least the first input buffer
+            if (input_batches[0] && input_batches[0]->ec == Bp_EC_COMPLETE) {
                 has_complete = true;
-                break;
+            }
+            // Check additional source connections if any
+            for (int i = 1; i < f->n_sources; i++) {
+                if (input_batches[i] && input_batches[i]->ec == Bp_EC_COMPLETE) {
+                    has_complete = true;
+                    break;
+                }
             }
         }
         if (f->has_input_buffer && has_complete) {
@@ -182,17 +194,31 @@ void* Bp_Worker(void* filter) {
         }
         
         while (f->running) {
-            f->transform(filter, input_batches, f->n_sources, output_batches, f->n_sinks);
+            // Pass the correct number of input sources to transform
+            int effective_n_inputs = f->has_input_buffer ? (f->n_sources > 0 ? f->n_sources : 1) : 0;
+            f->transform(filter, input_batches, effective_n_inputs, output_batches, f->n_sinks);
             
             // Handle input buffer management
-            for (int i = 0; i < f->n_sources; i++) {
-                if (input_batches[i] && f->has_input_buffer && 
-                    input_batches[i]->head >= input_batches[i]->capacity) {
-                    Bp_delete_tail(f, &f->input_buffers[i]);
-                    *input_batches[i] = Bp_head(f, &f->input_buffers[i]);
-                    if (input_batches[i]->ec == Bp_EC_COMPLETE) {
+            if (f->has_input_buffer) {
+                // Handle primary input buffer
+                if (input_batches[0] && input_batches[0]->head >= input_batches[0]->capacity) {
+                    Bp_delete_tail(f, &f->input_buffers[0]);
+                    *input_batches[0] = Bp_head(f, &f->input_buffers[0]);
+                    if (input_batches[0]->ec == Bp_EC_COMPLETE) {
                         f->running = false;
                         break;
+                    }
+                }
+                
+                // Handle additional source connections
+                for (int i = 1; i < f->n_sources; i++) {
+                    if (input_batches[i] && input_batches[i]->head >= input_batches[i]->capacity) {
+                        Bp_delete_tail(f, &f->input_buffers[i]);
+                        *input_batches[i] = Bp_head(f, &f->input_buffers[i]);
+                        if (input_batches[i]->ec == Bp_EC_COMPLETE) {
+                            f->running = false;
+                            break;
+                        }
                     }
                 }
             }
