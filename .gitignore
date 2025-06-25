@@ -2,3 +2,12 @@
 tests/test_core_filter
 tests/test_signal_gen
 tests/test_sentinel
+
+# Build artifacts
+test_core_filter
+test_signal_gen
+test_sentinel
+*.o
+*.i
+*.s
+tmp/
