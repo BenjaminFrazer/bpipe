@@ -11,7 +11,7 @@ static void init_filter(Bp_Filter_t* f)
     f->input_buffers[0].batch_capacity_expo = 2;
     f->dtype = DTYPE_UNSIGNED;
     f->data_width = sizeof(unsigned);
-    f->has_input_buffer = true;
+    // Input buffer will be allocated and used based on buffer initialization
     f->timeout.tv_sec = 1;
     f->timeout.tv_nsec = 0;
     pthread_mutex_init(&f->input_buffers[0].mutex, NULL);

@@ -13,7 +13,6 @@
     
     filter->transform = transform_function;
     filter->running = false;
-    filter->has_input_buffer = (number_of_input_filters > 0);
     filter->n_sources = 0;
     filter->n_sinks = 0;
     memset(filter->sources, 0, sizeof(filter->sources));
@@ -43,7 +42,6 @@ Bp_EC BpFilter_Init(Bp_Filter_t *filter, TransformFcn_t transform_function, int 
 
     filter->transform = transform_function;
     filter->running = false;
-    filter->has_input_buffer = (number_of_input_filters > 0);
     return Bp_EC_OK;
 }
 
@@ -145,8 +143,11 @@ void* Bp_Worker(void* filter) {
         Bp_Batch_t input_batch_storage[MAX_SOURCES];
         Bp_Batch_t output_batch_storage[MAX_SINKS];
         
+        // Determine if this filter uses input buffers by checking if buffer[0] is allocated
+        bool uses_input_buffers = (f->input_buffers[0].data_ring != NULL);
+        
         // Initialize input batches from our own input buffers
-        if (f->has_input_buffer) {
+        if (uses_input_buffers) {
             // Read from our own input buffers (at least buffer 0)
             input_batches[0] = &input_batch_storage[0];
             *input_batches[0] = Bp_head(f, &f->input_buffers[0]);
@@ -167,7 +168,7 @@ void* Bp_Worker(void* filter) {
         }
         
         // Handle case with no input buffers (source filters like signal generators)
-        if (!f->has_input_buffer) {
+        if (!uses_input_buffers) {
             for (int i = 0; i < MAX_SOURCES; i++) {
                 input_batches[i] = &input_batch_storage[i];
                 *input_batches[i] = (Bp_Batch_t){ .data = NULL, .capacity = 0, .ec = Bp_EC_NOINPUT };
@@ -176,7 +177,7 @@ void* Bp_Worker(void* filter) {
         
         // Check for completion on startup
         bool has_complete = false;
-        if (f->has_input_buffer) {
+        if (uses_input_buffers) {
             // Check at least the first input buffer
             if (input_batches[0] && input_batches[0]->ec == Bp_EC_COMPLETE) {
                 has_complete = true;
@@ -189,17 +190,17 @@ void* Bp_Worker(void* filter) {
                 }
             }
         }
-        if (f->has_input_buffer && has_complete) {
+        if (uses_input_buffers && has_complete) {
             f->running = false;
         }
         
         while (f->running) {
             // Pass the correct number of input sources to transform
-            int effective_n_inputs = f->has_input_buffer ? (f->n_sources > 0 ? f->n_sources : 1) : 0;
+            int effective_n_inputs = uses_input_buffers ? (f->n_sources > 0 ? f->n_sources : 1) : 0;
             f->transform(filter, input_batches, effective_n_inputs, output_batches, f->n_sinks);
             
             // Handle input buffer management
-            if (f->has_input_buffer) {
+            if (uses_input_buffers) {
                 // Handle primary input buffer
                 if (input_batches[0] && input_batches[0]->head >= input_batches[0]->capacity) {
                     Bp_delete_tail(f, &f->input_buffers[0]);

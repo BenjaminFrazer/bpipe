@@ -94,7 +94,6 @@ typedef struct _DataPipe {
         int n_sinks;
         size_t data_width;
         int overflow_behaviour; // TODO: Move this to an enumeraton.
-        bool has_input_buffer; // Controls if the filter instantiates input buffers.
         SampleDtype_t dtype;
         pthread_t worker_thread;
         Bp_BatchBuffer_t input_buffers[MAX_SOURCES];

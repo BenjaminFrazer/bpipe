@@ -11,7 +11,7 @@ static void init_pass_through(Bp_Filter_t* f)
     f->input_buffers[0].batch_capacity_expo = 6;
     f->dtype = DTYPE_UNSIGNED;
     f->data_width = sizeof(unsigned);
-    f->has_input_buffer = true;
+    // Input buffer will be allocated and used based on buffer initialization
     pthread_mutex_init(&f->input_buffers[0].mutex, NULL);
     pthread_cond_init(&f->input_buffers[0].not_full, NULL);
     pthread_cond_init(&f->input_buffers[0].not_empty, NULL);

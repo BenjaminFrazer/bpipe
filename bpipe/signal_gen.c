@@ -27,7 +27,7 @@ Bp_EC BpSignalGen_Init(Bp_SignalGen_t* gen, BpWaveform_t waveform, float frequen
     // Set up the base filter properties for signal generation
     gen->base.dtype = DTYPE_FLOAT;  // Signal generators typically output floats
     gen->base.data_width = sizeof(float);
-    gen->base.has_input_buffer = false;  // Signal generators don't need input
+    // Signal generators don't need input buffers - they generate data internally
     
     return Bp_EC_OK;
 }
