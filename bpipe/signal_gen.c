@@ -4,6 +4,34 @@
 #define M_PI 3.14159265358979323846
 #endif
 
+Bp_EC BpSignalGen_Init(Bp_SignalGen_t* gen, BpWaveform_t waveform, float frequency, 
+                       float amplitude, float phase, float x_offset, 
+                       size_t buffer_size, int batch_size, int number_of_batches_exponent) {
+    if (!gen) return Bp_EC_NOSPACE;
+    
+    // Initialize the base filter first
+    Bp_EC result = BpFilter_Init(&gen->base, BpSignalGenTransform, 0, 
+                                buffer_size, batch_size, number_of_batches_exponent, 0);
+    if (result != Bp_EC_OK) {
+        return result;
+    }
+    
+    // Initialize signal generator specific fields
+    gen->waveform = waveform;
+    gen->frequency = frequency;
+    gen->amplitude = amplitude;
+    gen->phase = phase;
+    gen->x_offset = x_offset;
+    gen->sample_idx = 0;
+    
+    // Set up the base filter properties for signal generation
+    gen->base.dtype = DTYPE_FLOAT;  // Signal generators typically output floats
+    gen->base.data_width = sizeof(float);
+    gen->base.has_input_buffer = false;  // Signal generators don't need input
+    
+    return Bp_EC_OK;
+}
+
 static inline float fracf(float x)
 {
     return x - floorf(x);

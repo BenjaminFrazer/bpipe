@@ -104,6 +104,8 @@ Bp_EC BpFilter_Init(Bp_Filter_t *filter, TransformFcn_t transform_function, int 
 
 Bp_EC Bp_BatchBuffer_Init(Bp_BatchBuffer_t *buffer, size_t batch_size, size_t number_of_batches);
 
+Bp_EC Bp_BatchBuffer_Deinit(Bp_BatchBuffer_t *buffer);
+
 
 static inline void set_filter_error(Bp_Filter_t* filt, Bp_EC code, const char* msg, const char* file, int line, const char* func) {
 	filt->worker_err_info.ec = code;

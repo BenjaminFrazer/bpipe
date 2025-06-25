@@ -20,6 +20,10 @@ typedef struct {
     unsigned long sample_idx;
 } Bp_SignalGen_t;
 
+Bp_EC BpSignalGen_Init(Bp_SignalGen_t* gen, BpWaveform_t waveform, float frequency, 
+                       float amplitude, float phase, float x_offset, 
+                       size_t buffer_size, int batch_size, int number_of_batches_exponent);
+
 void BpSignalGenTransform(Bp_Filter_t* filt, Bp_Batch_t *input_batch, Bp_Batch_t *output_batch);
 
 #endif /* BPIPE_SIGNAL_GEN_H */
