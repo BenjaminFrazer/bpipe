@@ -61,4 +61,3 @@ This is a **modular real-time telemetry data processing framework** built in C w
 - Branch naming: Create branches named after TASK_ID from `tasks.md`
 - Work logging: Record changes in `<TASK_ID>_log.md` files
 - Task lookup: Use `get_task.sh` script to extract task-specific information
-- Current focus: Object initialization (OBJ_INIT task)
