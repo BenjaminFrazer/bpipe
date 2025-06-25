@@ -9,24 +9,52 @@ PyObject* Bp_set_sink(PyObject *self, PyObject *args){
 PyObject* Bp_start(PyObject* self, PyObject *args){
     BpFilterPy_t* obj_py = (BpFilterPy_t*)self;
     Bp_Filter_t* obj = &obj_py->base;
-    if (obj->running){
-        PyErr_SetString(PyExc_ValueError, "Already running.");
+    
+    Bp_EC result = Bp_Filter_Start(obj);
+    if (result != Bp_EC_OK) {
+        switch (result) {
+            case BP_ERROR_NULL_FILTER:
+                PyErr_SetString(PyExc_ValueError, "Filter object is null");
+                break;
+            case BP_ERROR_ALREADY_RUNNING:
+                PyErr_SetString(PyExc_ValueError, obj->worker_err_info.err_msg ? 
+                               obj->worker_err_info.err_msg : "Filter is already running");
+                break;
+            case BP_ERROR_THREAD_CREATE_FAIL:
+                PyErr_SetString(PyExc_OSError, obj->worker_err_info.err_msg ? 
+                               obj->worker_err_info.err_msg : "Failed to create worker thread");
+                break;
+            default:
+                PyErr_SetString(PyExc_RuntimeError, "Unknown error starting filter");
+                break;
+        }
         return NULL;
     }
-    obj->running = true;
-    if (pthread_create(&obj->worker_thread, NULL, &Bp_Worker, (void*)obj) != 0) {
-        perror("pthread_create worker");
-        return PyErr_SetFromErrno(PyExc_OSError);
-    }
+    
     Py_RETURN_NONE;
 }
 
 PyObject* Bp_stop(PyObject* self, PyObject *args){
     BpFilterPy_t* obj_py = (BpFilterPy_t*)self;
     Bp_Filter_t* obj = &obj_py->base;
-    obj->running = false;
-    if(pthread_join(obj->worker_thread, NULL)<0)
-        return PyErr_SetFromErrno(PyExc_OSError);
+    
+    Bp_EC result = Bp_Filter_Stop(obj);
+    if (result != Bp_EC_OK) {
+        switch (result) {
+            case BP_ERROR_NULL_FILTER:
+                PyErr_SetString(PyExc_ValueError, "Filter object is null");
+                break;
+            case BP_ERROR_THREAD_JOIN_FAIL:
+                PyErr_SetString(PyExc_OSError, obj->worker_err_info.err_msg ? 
+                               obj->worker_err_info.err_msg : "Failed to join worker thread");
+                break;
+            default:
+                PyErr_SetString(PyExc_RuntimeError, "Unknown error stopping filter");
+                break;
+        }
+        return NULL;
+    }
+    
     Py_RETURN_NONE;
 }
 

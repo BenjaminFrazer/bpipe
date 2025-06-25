@@ -41,17 +41,14 @@ static void test_sentinel_propagation(void)
 
     Bp_add_sink(&a, &b);
 
-    a.running = true;
-    b.running = true;
-
-    pthread_create(&b.worker_thread, NULL, Bp_Worker, &b);
-    pthread_create(&a.worker_thread, NULL, Bp_Worker, &a);
+    Bp_Filter_Start(&b);
+    Bp_Filter_Start(&a);
 
     Bp_Batch_t done = { .ec = Bp_EC_COMPLETE };
     Bp_submit_batch(&a, &a.input_buffers[0], &done);
 
-    pthread_join(a.worker_thread, NULL);
-    pthread_join(b.worker_thread, NULL);
+    Bp_Filter_Stop(&a);
+    Bp_Filter_Stop(&b);
 
     TEST_ASSERT_TRUE(!a.running);
     TEST_ASSERT_TRUE(!b.running);

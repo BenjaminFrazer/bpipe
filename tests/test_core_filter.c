@@ -71,6 +71,74 @@ void test_multi_transform_function(void) {
     TEST_ASSERT_TRUE(filter.transform != NULL);
 }
 
+void test_Bp_Filter_Start_Success(void) {
+    Bp_Filter_t filter;
+    BpFilter_Init(&filter, BpPassThroughTransform, 0, 128, 64, 6, 1);
+    filter.dtype = DTYPE_UNSIGNED;
+    filter.data_width = sizeof(unsigned);
+    
+    // Test starting a filter
+    Bp_EC result = Bp_Filter_Start(&filter);
+    TEST_ASSERT_EQUAL_UINT(Bp_EC_OK, result);
+    TEST_ASSERT_TRUE(filter.running);
+    
+    // Clean up - stop the filter
+    Bp_Filter_Stop(&filter);
+}
+
+void test_Bp_Filter_Start_Already_Running(void) {
+    Bp_Filter_t filter;
+    BpFilter_Init(&filter, BpPassThroughTransform, 0, 128, 64, 6, 1);
+    filter.dtype = DTYPE_UNSIGNED;
+    filter.data_width = sizeof(unsigned);
+    
+    // Start the filter first
+    Bp_Filter_Start(&filter);
+    
+    // Try to start again - should fail with specific error code
+    Bp_EC result = Bp_Filter_Start(&filter);
+    TEST_ASSERT_EQUAL_UINT(BP_ERROR_ALREADY_RUNNING, result);
+    
+    // Clean up
+    Bp_Filter_Stop(&filter);
+}
+
+void test_Bp_Filter_Stop_Success(void) {
+    Bp_Filter_t filter;
+    BpFilter_Init(&filter, BpPassThroughTransform, 0, 128, 64, 6, 1);
+    filter.dtype = DTYPE_UNSIGNED;
+    filter.data_width = sizeof(unsigned);
+    
+    // Start then stop the filter
+    Bp_Filter_Start(&filter);
+    TEST_ASSERT_TRUE(filter.running);
+    
+    Bp_EC result = Bp_Filter_Stop(&filter);
+    TEST_ASSERT_EQUAL_UINT(Bp_EC_OK, result);
+    TEST_ASSERT_TRUE(!filter.running);
+}
+
+void test_Bp_Filter_Stop_Not_Running(void) {
+    Bp_Filter_t filter;
+    BpFilter_Init(&filter, BpPassThroughTransform, 0, 128, 64, 6, 1);
+    
+    // Try to stop a filter that's not running - should succeed
+    Bp_EC result = Bp_Filter_Stop(&filter);
+    TEST_ASSERT_EQUAL_UINT(Bp_EC_OK, result);
+}
+
+void test_Bp_Filter_Start_Null_Filter(void) {
+    // Test starting a null filter - should fail with specific error code
+    Bp_EC result = Bp_Filter_Start(NULL);
+    TEST_ASSERT_EQUAL_UINT(BP_ERROR_NULL_FILTER, result);
+}
+
+void test_Bp_Filter_Stop_Null_Filter(void) {
+    // Test stopping a null filter - should fail with specific error code
+    Bp_EC result = Bp_Filter_Stop(NULL);
+    TEST_ASSERT_EQUAL_UINT(BP_ERROR_NULL_FILTER, result);
+}
+
 int main(void)
 {
 	UNITY_BEGIN();
@@ -80,6 +148,12 @@ int main(void)
 	RUN_TEST(test_Bp_add_multiple_sinks);
 	RUN_TEST(test_Bp_remove_sink_Success);
 	RUN_TEST(test_multi_transform_function);
+	RUN_TEST(test_Bp_Filter_Start_Success);
+	RUN_TEST(test_Bp_Filter_Start_Already_Running);
+	RUN_TEST(test_Bp_Filter_Stop_Success);
+	RUN_TEST(test_Bp_Filter_Stop_Not_Running);
+	RUN_TEST(test_Bp_Filter_Start_Null_Filter);
+	RUN_TEST(test_Bp_Filter_Stop_Null_Filter);
 	return UNITY_END();
 }
 

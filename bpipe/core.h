@@ -39,6 +39,11 @@ typedef enum _Bp_EC {
         Bp_EC_BAD_PYOBJECT = -5,
 				BP_ERROR_COND_INIT_FAIL,
 				BP_ERROR_MUTEX_INIT_FAIL,
+        /* Filter lifecycle error codes */
+        BP_ERROR_NULL_FILTER = -8,
+        BP_ERROR_ALREADY_RUNNING = -9,
+        BP_ERROR_THREAD_CREATE_FAIL = -10,
+        BP_ERROR_THREAD_JOIN_FAIL = -11,
         /* Stream termination sentinel. Indicates no further data will be sent */
         Bp_EC_COMPLETE = 1,
 } Bp_EC;
@@ -112,6 +117,10 @@ Bp_EC Bp_remove_source(Bp_Filter_t *filter, Bp_Filter_t *source);
 Bp_EC Bp_BatchBuffer_Init(Bp_BatchBuffer_t *buffer, size_t batch_size, size_t number_of_batches);
 
 Bp_EC Bp_BatchBuffer_Deinit(Bp_BatchBuffer_t *buffer);
+
+/* Filter lifecycle functions */
+Bp_EC Bp_Filter_Start(Bp_Filter_t *filter);
+Bp_EC Bp_Filter_Stop(Bp_Filter_t *filter);
 
 
 static inline void set_filter_error(Bp_Filter_t* filt, Bp_EC code, const char* msg, const char* file, int line, const char* func) {

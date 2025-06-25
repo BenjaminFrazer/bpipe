@@ -304,6 +304,47 @@ Bp_EC Bp_remove_source(Bp_Filter_t *filter, Bp_Filter_t *source) {
     return Bp_EC_NOINPUT; // Source not found
 }
 
+/* Filter lifecycle functions */
+Bp_EC Bp_Filter_Start(Bp_Filter_t *filter) {
+    if (!filter) {
+        return BP_ERROR_NULL_FILTER;
+    }
+    
+    if (filter->running) {
+        SET_FILTER_ERROR(filter, BP_ERROR_ALREADY_RUNNING, "Filter is already running");
+        return BP_ERROR_ALREADY_RUNNING;
+    }
+    
+    filter->running = true;
+    
+    if (pthread_create(&filter->worker_thread, NULL, &Bp_Worker, (void*)filter) != 0) {
+        filter->running = false;
+        SET_FILTER_ERROR(filter, BP_ERROR_THREAD_CREATE_FAIL, "Failed to create worker thread");
+        return BP_ERROR_THREAD_CREATE_FAIL;
+    }
+    
+    return Bp_EC_OK;
+}
+
+Bp_EC Bp_Filter_Stop(Bp_Filter_t *filter) {
+    if (!filter) {
+        return BP_ERROR_NULL_FILTER;
+    }
+    
+    if (!filter->running) {
+        return Bp_EC_OK; // Already stopped, not an error
+    }
+    
+    filter->running = false;
+    
+    if (pthread_join(filter->worker_thread, NULL) != 0) {
+        SET_FILTER_ERROR(filter, BP_ERROR_THREAD_JOIN_FAIL, "Failed to join worker thread");
+        return BP_ERROR_THREAD_JOIN_FAIL;
+    }
+    
+    return Bp_EC_OK;
+}
+
 void BpPassThroughTransform(Bp_Filter_t* filt, Bp_Batch_t **input_batches, int n_inputs, Bp_Batch_t **output_batches, int n_outputs) {
     // Multi-I/O transform: copy first input to all outputs
     if (n_inputs > 0 && n_outputs > 0 && input_batches[0] != NULL) {
