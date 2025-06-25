@@ -25,6 +25,14 @@ static void free_filter(Bp_Filter_t* f)
     Bp_deallocate_buffers(f, 0);
 }
 
+void setUp(void) {
+    // Setup code for each test
+}
+
+void tearDown(void) {
+    // Cleanup code for each test
+}
+
 static void test_sentinel_propagation(void)
 {
     Bp_Filter_t a, b;

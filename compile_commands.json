@@ -1,7 +1,7 @@
 [
 	{
 		"directory": "/home/benf/repos/bpipe/",
-		"command": "clang -I/usr/include/python3.10 -o udpcom.o -c bpipe/core.c",
+		"command": "clang -I/usr/include/python3.10 -I./lib/Unity/src -o udpcom.o -c bpipe/core.c",
 		"file": "bpipe/core.c"
 	}
 ]

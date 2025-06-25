@@ -1,5 +1,4 @@
 #include "unity.h"
-#include "unity.h"
 #include <stdlib.h>
 #include <string.h>
 #include "../bpipe/core.h"
@@ -74,11 +73,13 @@ void test_multi_transform_function(void) {
 
 int main(void)
 {
+	UNITY_BEGIN();
 	RUN_TEST(test_BpFilter_Init_Success);
 	RUN_TEST(test_BpFilter_Init_Failure);
 	RUN_TEST(test_Bp_add_sink_Success);
 	RUN_TEST(test_Bp_add_multiple_sinks);
 	RUN_TEST(test_Bp_remove_sink_Success);
 	RUN_TEST(test_multi_transform_function);
+	return UNITY_END();
 }
 

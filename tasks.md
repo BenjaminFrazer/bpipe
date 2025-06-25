@@ -30,6 +30,13 @@ For the data buffer object (`Bp_BatchBuffer_t`):
 ### Goals
 Expand the architecture of the filter class to support a multi-input/multi output architecture.
 
+## START_STOP
+
+### Goal
+- Give the user the ability to start and stop filter threads from running.
+- `start` should start the worker thread.
+- `stop` should stop and join the worker thread.
+
 ## PYTHON_WRAPPERS
 - Create Python Wrappers for the following Filters
 
@@ -54,7 +61,8 @@ wrapping a customized c filter struct.
 - 
 
 
-## C_TEST_HARNESS - Propose Test framework for Pure C based
+## C_TEST_HARNESS 
+- Propose Test framework for Pure C based filters.
 
 ### Goals
 Create test harness for filter components which achieves the following goals:

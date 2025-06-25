@@ -1,10 +1,11 @@
 # Makefile for running tests from the root directory
 
 CC=gcc
-CFLAGS=-I./bpipe -std=c99 -Wall -Werror -pthread -save-temps
+CFLAGS=-I./bpipe -I./lib/Unity/src -std=c99 -Wall -Werror -pthread -save-temps
 LDFLAGS=-lm
 SRC_DIR=bpipe
 TEST_SRC_DIR=tests
+UNITY_SRC=lib/Unity/src/unity.c
 TESTS=$(TEST_SRC_DIR)/test_core_filter.c $(TEST_SRC_DIR)/test_signal_gen.c $(TEST_SRC_DIR)/test_sentinel.c
 OBJ_FILES=$(SRC_DIR)/core.c $(SRC_DIR)/signal_gen.c
 
@@ -12,13 +13,13 @@ OBJ_FILES=$(SRC_DIR)/core.c $(SRC_DIR)/signal_gen.c
 
 all: $(TESTS:.c=.o) test_core_filter test_signal_gen test_sentinel
 
-test_core_filter: $(OBJ_FILES) $(TEST_SRC_DIR)/test_core_filter.o
+test_core_filter: $(OBJ_FILES) $(UNITY_SRC) $(TEST_SRC_DIR)/test_core_filter.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-test_signal_gen: $(OBJ_FILES) $(TEST_SRC_DIR)/test_signal_gen.o
+test_signal_gen: $(OBJ_FILES) $(UNITY_SRC) $(TEST_SRC_DIR)/test_signal_gen.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-test_sentinel: $(OBJ_FILES) $(TEST_SRC_DIR)/test_sentinel.o
+test_sentinel: $(OBJ_FILES) $(UNITY_SRC) $(TEST_SRC_DIR)/test_sentinel.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 clean:
