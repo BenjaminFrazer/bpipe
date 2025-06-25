@@ -16,6 +16,7 @@
 #include <assert.h>
 
 #define MAX_SINKS 10
+#define MAX_SOURCES 10
 #define MAX_CAPACITY_EXPO 30 // max 1GB capacity
 
 
@@ -59,7 +60,7 @@ typedef struct _Batch {
 /* Forward declarations */
 typedef struct _DataPipe Bp_Filter_t;
 
-typedef void (TransformFcn_t)(Bp_Filter_t* filt, Bp_Batch_t *input_batch, Bp_Batch_t *output_batch);
+typedef void (TransformFcn_t)(Bp_Filter_t* filt, Bp_Batch_t **input_batches, int n_inputs, Bp_Batch_t **output_batches, int n_outputs);
 
 typedef struct _err_info {
 	Bp_EC ec;
@@ -87,20 +88,27 @@ typedef struct _DataPipe {
         TransformFcn_t* transform;
         Err_info worker_err_info;
         struct timespec timeout;
-        struct _DataPipe* source;
-        struct _DataPipe* sink;
+        struct _DataPipe* sources[MAX_SOURCES];
+        struct _DataPipe* sinks[MAX_SINKS];
+        int n_sources;
+        int n_sinks;
         size_t data_width;
         int overflow_behaviour; // TODO: Move this to an enumeraton.
-        bool has_input_buffer; // Controls if the filter instantiates an input buffer.
+        bool has_input_buffer; // Controls if the filter instantiates input buffers.
         SampleDtype_t dtype;
-				int n_input_buffers;
         pthread_t worker_thread;
-        Bp_BatchBuffer_t buffer;
+        Bp_BatchBuffer_t input_buffers[MAX_SOURCES];
 } Bp_Filter_t;
 
 
 Bp_EC BpFilter_Init(Bp_Filter_t *filter, TransformFcn_t transform_function, int initial_state,
                    size_t buffer_size, int batch_size, int number_of_batches_exponent, int number_of_input_filters);
+
+/* Multi-I/O connection functions */
+Bp_EC Bp_add_sink(Bp_Filter_t *filter, Bp_Filter_t *sink);
+Bp_EC Bp_add_source(Bp_Filter_t *filter, Bp_Filter_t *source);
+Bp_EC Bp_remove_sink(Bp_Filter_t *filter, Bp_Filter_t *sink);
+Bp_EC Bp_remove_source(Bp_Filter_t *filter, Bp_Filter_t *source);
 
 Bp_EC Bp_BatchBuffer_Init(Bp_BatchBuffer_t *buffer, size_t batch_size, size_t number_of_batches);
 
@@ -128,14 +136,14 @@ static inline void set_filter_error(Bp_Filter_t* filt, Bp_EC code, const char* m
     } while (0)
 
 
-static inline size_t Bp_tail_idx(Bp_Filter_t* dpipe){
-        unsigned long mask = (1u << dpipe->buffer.ring_capacity_expo) - 1u;
-        return dpipe->buffer.tail & mask;
+static inline size_t Bp_tail_idx(Bp_Filter_t* dpipe, int buffer_idx){
+        unsigned long mask = (1u << dpipe->input_buffers[buffer_idx].ring_capacity_expo) - 1u;
+        return dpipe->input_buffers[buffer_idx].tail & mask;
 }
 
-static inline size_t Bp_head_idx(Bp_Filter_t* dpipe){
-        unsigned long mask = (1u << dpipe->buffer.ring_capacity_expo) - 1u;
-        return dpipe->buffer.head & mask;
+static inline size_t Bp_head_idx(Bp_Filter_t* dpipe, int buffer_idx){
+        unsigned long mask = (1u << dpipe->input_buffers[buffer_idx].ring_capacity_expo) - 1u;
+        return dpipe->input_buffers[buffer_idx].head & mask;
 }
 
 static inline unsigned long Bp_ring_capacity(Bp_BatchBuffer_t* buf){
@@ -146,37 +154,37 @@ static inline unsigned long Bp_batch_capacity(Bp_BatchBuffer_t* buf){
         return 1u << buf->batch_capacity_expo;
 }
 
-static inline Bp_EC Bp_allocate_buffers(Bp_Filter_t* dpipe){
+static inline Bp_EC Bp_allocate_buffers(Bp_Filter_t* dpipe, int buffer_idx){
         assert(dpipe->dtype != DTYPE_NDEF);
 
-        dpipe->buffer.data_ring  = malloc(dpipe->data_width * Bp_ring_capacity(&dpipe->buffer));
-        dpipe->buffer.batch_ring = malloc(sizeof(Bp_Batch_t) * Bp_ring_capacity(&dpipe->buffer));
-        dpipe->buffer.head = 0;
-        dpipe->buffer.tail = 0;
+        dpipe->input_buffers[buffer_idx].data_ring  = malloc(dpipe->data_width * Bp_ring_capacity(&dpipe->input_buffers[buffer_idx]));
+        dpipe->input_buffers[buffer_idx].batch_ring = malloc(sizeof(Bp_Batch_t) * Bp_ring_capacity(&dpipe->input_buffers[buffer_idx]));
+        dpipe->input_buffers[buffer_idx].head = 0;
+        dpipe->input_buffers[buffer_idx].tail = 0;
 
-        assert(dpipe->buffer.data_ring != NULL);
-        assert(dpipe->buffer.batch_ring != NULL);
+        assert(dpipe->input_buffers[buffer_idx].data_ring != NULL);
+        assert(dpipe->input_buffers[buffer_idx].batch_ring != NULL);
         return Bp_EC_OK;
 }
 
 
-static inline Bp_EC Bp_deallocate_buffers(Bp_Filter_t* dpipe){
+static inline Bp_EC Bp_deallocate_buffers(Bp_Filter_t* dpipe, int buffer_idx){
 
         assert(dpipe->dtype != DTYPE_NDEF);
 
-        free(dpipe->buffer.data_ring);
-        free(dpipe->buffer.batch_ring);
+        free(dpipe->input_buffers[buffer_idx].data_ring);
+        free(dpipe->input_buffers[buffer_idx].batch_ring);
 
-        dpipe->buffer.data_ring = NULL;
-        dpipe->buffer.batch_ring = NULL;
-        dpipe->buffer.head = 0;
-        dpipe->buffer.tail = 0;
+        dpipe->input_buffers[buffer_idx].data_ring = NULL;
+        dpipe->input_buffers[buffer_idx].batch_ring = NULL;
+        dpipe->input_buffers[buffer_idx].head = 0;
+        dpipe->input_buffers[buffer_idx].tail = 0;
         return Bp_EC_OK;
 }
 
 /* Applies a transform using a python filter */
 TransformFcn_t BpPyTransform;
-/* Simple pass-through transform that copies input to output */
+/* Multi-input/output pass-through transform */
 TransformFcn_t BpPassThroughTransform;
 
 
@@ -218,7 +226,7 @@ static inline Bp_EC Bp_await_not_full(Bp_Filter_t* dpipe, Bp_BatchBuffer_t* buf)
 static inline Bp_Batch_t Bp_allocate(Bp_Filter_t* dpipe, Bp_BatchBuffer_t* buf){
         Bp_Batch_t batch = {0};
         if (Bp_await_not_full(dpipe, buf) == Bp_EC_OK) {
-                size_t idx = Bp_head_idx(dpipe);
+                size_t idx = buf->head & ((1u << buf->ring_capacity_expo) - 1u);
                 void* data_ptr = (char*)buf->data_ring + idx * dpipe->data_width * Bp_batch_capacity(buf);
                 batch.capacity = Bp_batch_capacity(buf);
                 batch.data = data_ptr;
@@ -231,7 +239,7 @@ static inline Bp_Batch_t Bp_allocate(Bp_Filter_t* dpipe, Bp_BatchBuffer_t* buf){
 }
 
 static inline void Bp_submit_batch(Bp_Filter_t* dpipe, Bp_BatchBuffer_t* buf, Bp_Batch_t* batch) {
-        size_t idx = Bp_head_idx(dpipe);
+        size_t idx = buf->head & ((1u << buf->ring_capacity_expo) - 1u);
         buf->batch_ring[idx] = *batch;
         buf->head++;
         pthread_cond_signal(&buf->not_empty);
@@ -240,7 +248,7 @@ static inline void Bp_submit_batch(Bp_Filter_t* dpipe, Bp_BatchBuffer_t* buf, Bp
 static inline Bp_Batch_t Bp_head(Bp_Filter_t* dpipe, Bp_BatchBuffer_t* buf) {
         Bp_Batch_t batch = {0};
         if (Bp_await_not_empty(dpipe, buf) == Bp_EC_OK) {
-                size_t idx = Bp_tail_idx(dpipe);
+                size_t idx = buf->tail & ((1u << buf->ring_capacity_expo) - 1u);
                 batch = buf->batch_ring[idx];
         } else {
                 batch.ec = Bp_EC_TIMEOUT;

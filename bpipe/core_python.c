@@ -2,17 +2,8 @@
 #include <string.h>
 
 PyObject* Bp_set_sink(PyObject *self, PyObject *args){
-    PyObject* consumer_obj;
-    if (!PyArg_ParseTuple(args, "O", &consumer_obj))
-        return NULL;
-    BpFilterPy_t* consumer_py = (BpFilterPy_t*)consumer_obj;
-    BpFilterPy_t* obj_py = (BpFilterPy_t*)self;
-    Bp_Filter_t* consumer = &consumer_py->base;
-    Bp_Filter_t* obj = &obj_py->base;
-    if (consumer->dtype == DTYPE_NDEF)
-        consumer->dtype = obj->dtype;
-    obj->sink = consumer;
-    Py_RETURN_NONE;
+    // Backward compatibility wrapper for add_sink
+    return Bp_add_sink_py(self, args);
 }
 
 PyObject* Bp_start(PyObject* self, PyObject *args){
@@ -39,8 +30,84 @@ PyObject* Bp_stop(PyObject* self, PyObject *args){
     Py_RETURN_NONE;
 }
 
+PyObject* Bp_add_sink_py(PyObject *self, PyObject *args){
+    PyObject* consumer_obj;
+    if (!PyArg_ParseTuple(args, "O", &consumer_obj))
+        return NULL;
+    BpFilterPy_t* consumer_py = (BpFilterPy_t*)consumer_obj;
+    BpFilterPy_t* obj_py = (BpFilterPy_t*)self;
+    Bp_Filter_t* consumer = &consumer_py->base;
+    Bp_Filter_t* obj = &obj_py->base;
+    
+    Bp_EC result = Bp_add_sink(obj, consumer);
+    if (result != Bp_EC_OK) {
+        PyErr_SetString(PyExc_RuntimeError, "Failed to add sink");
+        return NULL;
+    }
+    
+    Py_RETURN_NONE;
+}
+
+PyObject* Bp_remove_sink_py(PyObject *self, PyObject *args){
+    PyObject* consumer_obj;
+    if (!PyArg_ParseTuple(args, "O", &consumer_obj))
+        return NULL;
+    BpFilterPy_t* consumer_py = (BpFilterPy_t*)consumer_obj;
+    BpFilterPy_t* obj_py = (BpFilterPy_t*)self;
+    Bp_Filter_t* consumer = &consumer_py->base;
+    Bp_Filter_t* obj = &obj_py->base;
+    
+    Bp_EC result = Bp_remove_sink(obj, consumer);
+    if (result != Bp_EC_OK) {
+        PyErr_SetString(PyExc_RuntimeError, "Failed to remove sink");
+        return NULL;
+    }
+    
+    Py_RETURN_NONE;
+}
+
+PyObject* Bp_add_source_py(PyObject *self, PyObject *args){
+    PyObject* source_obj;
+    if (!PyArg_ParseTuple(args, "O", &source_obj))
+        return NULL;
+    BpFilterPy_t* source_py = (BpFilterPy_t*)source_obj;
+    BpFilterPy_t* obj_py = (BpFilterPy_t*)self;
+    Bp_Filter_t* source = &source_py->base;
+    Bp_Filter_t* obj = &obj_py->base;
+    
+    Bp_EC result = Bp_add_source(obj, source);
+    if (result != Bp_EC_OK) {
+        PyErr_SetString(PyExc_RuntimeError, "Failed to add source");
+        return NULL;
+    }
+    
+    Py_RETURN_NONE;
+}
+
+PyObject* Bp_remove_source_py(PyObject *self, PyObject *args){
+    PyObject* source_obj;
+    if (!PyArg_ParseTuple(args, "O", &source_obj))
+        return NULL;
+    BpFilterPy_t* source_py = (BpFilterPy_t*)source_obj;
+    BpFilterPy_t* obj_py = (BpFilterPy_t*)self;
+    Bp_Filter_t* source = &source_py->base;
+    Bp_Filter_t* obj = &obj_py->base;
+    
+    Bp_EC result = Bp_remove_source(obj, source);
+    if (result != Bp_EC_OK) {
+        PyErr_SetString(PyExc_RuntimeError, "Failed to remove source");
+        return NULL;
+    }
+    
+    Py_RETURN_NONE;
+}
+
 static PyMethodDef BpFilterBase_methods[] = {
-    {"set_sink", Bp_set_sink, METH_VARARGS, "Connect sink filter"},
+    {"set_sink", Bp_set_sink, METH_VARARGS, "Connect sink filter (backward compatibility)"},
+    {"add_sink", Bp_add_sink_py, METH_VARARGS, "Add sink filter"},
+    {"add_source", Bp_add_source_py, METH_VARARGS, "Add source filter"},
+    {"remove_sink", Bp_remove_sink_py, METH_VARARGS, "Remove sink filter"},
+    {"remove_source", Bp_remove_source_py, METH_VARARGS, "Remove source filter"},
     {"run",      Bp_start,   METH_VARARGS, "Start worker thread"},
     {"stop",     Bp_stop,    METH_VARARGS, "Stop worker thread"},
     {NULL}
@@ -86,15 +153,43 @@ PyObject* BpFilterPy_transform(PyObject *self, PyObject *args){
     Py_RETURN_NONE;
 }
 
-void BpPyTransform(Bp_Filter_t* filt, Bp_Batch_t *input_batch, Bp_Batch_t *output_batch){
+void BpPyTransform(Bp_Filter_t* filt, Bp_Batch_t **input_batches, int n_inputs, Bp_Batch_t **output_batches, int n_outputs){
     PyGILState_STATE gstate = PyGILState_Ensure();
-    size_t input_len = input_batch->head - input_batch->tail;
-    void* input_start = (char*)input_batch->data + input_batch->tail*filt->data_width;
-    npy_intp dims[1] = {input_len};
-    PyObject* input_arr = PyArray_SimpleNewFromData(1, dims, NPY_FLOAT32, input_start);
-    PyObject* result = PyObject_CallMethod((PyObject*)filt, "transform", "O", input_arr);
+    
+    // Create Python list of input arrays
+    PyObject* input_list = PyList_New(n_inputs);
+    for (int i = 0; i < n_inputs; i++) {
+        if (input_batches[i] && input_batches[i]->data) {
+            size_t input_len = input_batches[i]->head - input_batches[i]->tail;
+            void* input_start = (char*)input_batches[i]->data + input_batches[i]->tail * filt->data_width;
+            npy_intp dims[1] = {input_len};
+            PyObject* input_arr = PyArray_SimpleNewFromData(1, dims, NPY_FLOAT32, input_start);
+            PyList_SetItem(input_list, i, input_arr);
+        } else {
+            PyList_SetItem(input_list, i, Py_None);
+            Py_INCREF(Py_None);
+        }
+    }
+    
+    // Create Python list of output arrays
+    PyObject* output_list = PyList_New(n_outputs);
+    for (int i = 0; i < n_outputs; i++) {
+        if (output_batches[i] && output_batches[i]->data) {
+            size_t output_len = output_batches[i]->capacity - output_batches[i]->head;
+            void* output_start = (char*)output_batches[i]->data + output_batches[i]->head * filt->data_width;
+            npy_intp dims[1] = {output_len};
+            PyObject* output_arr = PyArray_SimpleNewFromData(1, dims, NPY_FLOAT32, output_start);
+            PyList_SetItem(output_list, i, output_arr);
+        } else {
+            PyList_SetItem(output_list, i, Py_None);
+            Py_INCREF(Py_None);
+        }
+    }
+    
+    PyObject* result = PyObject_CallMethod((PyObject*)filt, "transform", "OO", input_list, output_list);
     if (result) Py_DECREF(result);
-    Py_DECREF(input_arr);
+    Py_DECREF(input_list);
+    Py_DECREF(output_list);
     PyGILState_Release(gstate);
 }
 

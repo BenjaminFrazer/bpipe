@@ -7,22 +7,22 @@ static void init_filter(Bp_Filter_t* f)
 {
     memset(f, 0, sizeof(*f));
     f->transform = BpPassThroughTransform;
-    f->buffer.ring_capacity_expo = 2;
-    f->buffer.batch_capacity_expo = 2;
+    f->input_buffers[0].ring_capacity_expo = 2;
+    f->input_buffers[0].batch_capacity_expo = 2;
     f->dtype = DTYPE_UNSIGNED;
     f->data_width = sizeof(unsigned);
     f->has_input_buffer = true;
     f->timeout.tv_sec = 1;
     f->timeout.tv_nsec = 0;
-    pthread_mutex_init(&f->buffer.mutex, NULL);
-    pthread_cond_init(&f->buffer.not_full, NULL);
-    pthread_cond_init(&f->buffer.not_empty, NULL);
-    Bp_allocate_buffers(f);
+    pthread_mutex_init(&f->input_buffers[0].mutex, NULL);
+    pthread_cond_init(&f->input_buffers[0].not_full, NULL);
+    pthread_cond_init(&f->input_buffers[0].not_empty, NULL);
+    Bp_allocate_buffers(f, 0);
 }
 
 static void free_filter(Bp_Filter_t* f)
 {
-    Bp_deallocate_buffers(f);
+    Bp_deallocate_buffers(f, 0);
 }
 
 static void test_sentinel_propagation(void)
@@ -31,7 +31,7 @@ static void test_sentinel_propagation(void)
     init_filter(&a);
     init_filter(&b);
 
-    a.sink = &b;
+    Bp_add_sink(&a, &b);
 
     a.running = true;
     b.running = true;
@@ -40,7 +40,7 @@ static void test_sentinel_propagation(void)
     pthread_create(&a.worker_thread, NULL, Bp_Worker, &a);
 
     Bp_Batch_t done = { .ec = Bp_EC_COMPLETE };
-    Bp_submit_batch(&a, &a.buffer, &done);
+    Bp_submit_batch(&a, &a.input_buffers[0], &done);
 
     pthread_join(a.worker_thread, NULL);
     pthread_join(b.worker_thread, NULL);
@@ -48,7 +48,7 @@ static void test_sentinel_propagation(void)
     TEST_ASSERT_TRUE(!a.running);
     TEST_ASSERT_TRUE(!b.running);
 
-    Bp_Batch_t rx = Bp_head(&b, &b.buffer);
+    Bp_Batch_t rx = Bp_head(&b, &b.input_buffers[0]);
     TEST_ASSERT_EQUAL_UINT(Bp_EC_COMPLETE, rx.ec);
 
     free_filter(&a);

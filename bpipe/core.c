@@ -7,9 +7,18 @@
      if (buffer_size_expo <= 0) buffer_size_expo = 10;
      if (number_of_batches_exponent <= 0) number_of_batches_exponent = 10;
      
-    filter->buffer.ring_capacity_expo= buffer_size_expo;
-    filter->buffer.batch_capacity_expo= number_of_batches_exponent;
-    // Assuming other initializations are successful for this example.
+    // Initialize first input buffer for compatibility
+    filter->input_buffers[0].ring_capacity_expo = buffer_size_expo;
+    filter->input_buffers[0].batch_capacity_expo = number_of_batches_exponent;
+    
+    filter->transform = transform_function;
+    filter->running = false;
+    filter->has_input_buffer = (number_of_input_filters > 0);
+    filter->n_sources = 0;
+    filter->n_sinks = 0;
+    memset(filter->sources, 0, sizeof(filter->sources));
+    memset(filter->sinks, 0, sizeof(filter->sinks));
+    
     return Bp_EC_OK;
 }
 
@@ -18,14 +27,23 @@ Bp_EC BpFilter_Init(Bp_Filter_t *filter, TransformFcn_t transform_function, int 
     if (batch_size <= 0) batch_size = 64;
     if (number_of_batches_exponent <= 0) number_of_batches_exponent = 64;
 
-    Bp_EC buffer_init_res = Bp_BatchBuffer_Init(&(filter->buffer), batch_size, 1 << number_of_batches_exponent);
-    if (buffer_init_res != Bp_EC_OK) {
-        return buffer_init_res;
+    // Initialize multi-I/O arrays
+    memset(filter->sources, 0, sizeof(filter->sources));
+    memset(filter->sinks, 0, sizeof(filter->sinks));
+    filter->n_sources = 0;
+    filter->n_sinks = 0;
+    
+    // Initialize input buffers based on number_of_input_filters
+    for (int i = 0; i < number_of_input_filters && i < MAX_SOURCES; i++) {
+        Bp_EC buffer_init_res = Bp_BatchBuffer_Init(&(filter->input_buffers[i]), batch_size, 1 << number_of_batches_exponent);
+        if (buffer_init_res != Bp_EC_OK) {
+            return buffer_init_res;
+        }
     }
 
     filter->transform = transform_function;
-    filter->n_input_buffers = number_of_input_filters;
-    // Additional initialization may be required depending on structure specifics
+    filter->running = false;
+    filter->has_input_buffer = (number_of_input_filters > 0);
     return Bp_EC_OK;
 }
 
@@ -120,72 +138,180 @@ Bp_EC Bp_BatchBuffer_Deinit(Bp_BatchBuffer_t *buffer) {
  * the sink on exit. */
 void* Bp_Worker(void* filter) {
         Bp_Filter_t* f = (Bp_Filter_t*)filter;
-        Bp_Batch_t input_batch = f->has_input_buffer ?
-                Bp_head(f, &f->buffer) :
-                (Bp_Batch_t){ .data = NULL, .capacity = 0, .ec = Bp_EC_NOINPUT };
-        Bp_Batch_t output_batch = f->sink ?
-                Bp_allocate(f->sink, &f->sink->buffer) :
-                (Bp_Batch_t){ .data = malloc(1024 * f->data_width), .capacity = 1024 };
-
-        if (f->has_input_buffer && input_batch.ec == Bp_EC_COMPLETE)
-                f->running = false;
-
+        
+        // Multi-I/O processing mode
+        Bp_Batch_t* input_batches[MAX_SOURCES] = {NULL};
+        Bp_Batch_t* output_batches[MAX_SINKS] = {NULL};
+        Bp_Batch_t input_batch_storage[MAX_SOURCES];
+        Bp_Batch_t output_batch_storage[MAX_SINKS];
+        
+        // Initialize input batches from our own input buffers
+        for (int i = 0; i < f->n_sources && i < MAX_SOURCES; i++) {
+            if (f->has_input_buffer) {
+                input_batches[i] = &input_batch_storage[i];
+                *input_batches[i] = Bp_head(f, &f->input_buffers[i]);
+            }
+        }
+        
+        // Allocate output batches for sinks
+        for (int i = 0; i < f->n_sinks && i < MAX_SINKS; i++) {
+            if (f->sinks[i]) {
+                output_batches[i] = &output_batch_storage[i];
+                *output_batches[i] = Bp_allocate(f->sinks[i], &f->sinks[i]->input_buffers[0]);
+            }
+        }
+        
+        // Handle case with no input buffers (source filters like signal generators)
+        if (!f->has_input_buffer) {
+            for (int i = 0; i < MAX_SOURCES; i++) {
+                input_batches[i] = &input_batch_storage[i];
+                *input_batches[i] = (Bp_Batch_t){ .data = NULL, .capacity = 0, .ec = Bp_EC_NOINPUT };
+            }
+        }
+        
+        // Check for completion on startup
+        bool has_complete = false;
+        for (int i = 0; i < f->n_sources; i++) {
+            if (input_batches[i] && input_batches[i]->ec == Bp_EC_COMPLETE) {
+                has_complete = true;
+                break;
+            }
+        }
+        if (f->has_input_buffer && has_complete) {
+            f->running = false;
+        }
+        
         while (f->running) {
-                f->transform(filter, &input_batch, &output_batch);
-
-                if (f->has_input_buffer &&
-                    (input_batch.head >= input_batch.capacity)) {
-                        Bp_delete_tail(f, &f->buffer);
-                        input_batch = Bp_head(f, &f->buffer);
-                        if (input_batch.ec == Bp_EC_COMPLETE) {
-                                f->running = false;
-                                break;
-                        }
+            f->transform(filter, input_batches, f->n_sources, output_batches, f->n_sinks);
+            
+            // Handle input buffer management
+            for (int i = 0; i < f->n_sources; i++) {
+                if (input_batches[i] && f->has_input_buffer && 
+                    input_batches[i]->head >= input_batches[i]->capacity) {
+                    Bp_delete_tail(f, &f->input_buffers[i]);
+                    *input_batches[i] = Bp_head(f, &f->input_buffers[i]);
+                    if (input_batches[i]->ec == Bp_EC_COMPLETE) {
+                        f->running = false;
+                        break;
+                    }
                 }
-                assert(output_batch.head <= output_batch.capacity);
-                assert(output_batch.tail <= output_batch.capacity);
-                assert(output_batch.tail <= output_batch.head);
-
-                if (output_batch.head >= output_batch.capacity) {
-                        if (f->sink) {
-                                Bp_submit_batch(f->sink, &f->sink->buffer,
-                                                &output_batch);
-                                output_batch = Bp_allocate(f->sink,
-                                                          &f->sink->buffer);
-                        } else {
-                                output_batch.head = 0;
-                                output_batch.tail = 0;
-                        }
+            }
+            
+            // Handle output buffer management
+            for (int i = 0; i < f->n_sinks; i++) {
+                if (output_batches[i] && f->sinks[i] && 
+                    output_batches[i]->head >= output_batches[i]->capacity) {
+                    Bp_submit_batch(f->sinks[i], &f->sinks[i]->input_buffers[0], output_batches[i]);
+                    *output_batches[i] = Bp_allocate(f->sinks[i], &f->sinks[i]->input_buffers[0]);
                 }
+            }
         }
-
-        if (f->sink) {
+        
+        // Send completion signals to all sinks
+        for (int i = 0; i < f->n_sinks; i++) {
+            if (f->sinks[i]) {
                 Bp_Batch_t done = { .ec = Bp_EC_COMPLETE };
-                Bp_submit_batch(f->sink, &f->sink->buffer, &done);
+                Bp_submit_batch(f->sinks[i], &f->sinks[i]->input_buffers[0], &done);
+            }
         }
+        
         return NULL;
 }
 
 
 
-void BpPassThroughTransform(Bp_Filter_t* filt, Bp_Batch_t *input_batch, Bp_Batch_t *output_batch){
-        size_t available = input_batch->head - input_batch->tail;
-        size_t space     = output_batch->capacity - output_batch->head;
-        size_t ncopy     = available < space ? available : space;
+/* Multi-I/O connection functions */
+Bp_EC Bp_add_sink(Bp_Filter_t *filter, Bp_Filter_t *sink) {
+    if (!filter || !sink) return Bp_EC_NOSPACE;
+    if (filter->n_sinks >= MAX_SINKS) return Bp_EC_NOSPACE;
+    
+    filter->sinks[filter->n_sinks] = sink;
+    filter->n_sinks++;
+    
+    return Bp_EC_OK;
+}
 
-        if(ncopy){
-                void* src = (char*)input_batch->data + input_batch->tail * filt->data_width;
-                void* dst = (char*)output_batch->data + output_batch->head * filt->data_width;
-                memcpy(dst, src, ncopy * filt->data_width);
+Bp_EC Bp_add_source(Bp_Filter_t *filter, Bp_Filter_t *source) {
+    if (!filter || !source) return Bp_EC_NOSPACE;
+    if (filter->n_sources >= MAX_SOURCES) return Bp_EC_NOSPACE;
+    
+    filter->sources[filter->n_sources] = source;
+    filter->n_sources++;
+    
+    return Bp_EC_OK;
+}
+
+Bp_EC Bp_remove_sink(Bp_Filter_t *filter, Bp_Filter_t *sink) {
+    if (!filter || !sink) return Bp_EC_NOSPACE;
+    
+    for (int i = 0; i < filter->n_sinks; i++) {
+        if (filter->sinks[i] == sink) {
+            // Shift remaining sinks
+            for (int j = i; j < filter->n_sinks - 1; j++) {
+                filter->sinks[j] = filter->sinks[j + 1];
+            }
+            filter->sinks[filter->n_sinks - 1] = NULL;
+            filter->n_sinks--;
+            
+            return Bp_EC_OK;
         }
+    }
+    return Bp_EC_NOINPUT; // Sink not found
+}
 
-        output_batch->t_ns      = input_batch->t_ns;
-        output_batch->period_ns = input_batch->period_ns;
-        output_batch->dtype     = input_batch->dtype;
-        output_batch->meta      = input_batch->meta;
-        output_batch->ec        = input_batch->ec;
+Bp_EC Bp_remove_source(Bp_Filter_t *filter, Bp_Filter_t *source) {
+    if (!filter || !source) return Bp_EC_NOSPACE;
+    
+    for (int i = 0; i < filter->n_sources; i++) {
+        if (filter->sources[i] == source) {
+            // Shift remaining sources
+            for (int j = i; j < filter->n_sources - 1; j++) {
+                filter->sources[j] = filter->sources[j + 1];
+            }
+            filter->sources[filter->n_sources - 1] = NULL;
+            filter->n_sources--;
+            
+            return Bp_EC_OK;
+        }
+    }
+    return Bp_EC_NOINPUT; // Source not found
+}
 
-        input_batch->tail  += ncopy;
-        output_batch->head += ncopy;
+void BpPassThroughTransform(Bp_Filter_t* filt, Bp_Batch_t **input_batches, int n_inputs, Bp_Batch_t **output_batches, int n_outputs) {
+    // Multi-I/O transform: copy first input to all outputs
+    if (n_inputs > 0 && n_outputs > 0 && input_batches[0] != NULL) {
+        Bp_Batch_t *input_batch = input_batches[0];
+        
+        for (int i = 0; i < n_outputs; i++) {
+            if (output_batches[i] != NULL) {
+                Bp_Batch_t *output_batch = output_batches[i];
+                
+                size_t available = input_batch->head - input_batch->tail;
+                size_t space     = output_batch->capacity - output_batch->head;
+                size_t ncopy     = available < space ? available : space;
+
+                if(ncopy){
+                        void* src = (char*)input_batch->data + input_batch->tail * filt->data_width;
+                        void* dst = (char*)output_batch->data + output_batch->head * filt->data_width;
+                        memcpy(dst, src, ncopy * filt->data_width);
+                }
+
+                output_batch->t_ns      = input_batch->t_ns;
+                output_batch->period_ns = input_batch->period_ns;
+                output_batch->dtype     = input_batch->dtype;
+                output_batch->meta      = input_batch->meta;
+                output_batch->ec        = input_batch->ec;
+
+                output_batch->head += ncopy;
+            }
+        }
+        // Update input batch tail once for all outputs
+        if (n_outputs > 0 && output_batches[0] != NULL) {
+            size_t available = input_batch->head - input_batch->tail;
+            size_t space = output_batches[0]->capacity - output_batches[0]->head;
+            size_t ncopy = available < space ? available : space;
+            input_batch->tail += ncopy;
+        }
+    }
 }
 

@@ -24,6 +24,19 @@ Test cases should include:
     - Pass criterion:
         - As above.
 
+## OBJ_INIT
+
+### Goals
+
+Implement an initialisation function for `Bp_Filter_t`. This function should initialise the filter struct and leave it ready to use.
+
+### Notes
+- Where a filter is a sub-class of another filter it should call the parent class initialiser as well as doing it's own subsiquent initialisaiton.
+- c Initialisation function should initialise pthread mutex and cond variables.
+- Do not write tests for the python functionality.
+- For component structs invoke these with existing initialisers.
+
+
 ## Signal generator overview
 Implement a child class of `Bp_Filter_t`  which can be used to generate periodic waveforms.
 
