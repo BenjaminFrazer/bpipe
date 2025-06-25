@@ -1,7 +1,9 @@
+#define _DEFAULT_SOURCE
 #include "unity.h"
 #include <stdlib.h>
 #include <string.h>
-#include "../bpipe/core.h"
+#include <unistd.h>
+#include "../bpipe/signal_gen.h"
 
 Bp_Filter_t test_filter;
 
@@ -139,6 +141,50 @@ void test_Bp_Filter_Stop_Null_Filter(void) {
     TEST_ASSERT_EQUAL_UINT(BP_ERROR_NULL_FILTER, result);
 }
 
+void test_Overflow_Behavior_Block_Default(void) {
+    Bp_Filter_t filter;
+    BpFilter_Init(&filter, BpPassThroughTransform, 0, 128, 64, 6, 1);
+    
+    // Default behavior should be OVERFLOW_BLOCK
+    TEST_ASSERT_EQUAL_UINT(OVERFLOW_BLOCK, filter.overflow_behaviour);
+}
+
+void test_Overflow_Behavior_Drop_Mode(void) {
+    Bp_Filter_t filter;
+    BpFilter_Init(&filter, BpPassThroughTransform, 0, 128, 64, 2, 1); // Small buffer
+    filter.dtype = DTYPE_UNSIGNED;
+    filter.data_width = sizeof(unsigned);
+    filter.overflow_behaviour = OVERFLOW_DROP;
+    Bp_allocate_buffers(&filter, 0);
+    
+    // Test that Bp_allocate fails when buffer is full and drop mode is enabled
+    // First, try to allocate when buffer is not full - should succeed
+    Bp_Batch_t batch1 = Bp_allocate(&filter, &filter.input_buffers[0]);
+    TEST_ASSERT_EQUAL_UINT(Bp_EC_OK, batch1.ec);
+    TEST_ASSERT_NOT_NULL(batch1.data);
+    
+    // Simulate a full buffer by setting head far ahead of tail
+    filter.input_buffers[0].head = 1000;
+    filter.input_buffers[0].tail = 0;
+    
+    // Now try to allocate when buffer is full with drop mode - should fail
+    Bp_Batch_t batch2 = Bp_allocate(&filter, &filter.input_buffers[0]);
+    TEST_ASSERT_EQUAL_UINT(Bp_EC_NOSPACE, batch2.ec);
+    TEST_ASSERT_NULL(batch2.data);
+    
+    // Test blocking mode for comparison
+    filter.overflow_behaviour = OVERFLOW_BLOCK;
+    filter.input_buffers[0].head = 0; // Reset to non-full state
+    filter.input_buffers[0].tail = 0;
+    
+    Bp_Batch_t batch3 = Bp_allocate(&filter, &filter.input_buffers[0]);
+    TEST_ASSERT_EQUAL_UINT(Bp_EC_OK, batch3.ec);
+    TEST_ASSERT_NOT_NULL(batch3.data);
+    
+    // Clean up
+    Bp_deallocate_buffers(&filter, 0);
+}
+
 int main(void)
 {
 	UNITY_BEGIN();
@@ -154,6 +200,8 @@ int main(void)
 	RUN_TEST(test_Bp_Filter_Stop_Not_Running);
 	RUN_TEST(test_Bp_Filter_Start_Null_Filter);
 	RUN_TEST(test_Bp_Filter_Stop_Null_Filter);
+	RUN_TEST(test_Overflow_Behavior_Block_Default);
+	RUN_TEST(test_Overflow_Behavior_Drop_Mode);
 	return UNITY_END();
 }
 

@@ -15,6 +15,7 @@
     filter->running = false;
     filter->n_sources = 0;
     filter->n_sinks = 0;
+    filter->overflow_behaviour = OVERFLOW_BLOCK; // Default to blocking behavior
     memset(filter->sources, 0, sizeof(filter->sources));
     memset(filter->sinks, 0, sizeof(filter->sinks));
     
@@ -42,6 +43,7 @@ Bp_EC BpFilter_Init(Bp_Filter_t *filter, TransformFcn_t transform_function, int 
 
     filter->transform = transform_function;
     filter->running = false;
+    filter->overflow_behaviour = OVERFLOW_BLOCK; // Default to blocking behavior
     return Bp_EC_OK;
 }
 
@@ -164,6 +166,12 @@ void* Bp_Worker(void* filter) {
             if (f->sinks[i]) {
                 output_batches[i] = &output_batch_storage[i];
                 *output_batches[i] = Bp_allocate(f->sinks[i], &f->sinks[i]->input_buffers[0]);
+                
+                // If allocation failed due to overflow (drop mode), initialize as empty
+                if (output_batches[i]->ec == Bp_EC_NOSPACE) {
+                    memset(output_batches[i], 0, sizeof(Bp_Batch_t));
+                    output_batches[i]->ec = Bp_EC_NOSPACE; // Keep the error status
+                }
             }
         }
         
@@ -230,6 +238,12 @@ void* Bp_Worker(void* filter) {
                     output_batches[i]->head >= output_batches[i]->capacity) {
                     Bp_submit_batch(f->sinks[i], &f->sinks[i]->input_buffers[0], output_batches[i]);
                     *output_batches[i] = Bp_allocate(f->sinks[i], &f->sinks[i]->input_buffers[0]);
+                    
+                    // If allocation failed due to overflow (drop mode), reset to empty batch
+                    if (output_batches[i]->ec == Bp_EC_NOSPACE) {
+                        memset(output_batches[i], 0, sizeof(Bp_Batch_t));
+                        output_batches[i]->ec = Bp_EC_NOSPACE; // Keep the error status
+                    }
                 }
             }
         }

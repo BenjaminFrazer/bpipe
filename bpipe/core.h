@@ -28,6 +28,11 @@ typedef enum _SampleType {
 	DTYPE_MAX,
 } SampleDtype_t;
 
+typedef enum _OverflowBehaviour {
+	OVERFLOW_BLOCK = 0,  // Block when buffer is full (default/current behavior)
+	OVERFLOW_DROP = 1,   // Drop samples when buffer is full
+} OverflowBehaviour_t;
+
 extern const size_t _data_size_lut[];
 
 typedef enum _Bp_EC {
@@ -98,7 +103,7 @@ typedef struct _DataPipe {
         int n_sources;
         int n_sinks;
         size_t data_width;
-        int overflow_behaviour; // TODO: Move this to an enumeraton.
+        OverflowBehaviour_t overflow_behaviour;
         SampleDtype_t dtype;
         pthread_t worker_thread;
         Bp_BatchBuffer_t input_buffers[MAX_SOURCES];
@@ -233,6 +238,13 @@ static inline Bp_EC Bp_await_not_full(Bp_Filter_t* dpipe, Bp_BatchBuffer_t* buf)
 
 static inline Bp_Batch_t Bp_allocate(Bp_Filter_t* dpipe, Bp_BatchBuffer_t* buf){
         Bp_Batch_t batch = {0};
+        
+        // Check overflow behavior before waiting
+        if (dpipe->overflow_behaviour == OVERFLOW_DROP && Bp_full(dpipe, buf)) {
+                batch.ec = Bp_EC_NOSPACE; // Signal that allocation failed due to overflow
+                return batch;
+        }
+        
         if (Bp_await_not_full(dpipe, buf) == Bp_EC_OK) {
                 size_t idx = buf->head & ((1u << buf->ring_capacity_expo) - 1u);
                 void* data_ptr = (char*)buf->data_ring + idx * dpipe->data_width * Bp_batch_capacity(buf);
