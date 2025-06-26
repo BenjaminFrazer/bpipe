@@ -293,3 +293,52 @@ PyMODINIT_FUNC PyInit_dpcore(void) {
     return m;
 }
 
+/* NumPy helper functions for aggregator */
+
+/* Convert our dtype to NumPy type number */
+int buffer_dtype_to_numpy(int dtype) {
+    switch (dtype) {
+        case DTYPE_INT:      return NPY_INT32;
+        case DTYPE_UNSIGNED: return NPY_UINT32;
+        case DTYPE_FLOAT:    return NPY_FLOAT32;
+        default:             return -1;
+    }
+}
+
+/* Create NumPy array for aggregator buffer */
+PyObject* create_numpy_array_for_buffer(size_t size, int dtype, void* data, size_t element_size) {
+    int np_dtype = buffer_dtype_to_numpy(dtype);
+    if (np_dtype < 0) {
+        PyErr_SetString(PyExc_RuntimeError, "Invalid dtype for NumPy conversion");
+        return NULL;
+    }
+    
+    npy_intp dims[1] = {size};
+    PyObject* array;
+    
+    if (data && size > 0) {
+        /* Create array as view of existing data */
+        array = PyArray_SimpleNewFromData(1, dims, np_dtype, data);
+        if (!array) {
+            return NULL;
+        }
+        
+        /* Make sure the array doesn't try to free our data */
+        PyArrayObject* arr = (PyArrayObject*)array;
+        PyArray_CLEARFLAGS(arr, NPY_ARRAY_OWNDATA);
+        
+    } else {
+        /* Create empty array */
+        array = PyArray_SimpleNew(1, dims, np_dtype);
+        if (!array) {
+            return NULL;
+        }
+    }
+    
+    /* Make array read-only */
+    PyArrayObject* arr = (PyArrayObject*)array;
+    PyArray_CLEARFLAGS(arr, NPY_ARRAY_WRITEABLE);
+    
+    return array;
+}
+

@@ -1,17 +1,5 @@
 #include "core_python.h"
 #include "aggregator.h"
-#define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
-#include <numpy/arrayobject.h>
-
-/* Convert our dtype to NumPy type number */
-static int dtype_to_numpy(SampleDtype_t dtype) {
-    switch (dtype) {
-        case DTYPE_INT:      return NPY_INT32;
-        case DTYPE_UNSIGNED: return NPY_UINT32;
-        case DTYPE_FLOAT:    return NPY_FLOAT32;
-        default:       return -1;
-    }
-}
 
 /* Get arrays property - creates NumPy arrays on demand */
 PyObject* BpAggregatorPy_get_arrays(PyObject *self, void *closure) {
@@ -22,16 +10,30 @@ PyObject* BpAggregatorPy_get_arrays(PyObject *self, void *closure) {
     
     BpAggregatorPy_t *agg = (BpAggregatorPy_t *)self;
     
+    /* Return cached arrays if still valid */
+    if (!agg->arrays_dirty && agg->arrays_cache) {
+        Py_INCREF(agg->arrays_cache);
+        return agg->arrays_cache;
+    }
+    
     /* Create new list */
     PyObject* arrays = PyList_New(agg->n_buffers);
     if (!arrays) {
         return NULL;
     }
     
-    /* TODO: NumPy integration causes segfault - temporarily using lists */
+    /* Create NumPy array for each buffer using helper functions */
     for (size_t i = 0; i < agg->n_buffers; i++) {
-        /* Create empty Python list as placeholder for NumPy array */
-        PyObject* array = PyList_New(0);
+        AggregatorBuffer_t* buffer = &agg->buffers[i];
+        
+        /* Use NumPy helper function from core_python.c where import_array() was called */
+        PyObject* array = create_numpy_array_for_buffer(
+            buffer->size, 
+            buffer->dtype, 
+            buffer->data, 
+            buffer->element_size
+        );
+        
         if (!array) {
             Py_DECREF(arrays);
             return NULL;
@@ -40,6 +42,12 @@ PyObject* BpAggregatorPy_get_arrays(PyObject *self, void *closure) {
         /* Add to list */
         PyList_SET_ITEM(arrays, i, array);  /* Steals reference */
     }
+    
+    /* Update cache */
+    Py_XDECREF(agg->arrays_cache);
+    agg->arrays_cache = arrays;
+    agg->arrays_dirty = false;
+    Py_INCREF(arrays);
     
     return arrays;
 }

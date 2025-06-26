@@ -179,7 +179,7 @@ int BpAggregatorPy_init(PyObject *self, PyObject *args, PyObject *kwds) {
         return -1;
     }
     
-    if (dtype < 0 || dtype > 2) {
+    if (dtype < DTYPE_FLOAT || dtype > DTYPE_UNSIGNED) {
         PyErr_SetString(PyExc_ValueError, "Invalid dtype");
         return -1;
     }
