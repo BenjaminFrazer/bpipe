@@ -1,5 +1,9 @@
 #include "core_python.h"
-#include <string.h>
+#include <string.h>  
+#include <stddef.h>
+
+// Forward declaration
+PyObject* Bp_add_sink_py(PyObject *self, PyObject *args);
 
 PyObject* Bp_set_sink(PyObject *self, PyObject *args){
     // Backward compatibility wrapper for add_sink
@@ -143,7 +147,7 @@ static PyMethodDef BpFilterBase_methods[] = {
 
 static void Bp_dealoc(PyObject *self) {
     BpFilterPy_t* obj_py = (BpFilterPy_t*)self;
-    Bp_deallocate_buffers(&obj_py->base);
+    Bp_deallocate_buffers(&obj_py->base, 0);
     Py_TYPE(self)->tp_free(self);
 }
 
@@ -151,14 +155,15 @@ int Bp_init(PyObject *self, PyObject *args, PyObject *kwds){
     BpFilterPy_t* filter = (BpFilterPy_t*)self;
     Bp_Filter_t* dpipe = &filter->base;
     static char *kwlist[] = {"capacity_exp", "dtype" , NULL};
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "u|$i", kwlist,
-                                     &dpipe->buffer.ring_capacity_expo, &dpipe->dtype))
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "i|$i", kwlist,
+                                     (int*)&dpipe->input_buffers[0].ring_capacity_expo, &dpipe->dtype))
         return -1;
     dpipe->data_width = _data_size_lut[dpipe->dtype];
-    pthread_mutex_init(&dpipe->buffer.mutex, NULL);
-    pthread_cond_init(&dpipe->buffer.not_full, NULL);
-    pthread_cond_init(&dpipe->buffer.not_empty, NULL);
-    return Bp_allocate_buffers(dpipe);
+    pthread_mutex_init(&dpipe->input_buffers[0].mutex, NULL);
+    pthread_cond_init(&dpipe->input_buffers[0].not_full, NULL);
+    pthread_cond_init(&dpipe->input_buffers[0].not_empty, NULL);
+    Bp_EC result = Bp_allocate_buffers(dpipe, 0);
+    return (result == Bp_EC_OK) ? 0 : -1;
 }
 
 int BpFilterPy_init(PyObject *self, PyObject *args, PyObject *kwds){
@@ -214,7 +219,10 @@ void BpPyTransform(Bp_Filter_t* filt, Bp_Batch_t **input_batches, int n_inputs, 
         }
     }
     
-    PyObject* result = PyObject_CallMethod((PyObject*)filt, "transform", "OO", input_list, output_list);
+    // Find the Python object that contains this filter
+    // This is a simplified approach - in practice we'd need to store a reference
+    BpFilterPy_t* py_filter = (BpFilterPy_t*)((char*)filt - offsetof(BpFilterPy_t, base));
+    PyObject* result = PyObject_CallMethod((PyObject*)py_filter, "transform", "OO", input_list, output_list);
     if (result) Py_DECREF(result);
     Py_DECREF(input_list);
     Py_DECREF(output_list);

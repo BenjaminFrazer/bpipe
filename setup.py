@@ -1,7 +1,7 @@
 from setuptools import setup, Extension
 
-bpipe = Extension(
-    name="bpipe.core",  # <- matches your import path!
+dpcore = Extension(
+    name="dpcore",  # Direct module name
     sources=["bpipe/core.c", "bpipe/core_python.c"],
     extra_compile_args=["-g", "-O0"],
     extra_link_args=["-g"],
@@ -10,6 +10,6 @@ bpipe = Extension(
 setup(
     name="bpipe",
     version="0.0.1",
-    packages=["test_harness"],
-    ext_modules=[bpipe],
+    packages=["bpipe"],
+    ext_modules=[dpcore],
 )
