@@ -106,12 +106,15 @@ typedef struct _DataPipe {
         OverflowBehaviour_t overflow_behaviour;
         SampleDtype_t dtype;
         pthread_t worker_thread;
+        pthread_mutex_t filter_mutex;  // Protects sinks/sources arrays
         Bp_BatchBuffer_t input_buffers[MAX_SOURCES];
 } Bp_Filter_t;
 
 
 Bp_EC BpFilter_Init(Bp_Filter_t *filter, TransformFcn_t transform_function, int initial_state,
                    size_t buffer_size, int batch_size, int number_of_batches_exponent, int number_of_input_filters);
+
+Bp_EC BpFilter_Deinit(Bp_Filter_t *filter);
 
 /* Multi-I/O connection functions */
 Bp_EC Bp_add_sink(Bp_Filter_t *filter, Bp_Filter_t *sink);
@@ -213,11 +216,23 @@ static inline bool Bp_full(Bp_Filter_t* dpipe, Bp_BatchBuffer_t* buf){
 static inline Bp_EC Bp_await_not_empty(Bp_Filter_t* dpipe, Bp_BatchBuffer_t* buf){
         Bp_EC ec = Bp_EC_OK;
         pthread_mutex_lock(&buf->mutex);
-        while (Bp_empty(buf)) {
-                if (pthread_cond_timedwait(&buf->not_empty, &buf->mutex, &dpipe->timeout) == ETIMEDOUT) {
-                        ec = Bp_EC_TIMEOUT;
-                        break;
+        while (Bp_empty(buf) && dpipe->running) {
+                // Use a short timeout to check the running flag periodically
+                struct timespec timeout;
+                clock_gettime(CLOCK_REALTIME, &timeout);
+                timeout.tv_nsec += 100000000; // 100ms
+                if (timeout.tv_nsec >= 1000000000) {
+                    timeout.tv_sec += 1;
+                    timeout.tv_nsec -= 1000000000;
                 }
+                
+                if (pthread_cond_timedwait(&buf->not_empty, &buf->mutex, &timeout) == ETIMEDOUT) {
+                        // Timeout is expected - just check running flag again
+                        continue;
+                }
+        }
+        if (!dpipe->running) {
+                ec = Bp_EC_COMPLETE; // Signal filter is stopping
         }
         pthread_mutex_unlock(&buf->mutex);
         return ec;
@@ -226,11 +241,23 @@ static inline Bp_EC Bp_await_not_empty(Bp_Filter_t* dpipe, Bp_BatchBuffer_t* buf
 static inline Bp_EC Bp_await_not_full(Bp_Filter_t* dpipe, Bp_BatchBuffer_t* buf){
         Bp_EC ec = Bp_EC_OK;
         pthread_mutex_lock(&buf->mutex);
-        while (Bp_full(dpipe, buf)) {
-                if (pthread_cond_timedwait(&buf->not_full, &buf->mutex, &dpipe->timeout) == ETIMEDOUT) {
-                        ec = Bp_EC_TIMEOUT;
-                        break;
+        while (Bp_full(dpipe, buf) && dpipe->running) {
+                // Use a short timeout to check the running flag periodically
+                struct timespec timeout;
+                clock_gettime(CLOCK_REALTIME, &timeout);
+                timeout.tv_nsec += 100000000; // 100ms
+                if (timeout.tv_nsec >= 1000000000) {
+                    timeout.tv_sec += 1;
+                    timeout.tv_nsec -= 1000000000;
                 }
+                
+                if (pthread_cond_timedwait(&buf->not_full, &buf->mutex, &timeout) == ETIMEDOUT) {
+                        // Timeout is expected - just check running flag again
+                        continue;
+                }
+        }
+        if (!dpipe->running) {
+                ec = Bp_EC_COMPLETE; // Signal filter is stopping
         }
         pthread_mutex_unlock(&buf->mutex);
         return ec;

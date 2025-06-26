@@ -1,6 +1,7 @@
 #include "core.h"
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
  Bp_EC Bp_Filter_Init(Bp_Filter_t *filter, TransformFcn_t transform_function, int initial_state, 
                      size_t buffer_size_expo, int batch_size_expo, int number_of_batches_exponent, int number_of_input_filters) {
@@ -18,6 +19,15 @@
     filter->overflow_behaviour = OVERFLOW_BLOCK; // Default to blocking behavior
     memset(filter->sources, 0, sizeof(filter->sources));
     memset(filter->sinks, 0, sizeof(filter->sinks));
+    
+    // Initialize timeout to a reasonable value (1 second)
+    filter->timeout.tv_sec = time(NULL) + 1;
+    filter->timeout.tv_nsec = 0;
+    
+    // Initialize filter mutex
+    if (pthread_mutex_init(&filter->filter_mutex, NULL) != 0) {
+        return BP_ERROR_MUTEX_INIT_FAIL;
+    }
     
     return Bp_EC_OK;
 }
@@ -44,6 +54,36 @@ Bp_EC BpFilter_Init(Bp_Filter_t *filter, TransformFcn_t transform_function, int 
     filter->transform = transform_function;
     filter->running = false;
     filter->overflow_behaviour = OVERFLOW_BLOCK; // Default to blocking behavior
+    
+    // Initialize timeout to a reasonable value (1 second)
+    filter->timeout.tv_sec = time(NULL) + 1;
+    filter->timeout.tv_nsec = 0;
+    
+    // Initialize filter mutex
+    if (pthread_mutex_init(&filter->filter_mutex, NULL) != 0) {
+        return BP_ERROR_MUTEX_INIT_FAIL;
+    }
+    return Bp_EC_OK;
+}
+
+Bp_EC BpFilter_Deinit(Bp_Filter_t *filter) {
+    if (!filter) return Bp_EC_NOSPACE;
+    
+    // Make sure filter is stopped first
+    if (filter->running) {
+        Bp_Filter_Stop(filter);
+    }
+    
+    // Destroy the filter mutex
+    pthread_mutex_destroy(&filter->filter_mutex);
+    
+    // Deinitialize input buffers
+    for (int i = 0; i < MAX_SOURCES; i++) {
+        if (filter->input_buffers[i].data_ring != NULL) {
+            Bp_BatchBuffer_Deinit(&filter->input_buffers[i]);
+        }
+    }
+    
     return Bp_EC_OK;
 }
 
@@ -162,6 +202,7 @@ void* Bp_Worker(void* filter) {
         }
         
         // Allocate output batches for sinks
+        pthread_mutex_lock(&f->filter_mutex);
         for (int i = 0; i < f->n_sinks && i < MAX_SINKS; i++) {
             if (f->sinks[i]) {
                 output_batches[i] = &output_batch_storage[i];
@@ -174,6 +215,7 @@ void* Bp_Worker(void* filter) {
                 }
             }
         }
+        pthread_mutex_unlock(&f->filter_mutex);
         
         // Handle case with no input buffers (source filters like signal generators)
         if (!uses_input_buffers) {
@@ -233,6 +275,7 @@ void* Bp_Worker(void* filter) {
             }
             
             // Handle output buffer management
+            pthread_mutex_lock(&f->filter_mutex);
             for (int i = 0; i < f->n_sinks; i++) {
                 if (output_batches[i] && f->sinks[i] && 
                     output_batches[i]->head >= output_batches[i]->capacity) {
@@ -246,15 +289,18 @@ void* Bp_Worker(void* filter) {
                     }
                 }
             }
+            pthread_mutex_unlock(&f->filter_mutex);
         }
         
         // Send completion signals to all sinks
+        pthread_mutex_lock(&f->filter_mutex);
         for (int i = 0; i < f->n_sinks; i++) {
             if (f->sinks[i]) {
                 Bp_Batch_t done = { .ec = Bp_EC_COMPLETE };
                 Bp_submit_batch(f->sinks[i], &f->sinks[i]->input_buffers[0], &done);
             }
         }
+        pthread_mutex_unlock(&f->filter_mutex);
         
         return NULL;
 }
@@ -264,10 +310,16 @@ void* Bp_Worker(void* filter) {
 /* Multi-I/O connection functions */
 Bp_EC Bp_add_sink(Bp_Filter_t *filter, Bp_Filter_t *sink) {
     if (!filter || !sink) return Bp_EC_NOSPACE;
-    if (filter->n_sinks >= MAX_SINKS) return Bp_EC_NOSPACE;
+    
+    pthread_mutex_lock(&filter->filter_mutex);
+    if (filter->n_sinks >= MAX_SINKS) {
+        pthread_mutex_unlock(&filter->filter_mutex);
+        return Bp_EC_NOSPACE;
+    }
     
     filter->sinks[filter->n_sinks] = sink;
     filter->n_sinks++;
+    pthread_mutex_unlock(&filter->filter_mutex);
     
     return Bp_EC_OK;
 }
@@ -285,6 +337,7 @@ Bp_EC Bp_add_source(Bp_Filter_t *filter, Bp_Filter_t *source) {
 Bp_EC Bp_remove_sink(Bp_Filter_t *filter, Bp_Filter_t *sink) {
     if (!filter || !sink) return Bp_EC_NOSPACE;
     
+    pthread_mutex_lock(&filter->filter_mutex);
     for (int i = 0; i < filter->n_sinks; i++) {
         if (filter->sinks[i] == sink) {
             // Shift remaining sinks
@@ -293,10 +346,12 @@ Bp_EC Bp_remove_sink(Bp_Filter_t *filter, Bp_Filter_t *sink) {
             }
             filter->sinks[filter->n_sinks - 1] = NULL;
             filter->n_sinks--;
+            pthread_mutex_unlock(&filter->filter_mutex);
             
             return Bp_EC_OK;
         }
     }
+    pthread_mutex_unlock(&filter->filter_mutex);
     return Bp_EC_NOINPUT; // Sink not found
 }
 
