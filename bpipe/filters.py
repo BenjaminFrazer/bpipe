@@ -271,3 +271,144 @@ class CustomFilter:
     def transform_func(self) -> Callable:
         """Get the transform function."""
         return self._transform_func
+
+
+class PlotSink:
+    """Matplotlib plotting sink built on top of the aggregator class."""
+    
+    def __init__(self, max_capacity_bytes: int = 1024*1024*1024, max_points: int = 10000, **kwargs):
+        """
+        Initialize plotting sink.
+        
+        Args:
+            max_capacity_bytes: Maximum memory per buffer (default 1GB)
+            max_points: Maximum points to plot for performance (default 10k)
+            **kwargs: Additional arguments passed to BpAggregatorPy
+        """
+        self.max_points = max_points
+        self._running = False
+        
+        # Create underlying aggregator  
+        if dpcore is None:
+            self._aggregator = None
+        else:
+            self._aggregator = dpcore.BpAggregatorPy(max_capacity_bytes=max_capacity_bytes, **kwargs)
+    
+    def plot(self, fig=None, title: str = "Signal Plot", xlabel: str = "Sample Index", 
+             ylabel: str = "Amplitude", **plot_kwargs):
+        """
+        Create a matplotlib plot of all aggregated data.
+        
+        Args:
+            fig: Optional matplotlib Figure object. If None, creates new figure.
+            title: Plot title
+            xlabel: X-axis label (defaults to "Sample Index")
+            ylabel: Y-axis label  
+            **plot_kwargs: Additional arguments passed to plt.plot()
+            
+        Returns:
+            matplotlib Figure object
+            
+        Raises:
+            ImportError: If matplotlib is not available
+            RuntimeError: If no data has been aggregated
+        """
+        try:
+            import matplotlib.pyplot as plt
+        except ImportError:
+            raise ImportError("matplotlib is required for plotting. Install with: pip install matplotlib")
+        
+        if self._aggregator is None:
+            raise RuntimeError("dpcore module not available")
+            
+        # Get aggregated data arrays
+        arrays = self._aggregator.arrays
+        if not arrays or all(len(arr) == 0 for arr in arrays):
+            raise RuntimeError("No data available for plotting. Ensure data sources are connected and running.")
+        
+        # Create figure if not provided
+        if fig is None:
+            fig, ax = plt.subplots(figsize=(10, 6))
+        else:
+            ax = fig.gca() if len(fig.axes) == 0 else fig.axes[0]
+        
+        # Plot each input buffer as a separate trace
+        colors = plt.cm.tab10(np.linspace(0, 1, len(arrays)))
+        
+        for i, data_array in enumerate(arrays):
+            if len(data_array) == 0:
+                continue
+                
+            # Create sample index x-axis
+            x_data = np.arange(len(data_array))
+            y_data = data_array
+            
+            # Downsample if data is too large for performance
+            if len(data_array) > self.max_points:
+                step = len(data_array) // self.max_points
+                x_data = x_data[::step]
+                y_data = y_data[::step]
+            
+            # Plot the trace with auto-generated color
+            ax.plot(x_data, y_data, color=colors[i], label=f'Input {i}', **plot_kwargs)
+        
+        # Configure plot appearance
+        ax.set_title(title)
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(ylabel)
+        ax.grid(True, alpha=0.3)
+        
+        # Add legend if multiple traces
+        if len([arr for arr in arrays if len(arr) > 0]) > 1:
+            ax.legend()
+        
+        # Adjust layout and return figure
+        fig.tight_layout()
+        return fig
+    
+    def start(self) -> None:
+        """Start the aggregator's worker thread."""
+        if self._aggregator and not self._running:
+            self._aggregator.run()
+            self._running = True
+    
+    def stop(self) -> None:
+        """Stop the aggregator's worker thread.""" 
+        if self._aggregator and self._running:
+            self._aggregator.stop()
+            self._running = False
+    
+    def add_source(self, source_filter: Union['BuiltinFilter', 'CustomFilter']) -> None:
+        """
+        Connect a filter's output to this sink's input.
+        
+        Args:
+            source_filter: Filter to receive data from
+        """
+        if self._aggregator:
+            source_base = source_filter._get_base_filter()
+            source_base.add_sink(self._aggregator)
+    
+    def clear(self) -> None:
+        """Clear all aggregated data."""
+        if self._aggregator:
+            self._aggregator.clear()
+    
+    @property
+    def arrays(self):
+        """Get the current aggregated data arrays."""
+        if self._aggregator:
+            return self._aggregator.arrays
+        return []
+    
+    @property
+    def running(self) -> bool:
+        """Check if aggregator is currently running."""
+        return self._running
+    
+    @property
+    def sizes(self):
+        """Get the sizes of all aggregated buffers."""
+        if self._aggregator:
+            return self._aggregator.get_sizes()
+        return []

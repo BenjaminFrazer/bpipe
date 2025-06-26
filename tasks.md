@@ -43,6 +43,25 @@
 - each numpy vector will be dynamically re-sized as needed up to a max capacity.
 - the filter will expose the `max_capacity` parameter in it's constructor as a kwarg. Default to a nice round power of 2 around 1Gb.
 
+## CSV_SOURCE
+
+## PLOT_SINK
+
+### Goal
+- build a pure python matplotlib plotting sink on-top of the agregator class.
+
+### Behaviour
+- filter should expose a `plot()` method which will create a full matplotlib time-domain plot each enabled input buffer.
+- all traces should be on the same axes.
+- plot can optionally take an existing figure handle for integration with gui's but will create a new window if not provided.
+
+## PANDAS_SINK
+
+- data is read only
+- all transforms copy the data
+- does not support the inplace method
+
+
 ## ENHANCED_AGREGATORS
 1. Circular Buffer Mode
 - Option to wrap around when max_capacity reached
@@ -57,11 +76,11 @@
 - Optional compression for stored data
 - Trade CPU for memory efficiency
 
+
 ## ABSTRACTED_BATCH_ACESSORS
 
 ### Goal
 - I would preffer to abstract the interface to filters so that API's for A) retrieving data B) joining filters does not require passing pointers to buffers, rather simply reffering to the index of the input i.e. input 0, 1, 2 etc.
-- 
 
 ## C_TEST_HARNESS 
 - There will be many pure c based filters.
