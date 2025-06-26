@@ -11,3 +11,13 @@ test_sentinel
 *.i
 *.s
 tmp/
+build/
+*.so
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+*.egg
