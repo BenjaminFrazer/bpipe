@@ -56,10 +56,13 @@ Expand the architecture of the filter class to support a multi-input/multi outpu
     - `__de_init__`
 wrapping a customized c filter struct.
 - This
-- , highly configurable c based python wrapper should be exposed.
+- single highly configurable c based python filter should be exposed.
+- decide whether it's better to select and configure filter from a factory class method or from __init__ function.
 - This should take the form of a factory as oposed to a class instance.
-- 
 
+### considerations
+- create python stubs for auto-completion
+- create a basic working python example for how to use the python API.
 
 ## C_TEST_HARNESS 
 - Propose Test framework for Pure C based filters.

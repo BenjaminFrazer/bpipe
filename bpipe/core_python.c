@@ -147,7 +147,7 @@ static PyMethodDef BpFilterBase_methods[] = {
 
 static void Bp_dealoc(PyObject *self) {
     BpFilterPy_t* obj_py = (BpFilterPy_t*)self;
-    Bp_deallocate_buffers(&obj_py->base, 0);
+    BpFilter_Deinit(&obj_py->base);
     Py_TYPE(self)->tp_free(self);
 }
 
