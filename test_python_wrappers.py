@@ -5,164 +5,101 @@ Test script for Python wrapper implementation.
 Tests basic functionality of the FilterFactory and CustomFilter classes.
 """
 
-import sys
+import pytest
+import numpy as np
 import traceback
+
 
 def test_imports():
     """Test that all modules can be imported."""
-    print("Testing imports...")
-    try:
-        import dpcore
-        print("  ✓ dpcore imported successfully")
-        
-        from bpipe.filters import FilterFactory, CustomFilter
-        print("  ✓ FilterFactory and CustomFilter imported successfully")
-        
-        from bpipe import FilterFactory as FF, CustomFilter as CF
-        print("  ✓ Main package imports working")
-        return True
-    except Exception as e:
-        print(f"  ✗ Import failed: {e}")
-        traceback.print_exc()
-        return False
+    import dpcore
+    from bpipe.filters import FilterFactory, CustomFilter
+    from bpipe import FilterFactory as FF, CustomFilter as CF
+    
+    # If we get here without exceptions, imports are successful
+    assert dpcore is not None
+    assert FilterFactory is not None
+    assert CustomFilter is not None
+    assert FF is FilterFactory
+    assert CF is CustomFilter
+
 
 def test_filter_creation():
     """Test creating filters with factory pattern."""
-    print("\nTesting filter creation...")
-    try:
-        from bpipe.filters import FilterFactory, CustomFilter
-        import numpy as np
-        
-        # Test signal generator creation
-        signal_gen = FilterFactory.signal_generator(
-            waveform='sawtooth',
-            frequency=0.01,
-            amplitude=100.0
-        )
-        print(f"  ✓ Signal generator created: {signal_gen.filter_type}")
-        print(f"    Config: {signal_gen.config}")
-        
-        # Test passthrough creation
-        passthrough = FilterFactory.passthrough()
-        print(f"  ✓ Passthrough created: {passthrough.filter_type}")
-        
-        # Test custom filter creation
-        def simple_transform(inputs):
-            if not inputs or inputs[0] is None:
-                return [np.array([])]
-            return [inputs[0] * 2]  # Simple scaling
-        
-        custom = CustomFilter(simple_transform)
-        print("  ✓ Custom filter created")
-        
-        return True
-    except Exception as e:
-        print(f"  ✗ Filter creation failed: {e}")
-        traceback.print_exc()
-        return False
+    from bpipe.filters import FilterFactory, CustomFilter
+    import numpy as np
+    
+    # Test signal generator creation
+    signal_gen = FilterFactory.signal_generator(
+        waveform='sawtooth',
+        frequency=0.01,
+        amplitude=100.0
+    )
+    assert signal_gen.filter_type == 'signal_generator'
+    assert signal_gen.config['waveform'] == 3  # 3 is the enum value for sawtooth
+    assert signal_gen.config['frequency'] == 0.01
+    assert signal_gen.config['amplitude'] == 100.0
+    
+    # Test passthrough creation
+    passthrough = FilterFactory.passthrough()
+    assert passthrough.filter_type == 'passthrough'
+    
+    # Test custom filter creation
+    def simple_transform(inputs):
+        if not inputs or inputs[0] is None:
+            return [np.array([])]
+        return [inputs[0] * 2]  # Simple scaling
+    
+    custom = CustomFilter(simple_transform)
+    assert custom is not None
+
 
 def test_base_filter():
     """Test basic dpcore filter functionality."""
-    print("\nTesting base filter functionality...")
-    try:
-        import dpcore
-        
-        # Create base filter
-        base_filter = dpcore.BpFilterBase(capacity_exp=10, dtype=2)
-        print("  ✓ Base filter created")
-        
-        # Test Python filter
-        py_filter = dpcore.BpFilterPy(capacity_exp=10, dtype=2)  
-        print("  ✓ Python filter created")
-        
-        return True
-    except Exception as e:
-        print(f"  ✗ Base filter test failed: {e}")
-        traceback.print_exc()
-        return False
+    import dpcore
+    
+    # Create base filter
+    base_filter = dpcore.BpFilterBase(capacity_exp=10, dtype=2)
+    assert base_filter is not None
+    
+    # Test Python filter
+    py_filter = dpcore.BpFilterPy(capacity_exp=10, dtype=2)
+    assert py_filter is not None
+
 
 def test_filter_connections():
     """Test connecting filters together."""
-    print("\nTesting filter connections...")
-    try:
-        from bpipe.filters import FilterFactory
-        
-        # Create two filters
-        gen = FilterFactory.signal_generator('sine', 0.01, 50.0)
-        passthrough = FilterFactory.passthrough()
-        
-        # Test connection
-        gen.add_sink(passthrough)
-        print("  ✓ Filters connected successfully")
-        
-        # Test disconnection
-        gen.remove_sink(passthrough)
-        print("  ✓ Filters disconnected successfully")
-        
-        return True
-    except Exception as e:
-        print(f"  ✗ Filter connection test failed: {e}")
-        traceback.print_exc()
-        return False
+    from bpipe.filters import FilterFactory
+    
+    # Create two filters
+    gen = FilterFactory.signal_generator('sine', 0.01, 50.0)
+    passthrough = FilterFactory.passthrough()
+    
+    # Test connection
+    gen.add_sink(passthrough)
+    # No direct way to assert connection, but no exception means success
+    
+    # Test disconnection
+    gen.remove_sink(passthrough)
+    # No direct way to assert disconnection, but no exception means success
 
-def test_invalid_inputs():
-    """Test handling of invalid inputs."""
-    print("\nTesting invalid input handling...")
-    try:
-        from bpipe.filters import FilterFactory
-        
-        # Test invalid waveform
-        try:
-            FilterFactory.signal_generator('invalid_wave', 0.01, 50.0)
-            print("  ✗ Should have failed with invalid waveform")
-            return False
-        except ValueError:
-            print("  ✓ Invalid waveform correctly rejected")
-        
-        # Test invalid filter type
-        try:
-            from bpipe.filters import BuiltinFilter
-            BuiltinFilter('invalid_type', {})
-            print("  ✗ Should have failed with invalid filter type")
-            return False
-        except ValueError:
-            print("  ✓ Invalid filter type correctly rejected")
-        
-        return True
-    except Exception as e:
-        print(f"  ✗ Invalid input test failed: {e}")
-        traceback.print_exc()
-        return False
 
-def main():
-    """Run all tests."""
-    print("Python Wrapper Implementation Tests")
-    print("=" * 40)
+def test_invalid_waveform():
+    """Test handling of invalid waveform input."""
+    from bpipe.filters import FilterFactory
     
-    tests = [
-        test_imports,
-        test_base_filter,
-        test_filter_creation,
-        test_filter_connections, 
-        test_invalid_inputs,
-    ]
+    with pytest.raises(ValueError):
+        FilterFactory.signal_generator('invalid_wave', 0.01, 50.0)
+
+
+def test_invalid_filter_type():
+    """Test handling of invalid filter type."""
+    from bpipe.filters import BuiltinFilter
     
-    passed = 0
-    total = len(tests)
-    
-    for test in tests:
-        if test():
-            passed += 1
-    
-    print(f"\n{'='*40}")
-    print(f"Test Results: {passed}/{total} tests passed")
-    
-    if passed == total:
-        print("🎉 All tests passed!")
-        return 0
-    else:
-        print(f"❌ {total - passed} test(s) failed")
-        return 1
+    with pytest.raises(ValueError):
+        BuiltinFilter('invalid_type', {})
+
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # Allow running with python directly
+    pytest.main([__file__, "-v"])
