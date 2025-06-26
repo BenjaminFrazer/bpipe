@@ -3,6 +3,12 @@
 #include <string.h>  
 #include <stddef.h>
 
+/* Include waveform constants from signal_gen.h without full inclusion */
+#define BP_WAVE_SQUARE   0
+#define BP_WAVE_SINE     1
+#define BP_WAVE_TRIANGLE 2
+#define BP_WAVE_SAWTOOTH 3
+
 // Forward declaration
 PyObject* Bp_add_sink_py(PyObject *self, PyObject *args);
 
@@ -289,6 +295,12 @@ PyMODINIT_FUNC PyInit_dpcore(void) {
     PyModule_AddIntConstant(m, "DTYPE_FLOAT", DTYPE_FLOAT);
     PyModule_AddIntConstant(m, "DTYPE_INT", DTYPE_INT);
     PyModule_AddIntConstant(m, "DTYPE_UNSIGNED", DTYPE_UNSIGNED);
+    
+    /* Add waveform constants */
+    PyModule_AddIntConstant(m, "BP_WAVE_SQUARE", BP_WAVE_SQUARE);
+    PyModule_AddIntConstant(m, "BP_WAVE_SINE", BP_WAVE_SINE);
+    PyModule_AddIntConstant(m, "BP_WAVE_TRIANGLE", BP_WAVE_TRIANGLE);
+    PyModule_AddIntConstant(m, "BP_WAVE_SAWTOOTH", BP_WAVE_SAWTOOTH);
     
     return m;
 }

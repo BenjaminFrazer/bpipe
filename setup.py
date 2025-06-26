@@ -6,10 +6,11 @@ dpcore = Extension(
         "bpipe/core.c", 
         "bpipe/core_python.c",
         "bpipe/aggregator.c",
-        "bpipe/aggregator_python.c"
+        "bpipe/aggregator_python.c",
+        "bpipe/signal_gen.c"
     ],
     extra_compile_args=["-g", "-O0"],
-    extra_link_args=["-g"],
+    extra_link_args=["-g", "-lm"],  # Add math library for signal generation
 )
 
 setup(
