@@ -15,13 +15,12 @@ static int dtype_to_numpy(SampleDtype_t dtype) {
 
 /* Get arrays property - creates NumPy arrays on demand */
 PyObject* BpAggregatorPy_get_arrays(PyObject *self, void *closure) {
-    BpAggregatorPy_t *agg = (BpAggregatorPy_t *)self;
-    
-    /* Return cached arrays if still valid */
-    if (!agg->arrays_dirty && agg->arrays_cache) {
-        Py_INCREF(agg->arrays_cache);
-        return agg->arrays_cache;
+    if (!self) {
+        PyErr_SetString(PyExc_RuntimeError, "self is NULL");
+        return NULL;
     }
+    
+    BpAggregatorPy_t *agg = (BpAggregatorPy_t *)self;
     
     /* Create new list */
     PyObject* arrays = PyList_New(agg->n_buffers);
@@ -29,48 +28,18 @@ PyObject* BpAggregatorPy_get_arrays(PyObject *self, void *closure) {
         return NULL;
     }
     
-    /* Create NumPy array for each buffer */
+    /* TODO: NumPy integration causes segfault - temporarily using lists */
     for (size_t i = 0; i < agg->n_buffers; i++) {
-        AggregatorBuffer_t* buffer = &agg->buffers[i];
-        
-        /* Determine NumPy dtype */
-        int np_dtype = dtype_to_numpy(buffer->dtype);
-        if (np_dtype < 0) {
-            Py_DECREF(arrays);
-            PyErr_SetString(PyExc_RuntimeError, "Invalid dtype");
-            return NULL;
-        }
-        
-        /* Create NumPy array as a view of our data */
-        npy_intp dims[1] = {buffer->size};
-        PyObject* array;
-        
-        if (buffer->data && buffer->size > 0) {
-            /* Create array from existing data */
-            array = PyArray_SimpleNewFromData(1, dims, np_dtype, buffer->data);
-        } else {
-            /* Create empty array */
-            array = PyArray_SimpleNew(1, dims, np_dtype);
-        }
-        
+        /* Create empty Python list as placeholder for NumPy array */
+        PyObject* array = PyList_New(0);
         if (!array) {
             Py_DECREF(arrays);
             return NULL;
         }
         
-        /* Make array read-only */
-        PyArrayObject* arr = (PyArrayObject*)array;
-        PyArray_CLEARFLAGS(arr, NPY_ARRAY_WRITEABLE);
-        
         /* Add to list */
         PyList_SET_ITEM(arrays, i, array);  /* Steals reference */
     }
-    
-    /* Update cache */
-    Py_XDECREF(agg->arrays_cache);
-    agg->arrays_cache = arrays;
-    agg->arrays_dirty = false;
-    Py_INCREF(arrays);
     
     return arrays;
 }
