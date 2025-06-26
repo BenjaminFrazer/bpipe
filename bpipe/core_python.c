@@ -1,4 +1,5 @@
 #include "core_python.h"
+#include "aggregator.h"
 #include <string.h>  
 #include <stddef.h>
 
@@ -273,12 +274,22 @@ PyMODINIT_FUNC PyInit_dpcore(void) {
         return NULL;
     if (PyType_Ready(&BpFilterPy) < 0)
         return NULL;
+    if (PyType_Ready(&BpAggregatorPy) < 0)
+        return NULL;
     PyObject *m = PyModule_Create(&dpcore_module);
     if (!m) return NULL;
     Py_INCREF(&BpFilterBase);
     Py_INCREF(&BpFilterPy);
+    Py_INCREF(&BpAggregatorPy);
     PyModule_AddObject(m, "BpFilterBase", (PyObject *)&BpFilterBase);
     PyModule_AddObject(m, "BpFilterPy", (PyObject *)&BpFilterPy);
+    PyModule_AddObject(m, "BpAggregatorPy", (PyObject *)&BpAggregatorPy);
+    
+    /* Add dtype constants */
+    PyModule_AddIntConstant(m, "DTYPE_FLOAT", DTYPE_FLOAT);
+    PyModule_AddIntConstant(m, "DTYPE_INT", DTYPE_INT);
+    PyModule_AddIntConstant(m, "DTYPE_UNSIGNED", DTYPE_UNSIGNED);
+    
     return m;
 }
 

@@ -2,7 +2,12 @@ from setuptools import setup, Extension
 
 dpcore = Extension(
     name="dpcore",  # Direct module name
-    sources=["bpipe/core.c", "bpipe/core_python.c"],
+    sources=[
+        "bpipe/core.c", 
+        "bpipe/core_python.c",
+        "bpipe/aggregator.c",
+        "bpipe/aggregator_python.c"
+    ],
     extra_compile_args=["-g", "-O0"],
     extra_link_args=["-g"],
 )

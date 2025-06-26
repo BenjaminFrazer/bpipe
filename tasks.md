@@ -43,7 +43,30 @@
 - each numpy vector will be dynamically re-sized as needed up to a max capacity.
 - the filter will expose the `max_capacity` parameter in it's constructor as a kwarg. Default to a nice round power of 2 around 1Gb.
 
+## ENHANCED_AGREGATORS
+1. Circular Buffer Mode
+- Option to wrap around when max_capacity reached
+- Useful for real-time visualization with sliding windows
+2. Batch Callback API
+- Allow Python callbacks on batch arrival
+- Enable streaming processing without full aggregation
+3. Memory-Mapped Mode
+- Option to back arrays with memory-mapped files
+- Handles datasets larger than RAM
+4. Compression Support
+- Optional compression for stored data
+- Trade CPU for memory efficiency
+
+## ABSTRACTED_BATCH_ACESSORS
+
+### Goal
+- I would preffer to abstract the interface to filters so that API's for A) retrieving data B) joining filters does not require passing pointers to buffers, rather simply reffering to the index of the input i.e. input 0, 1, 2 etc.
+- 
+
 ## C_TEST_HARNESS 
+- There will be many pure c based filters.
+- Once initialised, much of the core interface should be symilar for every type of c filter i.e.:
+    - 
 - Propose Test framework for Pure C based filters.
 
 ### Goals

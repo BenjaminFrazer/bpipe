@@ -17,6 +17,7 @@ int BpFilterPy_init(PyObject *self, PyObject *args, PyObject *kwds);
 PyObject* Bp_set_sink(PyObject *self, PyObject *args);
 PyObject* Bp_start(PyObject* self, PyObject *args);
 PyObject* Bp_stop(PyObject* self, PyObject *args);
+PyObject* Bp_remove_sink_py(PyObject *self, PyObject *args);
 
 PyObject* BpFilterPy_transform(PyObject *self, PyObject *args);
 void BpPyTransform(Bp_Filter_t* filt, Bp_Batch_t **input_batches, int n_inputs, Bp_Batch_t **output_batches, int n_outputs);
