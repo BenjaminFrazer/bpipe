@@ -202,7 +202,8 @@ class CustomFilter:
                     super().__init__(*args, **kwargs)
                     self.user_func = user_func
                 
-                def transform(self, outputs, inputs, timestamp):
+                def transform(self, inputs, outputs):
+                    # C code calls transform(input_list, output_list) - no timestamp
                     # Call the user transform function
                     try:
                         results = self.user_func(inputs)

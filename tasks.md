@@ -43,6 +43,9 @@
 - each numpy vector will be dynamically re-sized as needed up to a max capacity.
 - the filter will expose the `max_capacity` parameter in it's constructor as a kwarg. Default to a nice round power of 2 around 1Gb.
 
+
+## SAWTOOTH_DEMO
+
 ## TIMESTAMP_AGREGATOR
 - Same requirements as task:PYFILT_AGREGATOR but add the requirement to save time-stamps with every sample
 - two contiguous arrays of equal length
