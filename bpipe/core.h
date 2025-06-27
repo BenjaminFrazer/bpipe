@@ -71,7 +71,7 @@ typedef struct _Batch {
 typedef struct _DataPipe Bp_Filter_t;
 
 typedef void(TransformFcn_t)(Bp_Filter_t* filt, Bp_Batch_t** input_batches,
-                             int n_inputs, Bp_Batch_t** output_batches,
+                             int n_inputs, Bp_Batch_t *const *output_batches,
                              int n_outputs);
 
 typedef struct _err_info {
@@ -121,8 +121,8 @@ Bp_EC BpFilter_Deinit(Bp_Filter_t* filter);
 /* Multi-I/O connection functions */
 Bp_EC Bp_add_sink(Bp_Filter_t* filter, Bp_Filter_t* sink);
 Bp_EC Bp_add_source(Bp_Filter_t* filter, Bp_Filter_t* source);
-Bp_EC Bp_remove_sink(Bp_Filter_t* filter, Bp_Filter_t* sink);
-Bp_EC Bp_remove_source(Bp_Filter_t* filter, Bp_Filter_t* source);
+Bp_EC Bp_remove_sink(Bp_Filter_t* filter, const Bp_Filter_t* sink);
+Bp_EC Bp_remove_source(Bp_Filter_t* filter, const Bp_Filter_t* source);
 
 Bp_EC Bp_BatchBuffer_Init(Bp_BatchBuffer_t* buffer, size_t batch_size,
                           size_t number_of_batches);
@@ -308,7 +308,7 @@ static inline Bp_Batch_t Bp_allocate(Bp_Filter_t* dpipe, Bp_BatchBuffer_t* buf)
 }
 
 static inline void Bp_submit_batch(Bp_Filter_t* dpipe, Bp_BatchBuffer_t* buf,
-                                   Bp_Batch_t* batch)
+                                   const Bp_Batch_t* batch)
 {
     size_t idx = buf->head & ((1u << buf->ring_capacity_expo) - 1u);
     buf->batch_ring[idx] = *batch;

@@ -211,7 +211,7 @@ PyObject* BpFilterPy_transform(PyObject* self, PyObject* args)
 }
 
 void BpPyTransform(Bp_Filter_t* filt, Bp_Batch_t** input_batches, int n_inputs,
-                   Bp_Batch_t** output_batches, int n_outputs)
+                   Bp_Batch_t *const *output_batches, int n_outputs)
 {
     PyGILState_STATE gstate = PyGILState_Ensure();
 

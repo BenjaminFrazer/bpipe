@@ -360,7 +360,7 @@ Bp_EC Bp_add_source(Bp_Filter_t *filter, Bp_Filter_t *source)
     return Bp_EC_OK;
 }
 
-Bp_EC Bp_remove_sink(Bp_Filter_t *filter, Bp_Filter_t *sink)
+Bp_EC Bp_remove_sink(Bp_Filter_t *filter, const Bp_Filter_t *sink)
 {
     if (!filter || !sink) return Bp_EC_NOSPACE;
 
@@ -382,7 +382,7 @@ Bp_EC Bp_remove_sink(Bp_Filter_t *filter, Bp_Filter_t *sink)
     return Bp_EC_NOINPUT;  // Sink not found
 }
 
-Bp_EC Bp_remove_source(Bp_Filter_t *filter, Bp_Filter_t *source)
+Bp_EC Bp_remove_source(Bp_Filter_t *filter, const Bp_Filter_t *source)
 {
     if (!filter || !source) return Bp_EC_NOSPACE;
 
@@ -449,7 +449,7 @@ Bp_EC Bp_Filter_Stop(Bp_Filter_t *filter)
 }
 
 void BpPassThroughTransform(Bp_Filter_t *filt, Bp_Batch_t **input_batches,
-                            int n_inputs, Bp_Batch_t **output_batches,
+                            int n_inputs, Bp_Batch_t *const *output_batches,
                             int n_outputs)
 {
     // Multi-I/O transform: copy first input to all outputs
@@ -482,7 +482,7 @@ void BpPassThroughTransform(Bp_Filter_t *filt, Bp_Batch_t **input_batches,
             }
         }
         // Update input batch tail once for all outputs
-        if (n_outputs > 0 && output_batches[0] != NULL) {
+        if (output_batches[0] != NULL) {
             size_t available = input_batch->head - input_batch->tail;
             size_t space =
                 output_batches[0]->capacity - output_batches[0]->head;

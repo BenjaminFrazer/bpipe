@@ -39,7 +39,7 @@ Bp_EC BpSignalGen_Init(Bp_SignalGen_t *gen, BpWaveform_t waveform,
 static inline float fracf(float x) { return x - floorf(x); }
 
 void BpSignalGenTransform(Bp_Filter_t *filt, Bp_Batch_t **input_batches,
-                          int n_inputs, Bp_Batch_t **output_batches,
+                          int n_inputs, Bp_Batch_t *const *output_batches,
                           int n_outputs)
 {
     (void) input_batches;
