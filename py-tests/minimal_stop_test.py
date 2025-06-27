@@ -3,8 +3,9 @@
 Minimal test to understand the stop issue in the simplest case.
 """
 
-import dpcore
 import time
+
+import dpcore
 
 print("Creating basic filter...")
 filter1 = dpcore.BpFilterBase(capacity_exp=10, dtype=2)

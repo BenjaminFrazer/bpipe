@@ -3,8 +3,9 @@
 Test UserFilter creation specifically.
 """
 
-import sys
 import os
+import sys
+
 import numpy as np
 
 # Add bpipe to path
@@ -20,7 +21,7 @@ except ImportError as e:
 def test_bpfilterpy_creation():
     """Test BpFilterPy creation directly."""
     print("\n=== Test: Direct BpFilterPy Creation ===")
-    
+
     try:
         filter_py = dpcore.BpFilterPy(capacity_exp=10, dtype=dpcore.DTYPE_FLOAT)
         print("✓ BpFilterPy created directly")
@@ -34,17 +35,17 @@ def test_bpfilterpy_creation():
 def test_userfilter_creation():
     """Test UserFilter dynamic class creation."""
     print("\n=== Test: UserFilter Dynamic Class Creation ===")
-    
+
     try:
         def dummy_transform(inputs):
             return [np.array([1.0], dtype=np.float32)]
-        
+
         # Replicate the exact code from CustomFilter
         class UserFilter(dpcore.BpFilterPy):
             def __init__(self, user_func, *args, **kwargs):
                 super().__init__(*args, **kwargs)
                 self.user_func = user_func
-            
+
             def transform(self, inputs, outputs):
                 # C code calls transform(input_list, output_list) - no timestamp
                 try:
@@ -53,15 +54,15 @@ def test_userfilter_creation():
                     print(f"User function returned: {type(results)}")
                 except Exception as e:
                     print(f"Error in custom transform: {e}")
-        
+
         print("✓ UserFilter class defined")
-        
+
         # Try to create instance
         user_filter = UserFilter(dummy_transform, capacity_exp=10, dtype=dpcore.DTYPE_FLOAT)
         print("✓ UserFilter instance created")
-        
+
         return True
-        
+
     except Exception as e:
         print(f"✗ UserFilter creation failed: {e}")
         import traceback
@@ -71,39 +72,39 @@ def test_userfilter_creation():
 def test_userfilter_start():
     """Test starting UserFilter."""
     print("\n=== Test: UserFilter Start ===")
-    
+
     try:
         def dummy_transform(inputs):
             return [np.array([1.0], dtype=np.float32)]
-        
+
         class UserFilter(dpcore.BpFilterPy):
             def __init__(self, user_func, *args, **kwargs):
                 super().__init__(*args, **kwargs)
                 self.user_func = user_func
-            
+
             def transform(self, inputs, outputs):
                 try:
                     results = self.user_func(inputs)
-                    print(f"Transform called!")
+                    print("Transform called!")
                 except Exception as e:
                     print(f"Error in transform: {e}")
-        
+
         user_filter = UserFilter(dummy_transform, capacity_exp=10, dtype=dpcore.DTYPE_FLOAT)
         print("✓ UserFilter created")
-        
+
         print("Starting UserFilter...")
         user_filter.run()
         print("✓ UserFilter started")
-        
+
         import time
         time.sleep(0.1)
-        
+
         print("Stopping UserFilter...")
         user_filter.stop()
         print("✓ UserFilter stopped")
-        
+
         return True
-        
+
     except Exception as e:
         print(f"✗ UserFilter start failed: {e}")
         import traceback
@@ -114,13 +115,13 @@ def main():
     """Run UserFilter debug tests."""
     print("UserFilter Debug Tests")
     print("=" * 25)
-    
+
     tests = [
         test_bpfilterpy_creation,
         test_userfilter_creation,
         test_userfilter_start,
     ]
-    
+
     for i, test_func in enumerate(tests, 1):
         print(f"\nTest {i}/{len(tests)}: {test_func.__name__}")
         try:
@@ -133,8 +134,8 @@ def main():
         except Exception as e:
             print(f"💥 Test {i} CRASHED: {e}")
             return 1
-    
-    print(f"\n🎉 All UserFilter tests passed!")
+
+    print("\n🎉 All UserFilter tests passed!")
     return 0
 
 if __name__ == "__main__":

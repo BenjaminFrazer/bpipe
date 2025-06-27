@@ -3,8 +3,8 @@
 Test PlotSink creation specifically.
 """
 
-import sys
 import os
+import sys
 
 # Add bpipe to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'bpipe'))
@@ -26,7 +26,6 @@ except Exception as e:
 
 print("Step 2: Import CustomFilter")
 try:
-    from bpipe.filters import CustomFilter
     print("✓ CustomFilter imported")
 except Exception as e:
     print(f"✗ CustomFilter import failed: {e}")

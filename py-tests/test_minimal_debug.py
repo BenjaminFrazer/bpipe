@@ -3,8 +3,8 @@
 Ultra-minimal segfault debugging.
 """
 
-import sys
 import os
+import sys
 
 # Add bpipe to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'bpipe'))
@@ -46,7 +46,7 @@ try:
     def dummy_transform(inputs):
         import numpy as np
         return [np.array([1.0], dtype=np.float32)]
-    
+
     custom_filter = CustomFilter(dummy_transform)
     print("✓ CustomFilter created")
 except Exception as e:

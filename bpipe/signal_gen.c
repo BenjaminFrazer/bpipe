@@ -4,18 +4,21 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-Bp_EC BpSignalGen_Init(Bp_SignalGen_t* gen, BpWaveform_t waveform, float frequency, 
-                       float amplitude, float phase, float x_offset, 
-                       size_t buffer_size, int batch_size, int number_of_batches_exponent) {
+Bp_EC BpSignalGen_Init(Bp_SignalGen_t *gen, BpWaveform_t waveform,
+                       float frequency, float amplitude, float phase,
+                       float x_offset, size_t buffer_size, int batch_size,
+                       int number_of_batches_exponent)
+{
     if (!gen) return Bp_EC_NOSPACE;
-    
+
     // Initialize the base filter first
-    Bp_EC result = BpFilter_Init(&gen->base, BpSignalGenTransform, 0, 
-                                buffer_size, batch_size, number_of_batches_exponent, 0);
+    Bp_EC result =
+        BpFilter_Init(&gen->base, BpSignalGenTransform, 0, buffer_size,
+                      batch_size, number_of_batches_exponent, 0);
     if (result != Bp_EC_OK) {
         return result;
     }
-    
+
     // Initialize signal generator specific fields
     gen->waveform = waveform;
     gen->frequency = frequency;
@@ -23,44 +26,45 @@ Bp_EC BpSignalGen_Init(Bp_SignalGen_t* gen, BpWaveform_t waveform, float frequen
     gen->phase = phase;
     gen->x_offset = x_offset;
     gen->sample_idx = 0;
-    
+
     // Set up the base filter properties for signal generation
     gen->base.dtype = DTYPE_FLOAT;  // Signal generators typically output floats
     gen->base.data_width = sizeof(float);
-    // Signal generators don't need input buffers - they generate data internally
-    
+    // Signal generators don't need input buffers - they generate data
+    // internally
+
     return Bp_EC_OK;
 }
 
-static inline float fracf(float x)
-{
-    return x - floorf(x);
-}
+static inline float fracf(float x) { return x - floorf(x); }
 
-void BpSignalGenTransform(Bp_Filter_t* filt, Bp_Batch_t **input_batches, int n_inputs, Bp_Batch_t **output_batches, int n_outputs)
+void BpSignalGenTransform(Bp_Filter_t *filt, Bp_Batch_t **input_batches,
+                          int n_inputs, Bp_Batch_t **output_batches,
+                          int n_outputs)
 {
-    (void)input_batches;
-    (void)n_inputs;
-    Bp_SignalGen_t* gen = (Bp_SignalGen_t*)filt;
+    (void) input_batches;
+    (void) n_inputs;
+    Bp_SignalGen_t *gen = (Bp_SignalGen_t *) filt;
 
     // Generate signal for all output batches
     for (int out_idx = 0; out_idx < n_outputs; out_idx++) {
         if (output_batches[out_idx] == NULL) continue;
-        
+
         Bp_Batch_t *output_batch = output_batches[out_idx];
         size_t space = output_batch->capacity - output_batch->head;
-        float *dst_f = (float*)output_batch->data; /* may cast for computation */
-        unsigned *dst_u = (unsigned*)output_batch->data;
+        float *dst_f =
+            (float *) output_batch->data; /* may cast for computation */
+        unsigned *dst_u = (unsigned *) output_batch->data;
 
-        for(size_t i=0; i<space; ++i){
+        for (size_t i = 0; i < space; ++i) {
             float ph = gen->phase + gen->frequency * gen->sample_idx;
             float val = 0.0f;
-            switch(gen->waveform){
+            switch (gen->waveform) {
                 case BP_WAVE_SQUARE:
                     val = fracf(ph) < 0.5f ? gen->amplitude : -gen->amplitude;
                     break;
                 case BP_WAVE_SINE:
-                    val = gen->amplitude * sinf(2.0f * (float)M_PI * ph);
+                    val = gen->amplitude * sinf(2.0f * (float) M_PI * ph);
                     break;
                 case BP_WAVE_TRIANGLE: {
                     float fr = fracf(ph);
@@ -75,10 +79,10 @@ void BpSignalGenTransform(Bp_Filter_t* filt, Bp_Batch_t **input_batches, int n_i
                 }
             }
             val += gen->x_offset;
-            if(filt->dtype == DTYPE_UNSIGNED){
-                dst_u[output_batch->head] = (unsigned)val;
-            } else if(filt->dtype == DTYPE_INT){
-                ((int*)output_batch->data)[output_batch->head] = (int)val;
+            if (filt->dtype == DTYPE_UNSIGNED) {
+                dst_u[output_batch->head] = (unsigned) val;
+            } else if (filt->dtype == DTYPE_INT) {
+                ((int *) output_batch->data)[output_batch->head] = (int) val;
             } else {
                 dst_f[output_batch->head] = val;
             }

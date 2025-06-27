@@ -1,5 +1,6 @@
-from setuptools import setup, Extension
 import os
+
+from setuptools import Extension, setup
 
 # Ensure build directory exists
 os.makedirs("build", exist_ok=True)
@@ -7,7 +8,7 @@ os.makedirs("build", exist_ok=True)
 dpcore = Extension(
     name="dpcore",  # Direct module name
     sources=[
-        "bpipe/core.c", 
+        "bpipe/core.c",
         "bpipe/core_python.c",
         "bpipe/aggregator.c",
         "bpipe/aggregator_python.c",

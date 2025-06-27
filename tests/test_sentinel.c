@@ -1,7 +1,7 @@
-#include "../bpipe/core.h"
-#include "unity.h"
 #include <pthread.h>
 #include <string.h>
+#include "../bpipe/core.h"
+#include "unity.h"
 
 static void init_filter(Bp_Filter_t* f)
 {
@@ -20,16 +20,15 @@ static void init_filter(Bp_Filter_t* f)
     Bp_allocate_buffers(f, 0);
 }
 
-static void free_filter(Bp_Filter_t* f)
-{
-    Bp_deallocate_buffers(f, 0);
-}
+static void free_filter(Bp_Filter_t* f) { Bp_deallocate_buffers(f, 0); }
 
-void setUp(void) {
+void setUp(void)
+{
     // Setup code for each test
 }
 
-void tearDown(void) {
+void tearDown(void)
+{
     // Cleanup code for each test
 }
 
@@ -44,7 +43,7 @@ static void test_sentinel_propagation(void)
     Bp_Filter_Start(&b);
     Bp_Filter_Start(&a);
 
-    Bp_Batch_t done = { .ec = Bp_EC_COMPLETE };
+    Bp_Batch_t done = {.ec = Bp_EC_COMPLETE};
     Bp_submit_batch(&a, &a.input_buffers[0], &done);
 
     Bp_Filter_Stop(&a);

@@ -7,16 +7,16 @@ enabling high-performance real-time data processing pipelines.
 
 # Import all from dpcore C extension
 from dpcore import (
-    BpFilterBase,
-    BpFilterPy, 
-    BpAggregatorPy,
-    BP_WAVE_SQUARE,
-    BP_WAVE_SINE,
-    BP_WAVE_TRIANGLE,
     BP_WAVE_SAWTOOTH,
+    BP_WAVE_SINE,
+    BP_WAVE_SQUARE,
+    BP_WAVE_TRIANGLE,
     DTYPE_FLOAT,
     DTYPE_INT,
-    DTYPE_UNSIGNED
+    DTYPE_UNSIGNED,
+    BpAggregatorPy,
+    BpFilterBase,
+    BpFilterPy,
 )
 
 # Import simplified filters
@@ -30,7 +30,7 @@ __all__ = [
     "BpAggregatorPy",
     # Constants
     "BP_WAVE_SQUARE",
-    "BP_WAVE_SINE", 
+    "BP_WAVE_SINE",
     "BP_WAVE_TRIANGLE",
     "BP_WAVE_SAWTOOTH",
     "DTYPE_FLOAT",
