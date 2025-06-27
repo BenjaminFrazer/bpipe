@@ -50,7 +50,8 @@ This is a **modular real-time telemetry data processing framework** built in C w
 - **Compiler flags**: `-std=c99 -Wall -Werror -pthread -save-temps`
 
 ### Style guide
-- keep python code concise, simple and readable avoid try catches. 
+- avoid try catches
+- no uneccessary layers of abstraction
 
 ### Key Files
 - `bpipe/core.h`: Core data structures and inline functions
