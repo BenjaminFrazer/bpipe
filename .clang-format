@@ -1,0 +1,40 @@
+---
+# Based on Google style with project-specific adjustments
+BasedOnStyle: Google
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 80
+MaxEmptyLinesToKeep: 1
+
+# Braces
+BreakBeforeBraces: Linux
+BraceWrapping:
+  AfterFunction: true
+  AfterStruct: true
+
+# Spacing
+SpaceAfterCStyleCast: true
+SpaceBeforeParens: ControlStatements
+SpacesInParentheses: false
+
+# Alignment
+AlignConsecutiveDeclarations: false
+AlignConsecutiveAssignments: false
+AlignTrailingComments: true
+
+# Function calls
+AllowAllParametersOfDeclarationOnNextLine: true
+BinPackParameters: true
+BinPackArguments: true
+
+# Pointers and references
+PointerAlignment: Right
+ReferenceAlignment: Right
+
+# Comments
+ReflowComments: true
+
+# Includes
+SortIncludes: true
+IncludeBlocks: Preserve

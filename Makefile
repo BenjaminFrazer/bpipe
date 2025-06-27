@@ -10,7 +10,7 @@ UNITY_SRC=lib/Unity/src/unity.c
 TESTS=$(TEST_SRC_DIR)/test_core_filter.c $(TEST_SRC_DIR)/test_signal_gen.c $(TEST_SRC_DIR)/test_sentinel.c
 OBJ_FILES=$(SRC_DIR)/core.c $(SRC_DIR)/signal_gen.c
 
-.PHONY: all clean run
+.PHONY: all clean run lint lint-c lint-py lint-fix clang-format-check clang-format-fix clang-tidy-check cppcheck-check ruff-check ruff-format-check ruff-fix
 
 all: | $(BUILD_DIR)
 all: $(BUILD_DIR)/test_core_filter $(BUILD_DIR)/test_signal_gen $(BUILD_DIR)/test_sentinel
@@ -43,6 +43,46 @@ run: all
 	./$(BUILD_DIR)/test_core_filter
 	./$(BUILD_DIR)/test_signal_gen
 	./$(BUILD_DIR)/test_sentinel
+
+# Linting targets
+lint: lint-c lint-py
+
+lint-c: clang-format-check clang-tidy-check cppcheck-check
+
+lint-py: ruff-check ruff-format-check
+
+lint-fix: clang-format-fix ruff-fix
+
+# C linting targets
+clang-format-check:
+	@echo "Checking C code formatting..."
+	@clang-format --dry-run --Werror $(SRC_DIR)/*.c $(SRC_DIR)/*.h tests/*.c
+
+clang-format-fix:
+	@echo "Fixing C code formatting..."
+	@clang-format -i $(SRC_DIR)/*.c $(SRC_DIR)/*.h tests/*.c
+
+clang-tidy-check:
+	@echo "Running clang-tidy static analysis..."
+	@clang-tidy $(SRC_DIR)/*.c -- $(CFLAGS)
+
+cppcheck-check:
+	@echo "Running cppcheck static analysis..."
+	@cppcheck --enable=all --suppress=missingIncludeSystem --error-exitcode=1 $(SRC_DIR)/
+
+# Python linting targets
+ruff-check:
+	@echo "Running ruff linting..."
+	@python -m ruff check .
+
+ruff-format-check:
+	@echo "Checking Python code formatting..."
+	@python -m ruff format --check .
+
+ruff-fix:
+	@echo "Fixing Python code issues..."
+	@python -m ruff check --fix .
+	@python -m ruff format .
 
 hello:
 	echo "Hello, Make output test"

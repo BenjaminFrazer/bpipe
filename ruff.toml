@@ -1,0 +1,56 @@
+# Target Python 3.8+ (adjust based on your requirements)
+target-version = "py38"
+line-length = 88
+indent-width = 4
+
+# Include Python files in the project
+include = ["*.py", "bpipe/*.py", "py-tests/*.py", "demos/*.py"]
+
+# Exclude generated files and build artifacts
+exclude = [
+    ".git",
+    "__pycache__",
+    "build",
+    "dist",
+    "*.egg-info",
+    ".cache",
+    "tmp",
+    "lib",
+]
+
+[lint]
+# Enable comprehensive rule sets
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # Pyflakes
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "SIM", # flake8-simplify
+    "I",   # isort
+    "N",   # pep8-naming
+    "C90", # mccabe complexity
+]
+
+# Disable specific rules that may conflict with project style
+ignore = [
+    "E501",  # Line too long (handled by line-length setting)
+    "B904",  # raise-without-from-inside-except
+]
+
+# Allow unfixable violations
+unfixable = []
+
+[lint.per-file-ignores]
+# Test files can have longer lines and assert statements
+"py-tests/*.py" = ["E501", "B011"]
+"demos/*.py" = ["E501"]
+
+[format]
+# Use double quotes for strings
+quote-style = "double"
+# Use spaces instead of tabs
+indent-style = "space"
+# Respect existing line endings
+skip-magic-trailing-comma = false
+line-ending = "auto"

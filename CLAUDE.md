@@ -11,6 +11,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Build specific tests**: `make test_core_filter`, `make test_signal_gen`, `make test_sentinel`
 - **Build Python extension**: `python setup.py build_ext --inplace`
 
+### Linting and Code Quality
+- **Run all linting**: `make lint` (runs both C and Python checks)
+- **C code linting**: `make lint-c` (format check, static analysis, cppcheck)
+- **Python code linting**: `make lint-py` (ruff linting and format check)
+- **Auto-fix issues**: `make lint-fix` (fixes formatting and auto-fixable issues)
+- **Individual tools**: `make clang-format-check`, `make clang-tidy-check`, `make cppcheck-check`, `make ruff-check`
+
 ### Task Management
 - **Get task information**: `./get_task.sh <TASK_ID> tasks.md` (e.g., `./get_task.sh OBJ_INIT tasks.md`)
 - **Current branch**: OBJ_INIT (working on object initialization tasks)

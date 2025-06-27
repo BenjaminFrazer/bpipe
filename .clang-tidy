@@ -1,0 +1,53 @@
+---
+# Comprehensive clang-tidy configuration for C99 code
+Checks: >
+  *,
+  -altera-*,
+  -android-*,
+  -darwin-*,
+  -fuchsia-*,
+  -google-*,
+  -llvm-*,
+  -llvmlibc-*,
+  -zircon-*,
+  -abseil-*,
+  -boost-*,
+  -cert-dcl16-c,
+  -cert-dcl37-c,
+  -cert-dcl51-cpp,
+  -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-init-variables,
+  -hicpp-*,
+  -modernize-*,
+  -readability-magic-numbers,
+  -readability-avoid-const-params-in-decls,
+  -misc-unused-parameters
+
+# Project-specific configuration
+CheckOptions:
+  - key: readability-identifier-naming.FunctionCase
+    value: lower_case
+  - key: readability-identifier-naming.VariableCase  
+    value: lower_case
+  - key: readability-identifier-naming.ParameterCase
+    value: lower_case
+  - key: readability-identifier-naming.StructCase
+    value: CamelCase
+  - key: readability-identifier-naming.EnumCase
+    value: CamelCase
+  - key: readability-identifier-naming.MacroDefinitionCase
+    value: UPPER_CASE
+  - key: readability-function-size.LineThreshold
+    value: 80
+  - key: readability-function-size.StatementThreshold
+    value: 50
+
+# Header filter to include project headers
+HeaderFilterRegex: 'bpipe/.*\.h$'
+
+# Analysis options
+WarningsAsErrors: ''
+AnalyzeTemporaryDtors: false
+FormatStyle: file
+User: bpipe-lint
