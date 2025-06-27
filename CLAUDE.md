@@ -61,6 +61,9 @@ This is a **modular real-time telemetry data processing framework** built in C w
 - `tests/`: Unity-based test suite
 - `requirements.adoc`: Detailed system requirements and architecture specs
 
+### MISC
+- correct me if I'm wrong
+
 ### Task Workflow
 - Create new branch for every new tasking.
 - Branch naming: Create branches named after TASK_ID from `tasks.md`

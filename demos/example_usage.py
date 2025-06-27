@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """
-Example usage of bpipe Python API.
+Example usage of bpipe Python API with direct C extension classes.
 
 This example demonstrates:
-1. Creating built-in filters using the factory pattern
-2. Creating custom filters with user-defined transform functions  
+1. Creating signal generator filters using factory function
+2. Creating custom filters by inheriting from BpFilterPy
 3. Connecting filters together in a processing pipeline
 4. Starting/stopping filter execution
 """
@@ -17,18 +17,18 @@ import time
 # Add parent directory to path to import dpcore and bpipe
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from bpipe import FilterFactory, CustomFilter
+import bpipe
 
 
 def main():
     print("bpipe Python API Example")
     print("=" * 30)
     
-    # Example 1: Signal Generator -> Custom Filter -> Built-in Passthrough
+    # Example 1: Signal Generator using factory function
     print("\n1. Creating signal generator...")
     
     # Create a sawtooth wave generator
-    signal_gen = FilterFactory.signal_generator(
+    signal_gen = bpipe.create_signal_generator(
         waveform='sawtooth',
         frequency=0.01,  # 1 cycle per 100 samples
         amplitude=100.0,
@@ -36,157 +36,124 @@ def main():
         x_offset=50.0
     )
     
-    print(f"   Signal generator created: {signal_gen.filter_type}")
-    print(f"   Configuration: {signal_gen.config}")
+    print(f"   Signal generator created")
     
-    # Example 2: Custom Filter with User Transform Function
+    # Example 2: Custom Filter by inheriting BpFilterPy
     print("\n2. Creating custom filter...")
     
-    def scaling_transform(inputs):
-        """Custom transform that scales and adds offset to input."""
-        if not inputs or inputs[0] is None:
-            return [np.array([])]
+    class ScalingFilter(bpipe.BpFilterPy):
+        """Custom filter that scales and adds offset to input."""
         
-        # Scale by 2 and add offset of 10
-        scaled = inputs[0] * 2.0 + 10.0
-        return [scaled]
+        def __init__(self, scale=2.0, offset=10.0):
+            super().__init__(capacity_exp=10, dtype=bpipe.DTYPE_FLOAT)
+            self.scale = scale
+            self.offset = offset
+            
+        def transform(self, inputs, outputs):
+            """Transform function called by C worker thread."""
+            if inputs and len(inputs[0]) > 0:
+                # Scale and offset the input
+                outputs[0][:len(inputs[0])] = inputs[0] * self.scale + self.offset
     
-    scaler = CustomFilter(
-        transform_func=scaling_transform,
-        buffer_size=1024,
-        batch_size=64
-    )
+    scale_filter = ScalingFilter(scale=2.0, offset=10.0)
+    print("   Custom scaling filter created")
     
-    print(f"   Custom filter created with scaling transform")
-    
-    # Example 3: Built-in Passthrough Filter
+    # Example 3: Passthrough filter
     print("\n3. Creating passthrough filter...")
     
-    passthrough = FilterFactory.passthrough(
-        buffer_size=1024,
-        batch_size=64
-    )
+    class PassthroughFilter(bpipe.BpFilterPy):
+        """Simple passthrough filter."""
+        
+        def __init__(self):
+            super().__init__(capacity_exp=10, dtype=bpipe.DTYPE_FLOAT)
+        
+        def transform(self, inputs, outputs):
+            if inputs and len(inputs[0]) > 0:
+                outputs[0][:len(inputs[0])] = inputs[0]
     
-    print(f"   Passthrough filter created: {passthrough.filter_type}")
+    passthrough = PassthroughFilter()
+    print("   Passthrough filter created")
     
     # Example 4: Connect filters in a pipeline
-    print("\n4. Connecting filters in pipeline...")
-    print("   Pipeline: SignalGen -> Scaler -> Passthrough")
+    print("\n4. Connecting filters...")
+    print("   Signal Generator -> Scaling Filter -> Passthrough")
     
-    # Connect signal generator to custom scaler
-    signal_gen.add_sink(scaler)
+    signal_gen.add_sink(scale_filter)
+    scale_filter.add_sink(passthrough)
     
-    # Connect scaler to passthrough
-    scaler.add_sink(passthrough)
+    # Example 5: Data aggregation with PlotSink
+    print("\n5. Creating PlotSink for visualization...")
     
-    print("   Filters connected successfully")
+    plot_sink = bpipe.PlotSink(max_points=1000)
+    passthrough.add_sink(plot_sink)
     
-    # Example 5: Start processing pipeline
-    print("\n5. Starting processing pipeline...")
+    print("   Complete pipeline: Signal -> Scale -> Passthrough -> PlotSink")
     
-    try:
-        # Start filters in reverse order (sink to source)
-        passthrough.start()
-        scaler.start()  
-        signal_gen.start()
-        
-        print("   All filters started")
-        print(f"   Signal generator running: {signal_gen.running}")
-        print(f"   Scaler running: {scaler.running}")
-        print(f"   Passthrough running: {passthrough.running}")
-        
-        # Let it run for a short time
-        print("\n   Processing data for 2 seconds...")
-        time.sleep(2)
-        
-    except Exception as e:
-        print(f"   Error during processing: {e}")
+    # Example 6: Start the pipeline
+    print("\n6. Starting pipeline...")
     
-    # Example 6: Stop processing pipeline
-    print("\n6. Stopping processing pipeline...")
+    # Start all filters (order doesn't matter due to threading)
+    signal_gen.run()
+    scale_filter.run()
+    passthrough.run() 
+    plot_sink.run()
     
-    try:
-        # Stop filters in forward order (source to sink)
-        signal_gen.stop()
-        scaler.stop()
-        passthrough.stop()
-        
-        print("   All filters stopped")
-        print(f"   Signal generator running: {signal_gen.running}")
-        print(f"   Scaler running: {scaler.running}")
-        print(f"   Passthrough running: {passthrough.running}")
-        
-    except Exception as e:
-        print(f"   Error during shutdown: {e}")
+    print("   All filters running")
     
-    # Example 7: Demonstrate filter disconnection
-    print("\n7. Demonstrating filter disconnection...")
+    # Let it run for a bit
+    print("\n7. Collecting data for 2 seconds...")
+    time.sleep(2)
     
-    # Remove connection between signal generator and scaler
-    signal_gen.remove_sink(scaler)
-    print("   Disconnected signal generator from scaler")
+    # Example 7: Stop the pipeline
+    print("\n8. Stopping pipeline...")
     
-    # Reconnect for completeness
-    signal_gen.add_sink(scaler)
-    print("   Reconnected signal generator to scaler")
+    signal_gen.stop()
+    scale_filter.stop()
+    passthrough.stop()
+    plot_sink.stop()
     
-    print("\n" + "=" * 30)
-    print("Example completed successfully!")
-    print("\nThis example demonstrates the bpipe Python API:")
-    print("- Factory pattern for built-in filters")
-    print("- Custom filters with user transform functions")  
-    print("- Filter pipeline construction and management")
-    print("- Start/stop lifecycle management")
-
-
-def advanced_example():
-    """Advanced example showing more complex transforms."""
-    print("\n" + "=" * 40)
-    print("Advanced Example: Multi-input Processing")
-    print("=" * 40)
+    print("   All filters stopped")
     
-    # Create multiple signal generators
-    sine_gen = FilterFactory.signal_generator('sine', 0.05, 50.0)
-    square_gen = FilterFactory.signal_generator('square', 0.03, 30.0)
+    # Example 8: Check collected data
+    print("\n9. Checking collected data...")
+    sizes = plot_sink.get_sizes()
+    print(f"   Collected {sizes[0] if sizes else 0} samples")
     
-    # Custom filter that combines multiple inputs
-    def mixer_transform(inputs):
-        """Mix multiple input signals."""
-        if len(inputs) < 2 or inputs[0] is None or inputs[1] is None:
-            return [np.array([])]
-        
-        # Mix the two signals with weights
-        mixed = 0.6 * inputs[0] + 0.4 * inputs[1]
-        return [mixed]
+    # Example 9: Multiple sinks demonstration
+    print("\n10. Demonstrating multiple sinks...")
     
-    mixer = CustomFilter(mixer_transform)
+    # Create another aggregator
+    aggregator2 = bpipe.BpAggregatorPy()
     
-    # Custom filter for frequency analysis  
-    def fft_transform(inputs):
-        """Compute FFT magnitude of input."""
-        if not inputs or inputs[0] is None or len(inputs[0]) == 0:
-            return [np.array([])]
-        
-        # Compute FFT magnitude
-        fft_result = np.abs(np.fft.fft(inputs[0]))
-        # Return first half (positive frequencies)
-        return [fft_result[:len(fft_result)//2]]
+    # A filter can have multiple sinks
+    scale_filter.add_sink(aggregator2)
     
-    fft_analyzer = CustomFilter(fft_transform)
+    print("   Scale filter now has 2 sinks: passthrough and aggregator2")
     
-    print("Created multi-input processing pipeline:")
-    print("SineGen \\")
-    print("         -> Mixer -> FFT Analyzer")  
-    print("SquareGen /")
+    # Run again briefly
+    signal_gen.run()
+    scale_filter.run()
+    passthrough.run()
+    plot_sink.run()
+    aggregator2.run()
     
-    # Connect pipeline
-    sine_gen.add_sink(mixer)
-    square_gen.add_sink(mixer)
-    mixer.add_sink(fft_analyzer)
+    time.sleep(1)
     
-    print("Advanced pipeline created successfully!")
+    # Stop all
+    signal_gen.stop()
+    scale_filter.stop()
+    passthrough.stop()
+    plot_sink.stop()
+    aggregator2.stop()
+    
+    # Both should have data
+    sizes1 = plot_sink.get_sizes()
+    sizes2 = aggregator2.get_sizes()
+    print(f"   PlotSink collected: {sizes1[0] if sizes1 else 0} samples")
+    print(f"   Aggregator2 collected: {sizes2[0] if sizes2 else 0} samples")
+    
+    print("\n✓ Example completed successfully!")
 
 
 if __name__ == "__main__":
     main()
-    advanced_example()
