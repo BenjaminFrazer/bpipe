@@ -71,7 +71,7 @@ typedef struct _Batch {
 typedef struct _DataPipe Bp_Filter_t;
 
 typedef void(TransformFcn_t)(Bp_Filter_t* filt, Bp_Batch_t** input_batches,
-                             int n_inputs, Bp_Batch_t *const *output_batches,
+                             int n_inputs, Bp_Batch_t* const* output_batches,
                              int n_outputs);
 
 typedef struct _err_info {
