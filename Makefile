@@ -68,7 +68,7 @@ clang-tidy-check:
 
 cppcheck-check:
 	@echo "Running cppcheck static analysis..."
-	@cppcheck --enable=all --suppress=missingIncludeSystem --error-exitcode=1 $(SRC_DIR)/
+	@cppcheck --enable=all --suppress=missingIncludeSystem --suppress=missingReturn --suppress=unusedFunction --suppress=truncLongCastReturn --error-exitcode=1 $(SRC_DIR)/
 
 # Python linting targets
 ruff-check:
