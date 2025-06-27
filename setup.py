@@ -1,4 +1,8 @@
 from setuptools import setup, Extension
+import os
+
+# Ensure build directory exists
+os.makedirs("build", exist_ok=True)
 
 dpcore = Extension(
     name="dpcore",  # Direct module name
@@ -18,4 +22,12 @@ setup(
     version="0.0.1",
     packages=["bpipe"],
     ext_modules=[dpcore],
+    options={
+        'build': {
+            'build_base': 'build'
+        },
+        'build_ext': {
+            'build_lib': '.'  # Keep the .so file in the root for import compatibility
+        }
+    }
 )

@@ -45,6 +45,11 @@
 
 
 ## SAWTOOTH_DEMO
+- Create a demo script that chans a sawtooth data-source with a pass-through and writes to a plot aggregator.
+
+### behaviour
+- The script should keep the plot window open untill the user kills it.
+
 
 ## TIMESTAMP_AGREGATOR
 - Same requirements as task:PYFILT_AGREGATOR but add the requirement to save time-stamps with every sample
