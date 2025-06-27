@@ -10,7 +10,7 @@ UNITY_SRC=lib/Unity/src/unity.c
 TESTS=$(TEST_SRC_DIR)/test_core_filter.c $(TEST_SRC_DIR)/test_signal_gen.c $(TEST_SRC_DIR)/test_sentinel.c
 OBJ_FILES=$(SRC_DIR)/core.c $(SRC_DIR)/signal_gen.c
 
-.PHONY: all clean run lint lint-c lint-py lint-fix clang-format-check clang-format-fix clang-tidy-check cppcheck-check ruff-check ruff-format-check ruff-fix
+.PHONY: all clean run test test-c test-py lint lint-c lint-py lint-fix clang-format-check clang-format-fix clang-tidy-check cppcheck-check ruff-check ruff-format-check ruff-fix
 
 all: | $(BUILD_DIR)
 all: $(BUILD_DIR)/test_core_filter $(BUILD_DIR)/test_signal_gen $(BUILD_DIR)/test_sentinel
@@ -43,6 +43,19 @@ run: all
 	./$(BUILD_DIR)/test_core_filter
 	./$(BUILD_DIR)/test_signal_gen
 	./$(BUILD_DIR)/test_sentinel
+
+# Test targets
+test: test-c test-py
+
+test-c: all
+	@echo "Running C tests..."
+	./$(BUILD_DIR)/test_core_filter
+	./$(BUILD_DIR)/test_signal_gen
+	./$(BUILD_DIR)/test_sentinel
+
+test-py:
+	@echo "Running Python tests..."
+	python -m pytest py-tests/test_new_api.py -v
 
 # Linting targets
 lint: lint-c lint-py
