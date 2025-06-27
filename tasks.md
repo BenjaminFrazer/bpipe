@@ -46,6 +46,7 @@
 
 ## SAWTOOTH_DEMO
 - Create a demo script that chans a sawtooth data-source with a pass-through and writes to a plot aggregator.
+- keep python code concise simple and readable avoid try catches. 
 
 ### behaviour
 - The script should keep the plot window open untill the user kills it.

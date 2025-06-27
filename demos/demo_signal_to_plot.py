@@ -11,8 +11,8 @@ import os
 import numpy as np
 import time
 
-# Add bpipe to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'bpipe'))
+# Add parent directory to path to import dpcore
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 try:
     import dpcore

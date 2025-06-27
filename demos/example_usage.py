@@ -9,8 +9,14 @@ This example demonstrates:
 4. Starting/stopping filter execution
 """
 
+import sys
+import os
 import numpy as np
 import time
+
+# Add parent directory to path to import dpcore and bpipe
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from bpipe import FilterFactory, CustomFilter
 
 
