@@ -30,7 +30,7 @@ Bp_EC Bp_Filter_Init(Bp_Filter_t *filter, TransformFcn_t transform_function,
 
     // Initialize filter mutex
     if (pthread_mutex_init(&filter->filter_mutex, NULL) != 0) {
-        return BP_ERROR_MUTEX_INIT_FAIL;
+        return Bp_EC_MUTEX_INIT_FAIL;
     }
 
     return Bp_EC_OK;
@@ -70,7 +70,7 @@ Bp_EC BpFilter_Init(Bp_Filter_t *filter, TransformFcn_t transform_function,
 
     // Initialize filter mutex
     if (pthread_mutex_init(&filter->filter_mutex, NULL) != 0) {
-        return BP_ERROR_MUTEX_INIT_FAIL;
+        return Bp_EC_MUTEX_INIT_FAIL;
     }
     return Bp_EC_OK;
 }
@@ -136,23 +136,24 @@ Bp_EC Bp_BatchBuffer_Init(Bp_BatchBuffer_t *buffer, size_t batch_size,
 
     // Initialize pthread synchronization objects
     if (pthread_mutex_init(&buffer->mutex, NULL) != 0) {
-        return BP_ERROR_MUTEX_INIT_FAIL;
+        return Bp_EC_MUTEX_INIT_FAIL;
     }
 
     if (pthread_cond_init(&buffer->not_empty, NULL) != 0) {
         pthread_mutex_destroy(&buffer->mutex);
-        return BP_ERROR_COND_INIT_FAIL;
+        return Bp_EC_COND_INIT_FAIL;
     }
 
     if (pthread_cond_init(&buffer->not_full, NULL) != 0) {
         pthread_mutex_destroy(&buffer->mutex);
         pthread_cond_destroy(&buffer->not_empty);
-        return BP_ERROR_COND_INIT_FAIL;
+        return Bp_EC_COND_INIT_FAIL;
     }
 
     // Allocate ring buffers (will be done later by Bp_allocate_buffers)
     buffer->data_ring = NULL;
     buffer->batch_ring = NULL;
+    buffer->stopped = false;
 
     return Bp_EC_OK;
 }
@@ -184,6 +185,18 @@ Bp_EC Bp_BatchBuffer_Deinit(Bp_BatchBuffer_t *buffer)
     buffer->batch_capacity_expo = 0;
 
     return Bp_EC_OK;
+}
+
+void BpBatchBuffer_stop(Bp_BatchBuffer_t* buffer)
+{
+    if (!buffer) return;
+    
+    pthread_mutex_lock(&buffer->mutex);
+    buffer->stopped = true;
+    // Wake up all waiting threads
+    pthread_cond_broadcast(&buffer->not_empty);
+    pthread_cond_broadcast(&buffer->not_full);
+    pthread_mutex_unlock(&buffer->mutex);
 }
 
 /* Worker thread loop. Processes input batches until a completion sentinel is
@@ -263,11 +276,49 @@ void *Bp_Worker(void *filter)
     }
 
     while (f->running) {
+        // Store initial head positions of output batches
+        size_t initial_heads[MAX_SINKS];
+        for (int i = 0; i < f->n_sinks; i++) {
+            initial_heads[i] = output_batches[i] ? output_batches[i]->head : 0;
+        }
+
         // Pass the correct number of input sources to transform
         int effective_n_inputs =
             uses_input_buffers ? (f->n_sources > 0 ? f->n_sources : 1) : 0;
         f->transform(filter, input_batches, effective_n_inputs, output_batches,
                      f->n_sinks);
+
+        // Distribute output from first batch to remaining outputs if needed
+        // This allows transforms to be output-agnostic - they only need to
+        // write to output_batches[0] and the framework handles the rest
+        if (f->n_sinks > 1 && output_batches[0] &&
+            output_batches[0]->head > initial_heads[0]) {
+            size_t bytes_written =
+                (output_batches[0]->head - initial_heads[0]) * f->data_width;
+            void *src = (char *) output_batches[0]->data +
+                        initial_heads[0] * f->data_width;
+
+            for (int i = 1; i < f->n_sinks; i++) {
+                if (output_batches[i] &&
+                    output_batches[i]->ec != Bp_EC_NOSPACE) {
+                    // Copy data from first output to this output
+                    void *dst = (char *) output_batches[i]->data +
+                                output_batches[i]->head * f->data_width;
+                    memcpy(dst, src, bytes_written);
+
+                    // Copy metadata from first output
+                    output_batches[i]->t_ns = output_batches[0]->t_ns;
+                    output_batches[i]->period_ns = output_batches[0]->period_ns;
+                    output_batches[i]->dtype = output_batches[0]->dtype;
+                    output_batches[i]->meta = output_batches[0]->meta;
+                    output_batches[i]->ec = output_batches[0]->ec;
+
+                    // Update head position
+                    output_batches[i]->head +=
+                        (output_batches[0]->head - initial_heads[0]);
+                }
+            }
+        }
 
         // Handle input buffer management
         if (uses_input_buffers) {
@@ -405,13 +456,13 @@ Bp_EC Bp_remove_source(Bp_Filter_t *filter, const Bp_Filter_t *source)
 Bp_EC Bp_Filter_Start(Bp_Filter_t *filter)
 {
     if (!filter) {
-        return BP_ERROR_NULL_FILTER;
+        return Bp_EC_NULL_FILTER;
     }
 
     if (filter->running) {
-        SET_FILTER_ERROR(filter, BP_ERROR_ALREADY_RUNNING,
+        SET_FILTER_ERROR(filter, Bp_EC_ALREADY_RUNNING,
                          "Filter is already running");
-        return BP_ERROR_ALREADY_RUNNING;
+        return Bp_EC_ALREADY_RUNNING;
     }
 
     filter->running = true;
@@ -419,9 +470,9 @@ Bp_EC Bp_Filter_Start(Bp_Filter_t *filter)
     if (pthread_create(&filter->worker_thread, NULL, &Bp_Worker,
                        (void *) filter) != 0) {
         filter->running = false;
-        SET_FILTER_ERROR(filter, BP_ERROR_THREAD_CREATE_FAIL,
+        SET_FILTER_ERROR(filter, Bp_EC_THREAD_CREATE_FAIL,
                          "Failed to create worker thread");
-        return BP_ERROR_THREAD_CREATE_FAIL;
+        return Bp_EC_THREAD_CREATE_FAIL;
     }
 
     return Bp_EC_OK;
@@ -430,7 +481,7 @@ Bp_EC Bp_Filter_Start(Bp_Filter_t *filter)
 Bp_EC Bp_Filter_Stop(Bp_Filter_t *filter)
 {
     if (!filter) {
-        return BP_ERROR_NULL_FILTER;
+        return Bp_EC_NULL_FILTER;
     }
 
     if (!filter->running) {
@@ -438,11 +489,18 @@ Bp_EC Bp_Filter_Stop(Bp_Filter_t *filter)
     }
 
     filter->running = false;
+    
+    // Stop all input buffers to wake up any waiting threads
+    for (int i = 0; i < MAX_SOURCES; i++) {
+        if (filter->input_buffers[i].data_ring != NULL) {
+            BpBatchBuffer_stop(&filter->input_buffers[i]);
+        }
+    }
 
     if (pthread_join(filter->worker_thread, NULL) != 0) {
-        SET_FILTER_ERROR(filter, BP_ERROR_THREAD_JOIN_FAIL,
+        SET_FILTER_ERROR(filter, Bp_EC_THREAD_JOIN_FAIL,
                          "Failed to join worker thread");
-        return BP_ERROR_THREAD_JOIN_FAIL;
+        return Bp_EC_THREAD_JOIN_FAIL;
     }
 
     return Bp_EC_OK;
@@ -452,42 +510,33 @@ void BpPassThroughTransform(Bp_Filter_t *filt, Bp_Batch_t **input_batches,
                             int n_inputs, Bp_Batch_t *const *output_batches,
                             int n_outputs)
 {
-    // Multi-I/O transform: copy first input to all outputs
-    if (n_inputs > 0 && n_outputs > 0 && input_batches[0] != NULL) {
+    // Simplified: only write to first output, framework handles distribution
+    if (n_inputs > 0 && n_outputs > 0 && input_batches[0] != NULL &&
+        output_batches[0] != NULL) {
         Bp_Batch_t *input_batch = input_batches[0];
+        Bp_Batch_t *output_batch = output_batches[0];
 
-        for (int i = 0; i < n_outputs; i++) {
-            if (output_batches[i] != NULL) {
-                Bp_Batch_t *output_batch = output_batches[i];
+        size_t available = input_batch->head - input_batch->tail;
+        size_t space = output_batch->capacity - output_batch->head;
+        size_t ncopy = available < space ? available : space;
 
-                size_t available = input_batch->head - input_batch->tail;
-                size_t space = output_batch->capacity - output_batch->head;
-                size_t ncopy = available < space ? available : space;
-
-                if (ncopy) {
-                    void *src = (char *) input_batch->data +
-                                input_batch->tail * filt->data_width;
-                    void *dst = (char *) output_batch->data +
-                                output_batch->head * filt->data_width;
-                    memcpy(dst, src, ncopy * filt->data_width);
-                }
-
-                output_batch->t_ns = input_batch->t_ns;
-                output_batch->period_ns = input_batch->period_ns;
-                output_batch->dtype = input_batch->dtype;
-                output_batch->meta = input_batch->meta;
-                output_batch->ec = input_batch->ec;
-
-                output_batch->head += ncopy;
-            }
+        if (ncopy) {
+            void *src = (char *) input_batch->data +
+                        input_batch->tail * filt->data_width;
+            void *dst = (char *) output_batch->data +
+                        output_batch->head * filt->data_width;
+            memcpy(dst, src, ncopy * filt->data_width);
         }
-        // Update input batch tail once for all outputs
-        if (output_batches[0] != NULL) {
-            size_t available = input_batch->head - input_batch->tail;
-            size_t space =
-                output_batches[0]->capacity - output_batches[0]->head;
-            size_t ncopy = available < space ? available : space;
-            input_batch->tail += ncopy;
-        }
+
+        // Copy metadata
+        output_batch->t_ns = input_batch->t_ns;
+        output_batch->period_ns = input_batch->period_ns;
+        output_batch->dtype = input_batch->dtype;
+        output_batch->meta = input_batch->meta;
+        output_batch->ec = input_batch->ec;
+
+        // Update positions
+        output_batch->head += ncopy;
+        input_batch->tail += ncopy;
     }
 }

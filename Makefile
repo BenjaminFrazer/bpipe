@@ -7,13 +7,13 @@ SRC_DIR=bpipe
 TEST_SRC_DIR=tests
 BUILD_DIR=build
 UNITY_SRC=lib/Unity/src/unity.c
-TESTS=$(TEST_SRC_DIR)/test_core_filter.c $(TEST_SRC_DIR)/test_signal_gen.c $(TEST_SRC_DIR)/test_sentinel.c
-OBJ_FILES=$(SRC_DIR)/core.c $(SRC_DIR)/signal_gen.c
+TESTS=$(TEST_SRC_DIR)/test_core_filter.c $(TEST_SRC_DIR)/test_signal_gen.c $(TEST_SRC_DIR)/test_sentinel.c $(TEST_SRC_DIR)/test_simple_multi_output.c
+OBJ_FILES=$(SRC_DIR)/core.c $(SRC_DIR)/signal_gen.c $(SRC_DIR)/tee.c
 
 .PHONY: all clean run test test-c test-py lint lint-c lint-py lint-fix clang-format-check clang-format-fix clang-tidy-check cppcheck-check ruff-check ruff-format-check ruff-fix
 
 all: | $(BUILD_DIR)
-all: $(BUILD_DIR)/test_core_filter $(BUILD_DIR)/test_signal_gen $(BUILD_DIR)/test_sentinel
+all: $(BUILD_DIR)/test_core_filter $(BUILD_DIR)/test_signal_gen $(BUILD_DIR)/test_sentinel $(BUILD_DIR)/test_simple_multi_output
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
@@ -27,13 +27,16 @@ $(BUILD_DIR)/%.o: $(TEST_SRC_DIR)/%.c | $(BUILD_DIR)
 $(BUILD_DIR)/unity.o: $(UNITY_SRC) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(BUILD_DIR)/test_core_filter: $(BUILD_DIR)/core.o $(BUILD_DIR)/signal_gen.o $(BUILD_DIR)/unity.o $(BUILD_DIR)/test_core_filter.o
+$(BUILD_DIR)/test_core_filter: $(BUILD_DIR)/core.o $(BUILD_DIR)/signal_gen.o $(BUILD_DIR)/tee.o $(BUILD_DIR)/unity.o $(BUILD_DIR)/test_core_filter.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(BUILD_DIR)/test_signal_gen: $(BUILD_DIR)/core.o $(BUILD_DIR)/signal_gen.o $(BUILD_DIR)/unity.o $(BUILD_DIR)/test_signal_gen.o
+$(BUILD_DIR)/test_signal_gen: $(BUILD_DIR)/core.o $(BUILD_DIR)/signal_gen.o $(BUILD_DIR)/tee.o $(BUILD_DIR)/unity.o $(BUILD_DIR)/test_signal_gen.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(BUILD_DIR)/test_sentinel: $(BUILD_DIR)/core.o $(BUILD_DIR)/signal_gen.o $(BUILD_DIR)/unity.o $(BUILD_DIR)/test_sentinel.o
+$(BUILD_DIR)/test_sentinel: $(BUILD_DIR)/core.o $(BUILD_DIR)/signal_gen.o $(BUILD_DIR)/tee.o $(BUILD_DIR)/unity.o $(BUILD_DIR)/test_sentinel.o
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+$(BUILD_DIR)/test_simple_multi_output: $(BUILD_DIR)/core.o $(BUILD_DIR)/signal_gen.o $(BUILD_DIR)/tee.o $(BUILD_DIR)/unity.o $(BUILD_DIR)/test_simple_multi_output.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 clean:
@@ -43,6 +46,7 @@ run: all
 	./$(BUILD_DIR)/test_core_filter
 	./$(BUILD_DIR)/test_signal_gen
 	./$(BUILD_DIR)/test_sentinel
+	./$(BUILD_DIR)/test_simple_multi_output
 
 # Test targets
 test: test-c test-py
@@ -52,6 +56,7 @@ test-c: all
 	./$(BUILD_DIR)/test_core_filter
 	./$(BUILD_DIR)/test_signal_gen
 	./$(BUILD_DIR)/test_sentinel
+	./$(BUILD_DIR)/test_simple_multi_output
 
 test-py:
 	@echo "Running Python tests..."

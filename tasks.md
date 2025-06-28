@@ -45,11 +45,11 @@
 
 
 ## SAWTOOTH_DEMO
-- Create a demo script that chans a sawtooth data-source with a pass-through and writes to a plot aggregator.
-- keep python code concise simple and readable avoid try catches. 
+- Create a demo script that chains a sawtooth data-source with a pass-through and writes to a plot aggregator.
 
 ### behaviour
 - The script should keep the plot window open untill the user kills it.
+- keep python code concise simple and readable avoid try catches. 
 
 
 ## TIMESTAMP_AGREGATOR

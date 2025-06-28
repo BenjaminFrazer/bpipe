@@ -35,21 +35,23 @@ typedef enum _OverflowBehaviour {
 extern const size_t _data_size_lut[];
 
 typedef enum _Bp_EC {
+    /* Success */
     Bp_EC_OK = 0,
+    /* Positive status codes */
+    Bp_EC_COMPLETE = 1,  /* Stream termination sentinel */
+    Bp_EC_STOPPED = 2,   /* Buffer has been stopped */
+    /* Negative error codes */
     Bp_EC_TIMEOUT = -1,
     Bp_EC_NOINPUT = -2,
     Bp_EC_NOSPACE = -3,
-    EC_TYPE_MISMATCH = -4,
+    Bp_EC_TYPE_MISMATCH = -4,
     Bp_EC_BAD_PYOBJECT = -5,
-    BP_ERROR_COND_INIT_FAIL,
-    BP_ERROR_MUTEX_INIT_FAIL,
-    /* Filter lifecycle error codes */
-    BP_ERROR_NULL_FILTER = -8,
-    BP_ERROR_ALREADY_RUNNING = -9,
-    BP_ERROR_THREAD_CREATE_FAIL = -10,
-    BP_ERROR_THREAD_JOIN_FAIL = -11,
-    /* Stream termination sentinel. Indicates no further data will be sent */
-    Bp_EC_COMPLETE = 1,
+    Bp_EC_COND_INIT_FAIL = -6,
+    Bp_EC_MUTEX_INIT_FAIL = -7,
+    Bp_EC_NULL_FILTER = -8,
+    Bp_EC_ALREADY_RUNNING = -9,
+    Bp_EC_THREAD_CREATE_FAIL = -10,
+    Bp_EC_THREAD_JOIN_FAIL = -11,
 } Bp_EC;
 
 typedef struct _Batch {
@@ -70,6 +72,11 @@ typedef struct _Batch {
 /* Forward declarations */
 typedef struct _DataPipe Bp_Filter_t;
 
+/* Transform function signature
+ * Note: Transforms should only write to output_batches[0]. The framework
+ * automatically distributes data to additional outputs when n_outputs > 1.
+ * For explicit control over multi-output distribution, use BpTeeFilter.
+ */
 typedef void(TransformFcn_t)(Bp_Filter_t* filt, Bp_Batch_t** input_batches,
                              int n_inputs, Bp_Batch_t* const* output_batches,
                              int n_outputs);
@@ -92,6 +99,7 @@ typedef struct _Bp_BatchBuffer {
     pthread_mutex_t mutex;
     pthread_cond_t not_empty;
     pthread_cond_t not_full;
+    bool stopped;
 } Bp_BatchBuffer_t;
 
 typedef struct _DataPipe {
@@ -128,6 +136,8 @@ Bp_EC Bp_BatchBuffer_Init(Bp_BatchBuffer_t* buffer, size_t batch_size,
                           size_t number_of_batches);
 
 Bp_EC Bp_BatchBuffer_Deinit(Bp_BatchBuffer_t* buffer);
+
+void BpBatchBuffer_stop(Bp_BatchBuffer_t* buffer);
 
 /* Filter lifecycle functions */
 Bp_EC Bp_Filter_Start(Bp_Filter_t* filter);
@@ -213,7 +223,8 @@ static inline Bp_EC Bp_deallocate_buffers(Bp_Filter_t* dpipe, int buffer_idx)
 
 /* Applies a transform using a python filter */
 TransformFcn_t BpPyTransform;
-/* Multi-input/output pass-through transform */
+/* Pass-through transform - copies first input to first output
+ * Framework handles distribution to additional outputs */
 TransformFcn_t BpPassThroughTransform;
 
 static inline bool Bp_empty(Bp_BatchBuffer_t* buf)
@@ -221,63 +232,91 @@ static inline bool Bp_empty(Bp_BatchBuffer_t* buf)
     return buf->head == buf->tail;
 }
 
-static inline bool Bp_full(Bp_Filter_t* dpipe, Bp_BatchBuffer_t* buf)
+static inline bool Bp_full(Bp_BatchBuffer_t* buf)
 {
-    (void) dpipe;
     return (buf->head - buf->tail) >= Bp_ring_capacity(buf);
 }
 
-static inline Bp_EC Bp_await_not_empty(Bp_Filter_t* dpipe,
-                                       Bp_BatchBuffer_t* buf)
+/* Wait for buffer to have data available
+ * @param buf Buffer to wait on
+ * @param timeout_us Timeout in microseconds (0 = wait indefinitely)
+ * @return Bp_EC_OK if data available, Bp_EC_TIMEOUT on timeout, Bp_EC_STOPPED if buffer stopped
+ */
+static inline Bp_EC Bp_await_not_empty(Bp_BatchBuffer_t* buf, unsigned long timeout_us)
 {
     Bp_EC ec = Bp_EC_OK;
     pthread_mutex_lock(&buf->mutex);
-    while (Bp_empty(buf) && dpipe->running) {
-        // Use a short timeout to check the running flag periodically
-        struct timespec timeout;
-        clock_gettime(CLOCK_REALTIME, &timeout);
-        timeout.tv_nsec += 100000000;  // 100ms
-        if (timeout.tv_nsec >= 1000000000) {
-            timeout.tv_sec += 1;
-            timeout.tv_nsec -= 1000000000;
-        }
-
-        if (pthread_cond_timedwait(&buf->not_empty, &buf->mutex, &timeout) ==
-            ETIMEDOUT) {
-            // Timeout is expected - just check running flag again
-            continue;
+    
+    struct timespec abs_timeout;
+    if (timeout_us > 0) {
+        clock_gettime(CLOCK_REALTIME, &abs_timeout);
+        abs_timeout.tv_sec += timeout_us / 1000000;
+        abs_timeout.tv_nsec += (timeout_us % 1000000) * 1000;
+        if (abs_timeout.tv_nsec >= 1000000000) {
+            abs_timeout.tv_sec += 1;
+            abs_timeout.tv_nsec -= 1000000000;
         }
     }
-    if (!dpipe->running) {
-        ec = Bp_EC_COMPLETE;  // Signal filter is stopping
+    
+    while (Bp_empty(buf) && !buf->stopped) {
+        if (timeout_us == 0) {
+            // No timeout - wait indefinitely
+            pthread_cond_wait(&buf->not_empty, &buf->mutex);
+        } else {
+            int ret = pthread_cond_timedwait(&buf->not_empty, &buf->mutex, &abs_timeout);
+            if (ret == ETIMEDOUT) {
+                ec = Bp_EC_TIMEOUT;
+                break;
+            }
+        }
     }
+    
+    if (buf->stopped && Bp_empty(buf)) {
+        ec = Bp_EC_STOPPED;
+    }
+    
     pthread_mutex_unlock(&buf->mutex);
     return ec;
 }
 
-static inline Bp_EC Bp_await_not_full(Bp_Filter_t* dpipe, Bp_BatchBuffer_t* buf)
+/* Wait for buffer to have space available
+ * @param buf Buffer to wait on
+ * @param timeout_us Timeout in microseconds (0 = wait indefinitely)
+ * @return Bp_EC_OK if space available, Bp_EC_TIMEOUT on timeout, Bp_EC_STOPPED if buffer stopped
+ */
+static inline Bp_EC Bp_await_not_full(Bp_BatchBuffer_t* buf, unsigned long timeout_us)
 {
     Bp_EC ec = Bp_EC_OK;
     pthread_mutex_lock(&buf->mutex);
-    while (Bp_full(dpipe, buf) && dpipe->running) {
-        // Use a short timeout to check the running flag periodically
-        struct timespec timeout;
-        clock_gettime(CLOCK_REALTIME, &timeout);
-        timeout.tv_nsec += 100000000;  // 100ms
-        if (timeout.tv_nsec >= 1000000000) {
-            timeout.tv_sec += 1;
-            timeout.tv_nsec -= 1000000000;
-        }
-
-        if (pthread_cond_timedwait(&buf->not_full, &buf->mutex, &timeout) ==
-            ETIMEDOUT) {
-            // Timeout is expected - just check running flag again
-            continue;
+    
+    struct timespec abs_timeout;
+    if (timeout_us > 0) {
+        clock_gettime(CLOCK_REALTIME, &abs_timeout);
+        abs_timeout.tv_sec += timeout_us / 1000000;
+        abs_timeout.tv_nsec += (timeout_us % 1000000) * 1000;
+        if (abs_timeout.tv_nsec >= 1000000000) {
+            abs_timeout.tv_sec += 1;
+            abs_timeout.tv_nsec -= 1000000000;
         }
     }
-    if (!dpipe->running) {
-        ec = Bp_EC_COMPLETE;  // Signal filter is stopping
+    
+    while ((buf->head - buf->tail) >= Bp_ring_capacity(buf) && !buf->stopped) {
+        if (timeout_us == 0) {
+            // No timeout - wait indefinitely
+            pthread_cond_wait(&buf->not_full, &buf->mutex);
+        } else {
+            int ret = pthread_cond_timedwait(&buf->not_full, &buf->mutex, &abs_timeout);
+            if (ret == ETIMEDOUT) {
+                ec = Bp_EC_TIMEOUT;
+                break;
+            }
+        }
     }
+    
+    if (buf->stopped) {
+        ec = Bp_EC_STOPPED;
+    }
+    
     pthread_mutex_unlock(&buf->mutex);
     return ec;
 }
@@ -287,13 +326,17 @@ static inline Bp_Batch_t Bp_allocate(Bp_Filter_t* dpipe, Bp_BatchBuffer_t* buf)
     Bp_Batch_t batch = {0};
 
     // Check overflow behavior before waiting
-    if (dpipe->overflow_behaviour == OVERFLOW_DROP && Bp_full(dpipe, buf)) {
+    if (dpipe->overflow_behaviour == OVERFLOW_DROP && Bp_full(buf)) {
         batch.ec =
             Bp_EC_NOSPACE;  // Signal that allocation failed due to overflow
         return batch;
     }
 
-    if (Bp_await_not_full(dpipe, buf) == Bp_EC_OK) {
+    // Calculate timeout in microseconds from filter timeout
+    unsigned long timeout_us = dpipe->timeout.tv_sec * 1000000UL + dpipe->timeout.tv_nsec / 1000;
+    
+    Bp_EC wait_result = Bp_await_not_full(buf, timeout_us);
+    if (wait_result == Bp_EC_OK) {
         size_t idx = buf->head & ((1u << buf->ring_capacity_expo) - 1u);
         void* data_ptr = (char*) buf->data_ring +
                          idx * dpipe->data_width * Bp_batch_capacity(buf);
@@ -302,7 +345,7 @@ static inline Bp_Batch_t Bp_allocate(Bp_Filter_t* dpipe, Bp_BatchBuffer_t* buf)
         batch.batch_id = idx;
         batch.dtype = dpipe->dtype;
     } else {
-        batch.ec = Bp_EC_TIMEOUT;
+        batch.ec = wait_result;  // Could be TIMEOUT, STOPPED, etc
     }
     return batch;
 }
@@ -319,11 +362,15 @@ static inline void Bp_submit_batch(Bp_Filter_t* dpipe, Bp_BatchBuffer_t* buf,
 static inline Bp_Batch_t Bp_head(Bp_Filter_t* dpipe, Bp_BatchBuffer_t* buf)
 {
     Bp_Batch_t batch = {0};
-    if (Bp_await_not_empty(dpipe, buf) == Bp_EC_OK) {
+    // Calculate timeout in microseconds from filter timeout
+    unsigned long timeout_us = dpipe->timeout.tv_sec * 1000000UL + dpipe->timeout.tv_nsec / 1000;
+    
+    Bp_EC wait_result = Bp_await_not_empty(buf, timeout_us);
+    if (wait_result == Bp_EC_OK) {
         size_t idx = buf->tail & ((1u << buf->ring_capacity_expo) - 1u);
         batch = buf->batch_ring[idx];
     } else {
-        batch.ec = Bp_EC_TIMEOUT;
+        batch.ec = wait_result;  // Could be TIMEOUT, STOPPED, etc
     }
     return batch;
 }

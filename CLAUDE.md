@@ -69,7 +69,11 @@ This is a **modular real-time telemetry data processing framework** built in C w
 - `requirements.adoc`: Detailed system requirements and architecture specs
 
 ### MISC
-- correct me if I'm wrong
+- dont't be a sycophant, correct me if I'm wrong
+
+### Plan mode
+- before writing any code create a plan in specs subdir
+- the plan should have a todo list, check off items as you progress 
 
 ### Task Workflow
 - Create new branch for every new tasking.

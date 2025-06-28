@@ -52,7 +52,15 @@ static void test_sentinel_propagation(void)
     TEST_ASSERT_TRUE(!a.running);
     TEST_ASSERT_TRUE(!b.running);
 
-    Bp_Batch_t rx = Bp_head(&b, &b.input_buffers[0]);
+    // Check if completion sentinel was received
+    // Since the filter is stopped, we can't use Bp_head, so check the buffer
+    // directly
+    TEST_ASSERT_TRUE(b.input_buffers[0].head > b.input_buffers[0].tail);
+
+    // Get the last batch that was submitted
+    size_t idx = (b.input_buffers[0].tail) &
+                 ((1u << b.input_buffers[0].ring_capacity_expo) - 1u);
+    Bp_Batch_t rx = b.input_buffers[0].batch_ring[idx];
     TEST_ASSERT_EQUAL_UINT(Bp_EC_COMPLETE, rx.ec);
 
     free_filter(&a);

@@ -46,11 +46,10 @@ void BpSignalGenTransform(Bp_Filter_t *filt, Bp_Batch_t **input_batches,
     (void) n_inputs;
     Bp_SignalGen_t *gen = (Bp_SignalGen_t *) filt;
 
-    // Generate signal for all output batches
-    for (int out_idx = 0; out_idx < n_outputs; out_idx++) {
-        if (output_batches[out_idx] == NULL) continue;
-
-        Bp_Batch_t *output_batch = output_batches[out_idx];
+    // Simplified: only generate signal for first output, framework handles
+    // distribution
+    if (n_outputs > 0 && output_batches[0] != NULL) {
+        Bp_Batch_t *output_batch = output_batches[0];
         size_t space = output_batch->capacity - output_batch->head;
         float *dst_f =
             (float *) output_batch->data; /* may cast for computation */
