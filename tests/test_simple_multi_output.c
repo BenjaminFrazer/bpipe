@@ -63,6 +63,19 @@ void test_multi_output_data_distribution(void)
     BpFilter_Init(&sink2, BpPassThroughTransform, 0, 128, 64, 6, 1);
     BpFilter_Init(&sink3, BpPassThroughTransform, 0, 128, 64, 6, 1);
     
+    // Set data properties for sinks to match source
+    sink1.dtype = DTYPE_FLOAT;
+    sink1.data_width = sizeof(float);
+    sink2.dtype = DTYPE_FLOAT;
+    sink2.data_width = sizeof(float);
+    sink3.dtype = DTYPE_FLOAT;
+    sink3.data_width = sizeof(float);
+    
+    // Allocate buffers for sinks
+    Bp_allocate_buffers(&sink1, 0);
+    Bp_allocate_buffers(&sink2, 0);
+    Bp_allocate_buffers(&sink3, 0);
+    
     // Connect all sinks to source
     Bp_add_sink(&source.base, &sink1);
     Bp_add_sink(&source.base, &sink2);
