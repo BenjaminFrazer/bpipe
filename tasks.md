@@ -59,6 +59,15 @@
     - array of either 4 or 8 bytes per sample depending on data width
 - brain-storm clean way to implement with existing agregator.
 
+## UPDATE_PYTESTS
+
+### Goal
+- refactor, simplify & integrate python unit tests.
+- bing inline with style guide
+- update to use pytest
+- prune obsolete tests
+
+
 ## ARCHITECTURE_IMPROVEMENTS
 
 ## CSV_SOURCE
