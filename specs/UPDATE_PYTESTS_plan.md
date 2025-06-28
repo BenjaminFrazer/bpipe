@@ -128,14 +128,14 @@ py-tests/
 - [ ] Follows project style guide (no try/except, minimal abstraction)
 
 ## Migration Checklist
-- [ ] Move debug scripts to debug/ directory
-- [ ] Create consolidated test_dpcore.py
-- [ ] Create test_filters.py
-- [ ] Create test_integration.py
-- [ ] Add conftest.py with common fixtures
-- [ ] Move examples to examples/ directory
-- [ ] Update Makefile with pytest targets
-- [ ] Update PYTEST_README.md
-- [ ] Remove obsolete test files
-- [ ] Verify all tests pass
+- [x] Move debug scripts to debug/ directory
+- [x] Create consolidated test_dpcore.py
+- [x] Create test_filters.py
+- [x] Create test_integration.py
+- [x] Add conftest.py with common fixtures
+- [x] Move examples to examples/ directory
+- [x] Update Makefile with pytest targets
+- [x] Update PYTEST_README.md
+- [x] Remove obsolete test files
+- [x] Verify all tests pass
 - [ ] Check test coverage

@@ -71,12 +71,13 @@ This is a **modular real-time telemetry data processing framework** built in C w
 ### MISC
 - dont't be a sycophant, correct me if I'm wrong
 
-### Plan mode
-- before writing any code create a plan in specs subdir
+### Planning
+- on exiting plan mode for a new feature claude MUST writing the plan to a markdown file in the specs/ dir. 
 - the plan should have a todo list, check off items as you progress 
 
 ### Task Workflow
-- Create new branch for every new tasking.
+- Task lookup: Use `get_task.sh` script to extract task info `tasks.md`
+- create a plan for a new feature in in plan mode and commit to main
 - Branch naming: Create branches named after TASK_ID from `tasks.md`
+- complete work in seperate git worktree
 - Work logging: Record changes in `<TASK_ID>_log.md` files
-- Task lookup: Use `get_task.sh` script to extract task-specific information

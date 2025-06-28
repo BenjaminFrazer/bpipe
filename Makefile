@@ -58,9 +58,17 @@ test-c: all
 	./$(BUILD_DIR)/test_sentinel
 	./$(BUILD_DIR)/test_simple_multi_output
 
-test-py:
+test-py: build-py
 	@echo "Running Python tests..."
-	python -m pytest py-tests/test_new_api.py -v
+	python -m pytest py-tests -v
+
+test-py-coverage: build-py
+	@echo "Running Python tests with coverage..."
+	python -m pytest py-tests --cov=bpipe --cov-report=html --cov-report=term
+
+build-py:
+	@echo "Building Python extension..."
+	python setup.py build_ext --inplace
 
 # Linting targets
 lint: lint-c lint-py
