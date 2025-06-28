@@ -85,7 +85,7 @@ void test_multi_transform_function(void)
 void test_Bp_Filter_Start_Success(void)
 {
     Bp_Filter_t filter;
-    BpFilter_Init(&filter, BpPassThroughTransform, 0, 128, 64, 6, 1);
+    BpFilter_Init(&filter, BpPassThroughTransform, 0, 128, 64, 6, 0);  // No inputs
     filter.dtype = DTYPE_UNSIGNED;
     filter.data_width = sizeof(unsigned);
 
@@ -101,7 +101,7 @@ void test_Bp_Filter_Start_Success(void)
 void test_Bp_Filter_Start_Already_Running(void)
 {
     Bp_Filter_t filter;
-    BpFilter_Init(&filter, BpPassThroughTransform, 0, 128, 64, 6, 1);
+    BpFilter_Init(&filter, BpPassThroughTransform, 0, 128, 64, 6, 0);  // No inputs
     filter.dtype = DTYPE_UNSIGNED;
     filter.data_width = sizeof(unsigned);
 
@@ -119,7 +119,7 @@ void test_Bp_Filter_Start_Already_Running(void)
 void test_Bp_Filter_Stop_Success(void)
 {
     Bp_Filter_t filter;
-    BpFilter_Init(&filter, BpPassThroughTransform, 0, 128, 64, 6, 1);
+    BpFilter_Init(&filter, BpPassThroughTransform, 0, 128, 64, 6, 0);  // No inputs
     filter.dtype = DTYPE_UNSIGNED;
     filter.data_width = sizeof(unsigned);
 
@@ -135,7 +135,7 @@ void test_Bp_Filter_Stop_Success(void)
 void test_Bp_Filter_Stop_Not_Running(void)
 {
     Bp_Filter_t filter;
-    BpFilter_Init(&filter, BpPassThroughTransform, 0, 128, 64, 6, 1);
+    BpFilter_Init(&filter, BpPassThroughTransform, 0, 128, 64, 6, 0);  // No inputs
 
     // Try to stop a filter that's not running - should succeed
     Bp_EC result = Bp_Filter_Stop(&filter);
@@ -254,39 +254,73 @@ void test_Await_Stopped_Behavior(void)
     Bp_deallocate_buffers(&filter, 0);
 }
 
-int main(void)
+int main(int argc, char* argv[])
 {
     UNITY_BEGIN();
-    printf("Running test_BpFilter_Init_Success\n");
-    RUN_TEST(test_BpFilter_Init_Success);
-    printf("Running test_BpFilter_Init_Failure\n");
-    RUN_TEST(test_BpFilter_Init_Failure);
-    printf("Running test_Bp_add_sink_Success\n");
-    RUN_TEST(test_Bp_add_sink_Success);
-    printf("Running test_Bp_add_multiple_sinks\n");
-    RUN_TEST(test_Bp_add_multiple_sinks);
-    printf("Running test_Bp_remove_sink_Success\n");
-    RUN_TEST(test_Bp_remove_sink_Success);
-    printf("Running test_multi_transform_function\n");
-    RUN_TEST(test_multi_transform_function);
-    printf("Running test_Bp_Filter_Start_Success\n");
-    RUN_TEST(test_Bp_Filter_Start_Success);
-    printf("Running test_Bp_Filter_Start_Already_Running\n");
-    RUN_TEST(test_Bp_Filter_Start_Already_Running);
-    printf("Running test_Bp_Filter_Stop_Success\n");
-    RUN_TEST(test_Bp_Filter_Stop_Success);
-    printf("Running test_Bp_Filter_Stop_Not_Running\n");
-    RUN_TEST(test_Bp_Filter_Stop_Not_Running);
-    printf("Running test_Bp_Filter_Start_Null_Filter\n");
-    RUN_TEST(test_Bp_Filter_Start_Null_Filter);
-    printf("Running test_Bp_Filter_Stop_Null_Filter\n");
-    RUN_TEST(test_Bp_Filter_Stop_Null_Filter);
-    printf("Running test_Overflow_Behavior_Block_Default\n");
-    RUN_TEST(test_Overflow_Behavior_Block_Default);
-    printf("Running test_Overflow_Behavior_Drop_Mode\n");
-    RUN_TEST(test_Overflow_Behavior_Drop_Mode);
-    // TODO: Fix these tests - they need proper buffer allocation
-    // RUN_TEST(test_Await_Timeout_Behavior);
-    // RUN_TEST(test_Await_Stopped_Behavior);
+    
+    // Run specific test if provided as argument
+    if (argc > 1) {
+        const char* test_name = argv[1];
+        if (strcmp(test_name, "test_BpFilter_Init_Success") == 0) {
+            RUN_TEST(test_BpFilter_Init_Success);
+        } else if (strcmp(test_name, "test_BpFilter_Init_Failure") == 0) {
+            RUN_TEST(test_BpFilter_Init_Failure);
+        } else if (strcmp(test_name, "test_Bp_add_sink_Success") == 0) {
+            RUN_TEST(test_Bp_add_sink_Success);
+        } else if (strcmp(test_name, "test_Bp_add_multiple_sinks") == 0) {
+            RUN_TEST(test_Bp_add_multiple_sinks);
+        } else if (strcmp(test_name, "test_Bp_remove_sink_Success") == 0) {
+            RUN_TEST(test_Bp_remove_sink_Success);
+        } else if (strcmp(test_name, "test_multi_transform_function") == 0) {
+            RUN_TEST(test_multi_transform_function);
+        } else if (strcmp(test_name, "test_Bp_Filter_Start_Success") == 0) {
+            RUN_TEST(test_Bp_Filter_Start_Success);
+        } else if (strcmp(test_name, "test_Bp_Filter_Start_Already_Running") == 0) {
+            RUN_TEST(test_Bp_Filter_Start_Already_Running);
+        } else if (strcmp(test_name, "test_Bp_Filter_Stop_Success") == 0) {
+            RUN_TEST(test_Bp_Filter_Stop_Success);
+        } else if (strcmp(test_name, "test_Bp_Filter_Stop_Not_Running") == 0) {
+            RUN_TEST(test_Bp_Filter_Stop_Not_Running);
+        } else if (strcmp(test_name, "test_Bp_Filter_Start_Null_Filter") == 0) {
+            RUN_TEST(test_Bp_Filter_Start_Null_Filter);
+        } else if (strcmp(test_name, "test_Bp_Filter_Stop_Null_Filter") == 0) {
+            RUN_TEST(test_Bp_Filter_Stop_Null_Filter);
+        } else if (strcmp(test_name, "test_Overflow_Behavior_Block_Default") == 0) {
+            RUN_TEST(test_Overflow_Behavior_Block_Default);
+        } else if (strcmp(test_name, "test_Overflow_Behavior_Drop_Mode") == 0) {
+            RUN_TEST(test_Overflow_Behavior_Drop_Mode);
+        }
+    } else {
+        // Run all tests with debug output
+        printf("Running test_BpFilter_Init_Success\n");
+        RUN_TEST(test_BpFilter_Init_Success);
+        printf("Running test_BpFilter_Init_Failure\n");
+        RUN_TEST(test_BpFilter_Init_Failure);
+        printf("Running test_Bp_add_sink_Success\n");
+        RUN_TEST(test_Bp_add_sink_Success);
+        printf("Running test_Bp_add_multiple_sinks\n");
+        RUN_TEST(test_Bp_add_multiple_sinks);
+        printf("Running test_Bp_remove_sink_Success\n");
+        RUN_TEST(test_Bp_remove_sink_Success);
+        printf("Running test_multi_transform_function\n");
+        RUN_TEST(test_multi_transform_function);
+        printf("Running test_Bp_Filter_Start_Success\n");
+        RUN_TEST(test_Bp_Filter_Start_Success);
+        printf("Running test_Bp_Filter_Start_Already_Running\n");
+        RUN_TEST(test_Bp_Filter_Start_Already_Running);
+        printf("Running test_Bp_Filter_Stop_Success\n");
+        RUN_TEST(test_Bp_Filter_Stop_Success);
+        printf("Running test_Bp_Filter_Stop_Not_Running\n");
+        RUN_TEST(test_Bp_Filter_Stop_Not_Running);
+        printf("Running test_Bp_Filter_Start_Null_Filter\n");
+        RUN_TEST(test_Bp_Filter_Start_Null_Filter);
+        printf("Running test_Bp_Filter_Stop_Null_Filter\n");
+        RUN_TEST(test_Bp_Filter_Stop_Null_Filter);
+        printf("Running test_Overflow_Behavior_Block_Default\n");
+        RUN_TEST(test_Overflow_Behavior_Block_Default);
+        printf("Running test_Overflow_Behavior_Drop_Mode\n");
+        RUN_TEST(test_Overflow_Behavior_Drop_Mode);
+    }
+    
     return UNITY_END();
 }

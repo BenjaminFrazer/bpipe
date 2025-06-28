@@ -1,7 +1,9 @@
+#define _GNU_SOURCE
 #include "core.h"
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 Bp_EC Bp_Filter_Init(Bp_Filter_t *filter, TransformFcn_t transform_function,
                      int initial_state, size_t buffer_size_expo,
@@ -23,6 +25,7 @@ Bp_EC Bp_Filter_Init(Bp_Filter_t *filter, TransformFcn_t transform_function,
         OVERFLOW_BLOCK;  // Default to blocking behavior
     memset(filter->sources, 0, sizeof(filter->sources));
     memset(filter->sinks, 0, sizeof(filter->sinks));
+    memset(filter->input_buffers, 0, sizeof(filter->input_buffers));
 
     // Initialize timeout to a reasonable value (1 second)
     filter->timeout.tv_sec = time(NULL) + 1;
@@ -48,6 +51,9 @@ Bp_EC BpFilter_Init(Bp_Filter_t *filter, TransformFcn_t transform_function,
     memset(filter->sinks, 0, sizeof(filter->sinks));
     filter->n_sources = 0;
     filter->n_sinks = 0;
+    
+    // Initialize all input buffers to zero first
+    memset(filter->input_buffers, 0, sizeof(filter->input_buffers));
 
     // Initialize input buffers based on number_of_input_filters
     for (int i = 0; i < number_of_input_filters && i < MAX_SOURCES; i++) {
@@ -224,8 +230,10 @@ void *Bp_Worker(void *filter)
 
         // If we have additional source connections, read from those too
         for (int i = 1; i < f->n_sources && i < MAX_SOURCES; i++) {
-            input_batches[i] = &input_batch_storage[i];
-            *input_batches[i] = Bp_head(f, &f->input_buffers[i]);
+            if (f->input_buffers[i].data_ring != NULL) {
+                input_batches[i] = &input_batch_storage[i];
+                *input_batches[i] = Bp_head(f, &f->input_buffers[i]);
+            }
         }
     }
 
@@ -367,6 +375,11 @@ void *Bp_Worker(void *filter)
             }
         }
         pthread_mutex_unlock(&f->filter_mutex);
+        
+        // If we have no inputs and no outputs, yield to prevent CPU spinning
+        if (!uses_input_buffers && f->n_sinks == 0) {
+            usleep(1000);  // Sleep 1ms
+        }
     }
 
     // Send completion signals to all sinks
