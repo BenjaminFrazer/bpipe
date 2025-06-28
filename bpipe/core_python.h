@@ -25,7 +25,7 @@ int buffer_dtype_to_numpy(int dtype);
 
 PyObject *BpFilterPy_transform(PyObject *self, PyObject *args);
 void BpPyTransform(Bp_Filter_t *filt, Bp_Batch_t **input_batches, int n_inputs,
-                   Bp_Batch_t **output_batches, int n_outputs);
+                   Bp_Batch_t * const* output_batches, int n_outputs);
 
 extern PyTypeObject BpFilterBase;
 extern PyTypeObject BpFilterPy;

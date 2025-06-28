@@ -1,7 +1,6 @@
 #include "aggregator.h"
 #include <stdio.h>
 #include <string.h>
-#include "core.h"
 
 /* Get size in bytes for a given dtype */
 static size_t dtype_size(SampleDtype_t dtype)
@@ -23,7 +22,7 @@ Bp_EC AggregatorBuffer_Init(AggregatorBuffer_t* buffer, size_t element_size,
                             size_t max_capacity, SampleDtype_t dtype)
 {
     if (!buffer || element_size == 0 || max_capacity == 0) {
-        return BP_ERROR_NULL_FILTER;
+        return Bp_EC_NULL_FILTER;
     }
 
     buffer->element_size = element_size;
@@ -39,7 +38,7 @@ Bp_EC AggregatorBuffer_Init(AggregatorBuffer_t* buffer, size_t element_size,
 
     buffer->data = calloc(initial_capacity, element_size);
     if (!buffer->data) {
-        return BP_ERROR_NULL_FILTER;
+        return Bp_EC_NULL_FILTER;
     }
 
     buffer->capacity = initial_capacity;
@@ -50,7 +49,7 @@ Bp_EC AggregatorBuffer_Init(AggregatorBuffer_t* buffer, size_t element_size,
 Bp_EC AggregatorBuffer_Deinit(AggregatorBuffer_t* buffer)
 {
     if (!buffer) {
-        return BP_ERROR_NULL_FILTER;
+        return Bp_EC_NULL_FILTER;
     }
 
     if (buffer->data) {
@@ -67,7 +66,7 @@ Bp_EC AggregatorBuffer_Deinit(AggregatorBuffer_t* buffer)
 Bp_EC AggregatorBuffer_Resize(AggregatorBuffer_t* buffer, size_t new_capacity)
 {
     if (!buffer || !buffer->data) {
-        return BP_ERROR_NULL_FILTER;
+        return Bp_EC_NULL_FILTER;
     }
 
     if (new_capacity == buffer->capacity) {
@@ -76,7 +75,7 @@ Bp_EC AggregatorBuffer_Resize(AggregatorBuffer_t* buffer, size_t new_capacity)
 
     void* new_data = realloc(buffer->data, new_capacity * buffer->element_size);
     if (!new_data) {
-        return BP_ERROR_NULL_FILTER;
+        return Bp_EC_NULL_FILTER;
     }
 
     buffer->data = new_data;
@@ -95,7 +94,7 @@ Bp_EC AggregatorBuffer_Append(AggregatorBuffer_t* buffer, const void* data,
                               size_t n_elements)
 {
     if (!buffer || !buffer->data || !data) {
-        return BP_ERROR_NULL_FILTER;
+        return Bp_EC_NULL_FILTER;
     }
 
     size_t required_capacity = buffer->size + n_elements;
@@ -129,7 +128,7 @@ Bp_EC AggregatorBuffer_Append(AggregatorBuffer_t* buffer, const void* data,
 
 /* Aggregator transform function */
 void BpAggregatorTransform(Bp_Filter_t* filt, Bp_Batch_t** input_batches,
-                           int n_inputs, Bp_Batch_t** output_batches,
+                           int n_inputs, Bp_Batch_t* const* output_batches,
                            int n_outputs)
 {
     BpAggregatorPy_t* agg = (BpAggregatorPy_t*) filt;

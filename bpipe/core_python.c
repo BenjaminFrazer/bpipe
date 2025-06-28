@@ -26,16 +26,16 @@ PyObject* Bp_start(PyObject* self, PyObject* args)
     Bp_EC result = Bp_Filter_Start(obj);
     if (result != Bp_EC_OK) {
         switch (result) {
-            case BP_ERROR_NULL_FILTER:
+            case Bp_EC_NULL_FILTER:
                 PyErr_SetString(PyExc_ValueError, "Filter object is null");
                 break;
-            case BP_ERROR_ALREADY_RUNNING:
+            case Bp_EC_ALREADY_RUNNING:
                 PyErr_SetString(PyExc_ValueError,
                                 obj->worker_err_info.err_msg
                                     ? obj->worker_err_info.err_msg
                                     : "Filter is already running");
                 break;
-            case BP_ERROR_THREAD_CREATE_FAIL:
+            case Bp_EC_THREAD_CREATE_FAIL:
                 PyErr_SetString(PyExc_OSError,
                                 obj->worker_err_info.err_msg
                                     ? obj->worker_err_info.err_msg
@@ -60,10 +60,10 @@ PyObject* Bp_stop(PyObject* self, PyObject* args)
     Bp_EC result = Bp_Filter_Stop(obj);
     if (result != Bp_EC_OK) {
         switch (result) {
-            case BP_ERROR_NULL_FILTER:
+            case Bp_EC_NULL_FILTER:
                 PyErr_SetString(PyExc_ValueError, "Filter object is null");
                 break;
-            case BP_ERROR_THREAD_JOIN_FAIL:
+            case Bp_EC_THREAD_JOIN_FAIL:
                 PyErr_SetString(PyExc_OSError,
                                 obj->worker_err_info.err_msg
                                     ? obj->worker_err_info.err_msg

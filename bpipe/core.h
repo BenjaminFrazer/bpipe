@@ -1,3 +1,6 @@
+#ifndef BPIPE_CORE_H
+#define BPIPE_CORE_H
+
 #include <arpa/inet.h>
 #include <assert.h>
 #include <errno.h>
@@ -383,3 +386,5 @@ static inline void Bp_delete_tail(Bp_Filter_t* dpipe, Bp_BatchBuffer_t* buf)
 
 /* Worker thread entry point */
 void* Bp_Worker(void* filter);
+
+#endif /* BPIPE_CORE_H */

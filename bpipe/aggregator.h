@@ -2,12 +2,8 @@
 #define BPIPE_AGGREGATOR_H
 
 #include <Python.h>
-
-/* Forward declarations - core.h will be included by implementation files */
-typedef struct _DataPipe Bp_Filter_t;
-typedef struct _Batch Bp_Batch_t;
-typedef enum _SampleType SampleDtype_t;
-typedef enum _Bp_EC Bp_EC;
+#include <stdbool.h>
+#include "core.h"
 
 /* Default max capacity: 1GB worth of samples */
 #define DEFAULT_MAX_CAPACITY_BYTES (1ULL << 30)
@@ -33,7 +29,7 @@ typedef struct {
 
 /* C-side aggregator transform function */
 void BpAggregatorTransform(Bp_Filter_t* filt, Bp_Batch_t** input_batches,
-                           int n_inputs, Bp_Batch_t** output_batches,
+                           int n_inputs, Bp_Batch_t* const* output_batches,
                            int n_outputs);
 
 /* Buffer management functions */
