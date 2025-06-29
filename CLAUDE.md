@@ -37,7 +37,8 @@ This is a **modular real-time telemetry data processing framework** built in C w
 
 ### documentation
 - key documentation to read is:
-    - core data model : /docs/core_datamodel.md
+    - core data model : `docs/core_datamodel.md`
+    - multi-input data sync: `docs/multi_input_syncronisation.md`
 - keep documentation updated.
 
 ### Build System
