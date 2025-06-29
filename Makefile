@@ -48,6 +48,12 @@ run: all
 	./$(BUILD_DIR)/test_sentinel
 	./$(BUILD_DIR)/test_simple_multi_output
 
+run-safe: all
+	./run_with_timeout.sh 30 ./$(BUILD_DIR)/test_core_filter
+	./run_with_timeout.sh 30 ./$(BUILD_DIR)/test_signal_gen
+	./run_with_timeout.sh 30 ./$(BUILD_DIR)/test_sentinel
+	./run_with_timeout.sh 30 ./$(BUILD_DIR)/test_simple_multi_output
+
 # Test targets
 test: test-c test-py
 
