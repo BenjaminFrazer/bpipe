@@ -47,6 +47,18 @@
 ## SAWTOOTH_DEMO
 - Create a demo script that chains a sawtooth data-source with a pass-through and writes to a plot aggregator.
 
+### Goal
+- a test to exersise all core features of the library working together.
+- Demonstrates filter chaining & interfaces.
+- low maintainance/high coverage
+- representative of usage
+- visual feedback
+
+### Considerations/justification
+- less maintainance burden
+- sawtooth passthrough combo makes data corruption very obvious
+- a back-to-bach test which tests three core filter components + python wrappers at "system level"
+
 ### behaviour
 - The script should keep the plot window open untill the user kills it.
 - keep python code concise simple and readable avoid try catches. 
@@ -105,9 +117,28 @@
 
 
 ## ABSTRACTED_BATCH_ACESSORS
+- I would preffer to abstract the filter interface to remove buffer pointers so the  API simply reffering to the index of the input i.e. input 0, 1, 2 etc.
 
 ### Goal
-- I would preffer to abstract the interface to filters so that API's for A) retrieving data B) joining filters does not require passing pointers to buffers, rather simply reffering to the index of the input i.e. input 0, 1, 2 etc.
+- simplify the API by hiding implementation details
+- seperate concerns 
+
+### Example
+Original
+```c
+Bp_submit_batch(Bp_Filter_t* dpipe, Bp_BatchBuffer_t* buf)
+```
+
+New:
+```c
+Bp_submit_batch(Bp_Filter_t* dpipe, int buff_idx)
+```
+
+### affected API's
+- `Bp_submit_batch`
+- `Bp_delete_tail`
+- `Bp_head`
+- perhaps others
 
 ## C_TEST_HARNESS 
 - There will be many pure c based filters.
