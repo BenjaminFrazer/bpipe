@@ -198,7 +198,6 @@ typedef struct _DataPipe {
     int n_sources;
     int n_sinks;
     size_t data_width;
-    OverflowBehaviour_t overflow_behaviour;
     SampleDtype_t dtype;
     pthread_t worker_thread;
     pthread_mutex_t filter_mutex;  // Protects sinks/sources arrays

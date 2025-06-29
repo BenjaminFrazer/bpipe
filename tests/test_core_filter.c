@@ -276,8 +276,8 @@ void test_Overflow_Behavior_Block_Default(void)
     Bp_EC init_result = BpFilter_Init(&filter, &config);
     TEST_ASSERT_EQUAL(Bp_EC_OK, init_result);
 
-    // Default behavior should be OVERFLOW_BLOCK
-    TEST_ASSERT_EQUAL_UINT(OVERFLOW_BLOCK, filter.overflow_behaviour);
+    // Default behavior should be OVERFLOW_BLOCK (verify in buffer, not filter)
+    TEST_ASSERT_EQUAL_UINT(OVERFLOW_BLOCK, filter.input_buffers[0].overflow_behaviour);
     
     // Clean up local filter to prevent resource leaks
     BpFilter_Deinit(&filter);

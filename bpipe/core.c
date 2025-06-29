@@ -601,7 +601,6 @@ Bp_EC BpFilter_Init(Bp_Filter_t* filter, const BpFilterConfig* config) {
     /* Set filter properties from configuration */
     filter->transform = working_config.transform;
     filter->running = false;
-    filter->overflow_behaviour = working_config.overflow_behaviour;
     filter->dtype = working_config.dtype;
     filter->data_width = _data_size_lut[working_config.dtype];
     
