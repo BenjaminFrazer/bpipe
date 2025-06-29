@@ -103,6 +103,7 @@ typedef struct {
     bool auto_allocate_buffers;             /* Default: true */
     void* memory_pool;                      /* Default: NULL (use malloc) */
     size_t alignment;                       /* Default: 0 (natural alignment) */
+    unsigned long timeout_us;               /* Default: 1000000 (1 second) */
 } BpFilterConfig;
 
 /* Default configuration helper */
@@ -116,7 +117,8 @@ typedef struct {
     .overflow_behaviour = OVERFLOW_BLOCK, \
     .auto_allocate_buffers = true, \
     .memory_pool = NULL, \
-    .alignment = 0 \
+    .alignment = 0, \
+    .timeout_us = 1000000 \
 }
 
 /* Type error structure for enhanced error reporting */
@@ -135,7 +137,30 @@ typedef struct _err_info {
     const char* err_msg;
 } Err_info;
 
+/* Configuration structure for buffer initialization */
+typedef struct {
+    size_t batch_size;
+    size_t number_of_batches;
+    size_t data_width;
+    SampleDtype_t dtype;
+    OverflowBehaviour_t overflow_behaviour;
+    unsigned long timeout_us;
+    const char* name;  /* Optional debug name */
+} BpBufferConfig_t;
+
+/* Default buffer configuration helper */
+#define BP_BUFFER_CONFIG_DEFAULT { \
+    .batch_size = 64, \
+    .number_of_batches = 64, \
+    .data_width = sizeof(float), \
+    .dtype = DTYPE_FLOAT, \
+    .overflow_behaviour = OVERFLOW_BLOCK, \
+    .timeout_us = 1000000, \
+    .name = NULL \
+}
+
 typedef struct _Bp_BatchBuffer {
+    /* Existing synchronization and storage */
     void* data_ring;
     Bp_Batch_t* batch_ring;
     size_t head;
@@ -146,6 +171,20 @@ typedef struct _Bp_BatchBuffer {
     pthread_cond_t not_empty;
     pthread_cond_t not_full;
     bool stopped;
+    
+    /* Configuration moved from filter - makes buffer self-contained */
+    size_t data_width;
+    SampleDtype_t dtype;
+    OverflowBehaviour_t overflow_behaviour;
+    unsigned long timeout_us;
+    
+    /* Optional: back-reference for debugging */
+    char name[32];  /* e.g., "filter1.input[0]" */
+    
+    /* Optional: statistics */
+    uint64_t total_batches;
+    uint64_t dropped_batches;
+    uint64_t blocked_time_ns;
 } Bp_BatchBuffer_t;
 
 typedef struct _DataPipe {
@@ -188,8 +227,34 @@ Bp_EC Bp_add_sink_with_error(Bp_Filter_t* source, Bp_Filter_t* sink, BpTypeError
 Bp_EC Bp_remove_sink(Bp_Filter_t* filter, const Bp_Filter_t* sink);
 Bp_EC Bp_remove_source(Bp_Filter_t* filter, const Bp_Filter_t* source);
 
+/* Legacy buffer initialization (deprecated) */
 Bp_EC Bp_BatchBuffer_Init(Bp_BatchBuffer_t* buffer, size_t batch_size,
                           size_t number_of_batches);
+
+/* New buffer-centric API */
+Bp_EC BpBatchBuffer_InitFromConfig(Bp_BatchBuffer_t* buffer, const BpBufferConfig_t* config);
+Bp_BatchBuffer_t* BpBatchBuffer_Create(const BpBufferConfig_t* config);
+void BpBatchBuffer_Destroy(Bp_BatchBuffer_t* buffer);
+
+/* Core buffer operations - buffer-centric API */
+Bp_Batch_t BpBatchBuffer_Allocate(Bp_BatchBuffer_t* buf);
+Bp_EC BpBatchBuffer_Submit(Bp_BatchBuffer_t* buf, const Bp_Batch_t* batch);
+Bp_Batch_t BpBatchBuffer_Head(Bp_BatchBuffer_t* buf);
+Bp_EC BpBatchBuffer_DeleteTail(Bp_BatchBuffer_t* buf);
+
+/* Utility operations */
+bool BpBatchBuffer_IsEmpty(const Bp_BatchBuffer_t* buf);
+bool BpBatchBuffer_IsFull(const Bp_BatchBuffer_t* buf);
+size_t BpBatchBuffer_Available(const Bp_BatchBuffer_t* buf);
+size_t BpBatchBuffer_Capacity(const Bp_BatchBuffer_t* buf);
+
+/* Control operations */
+void BpBatchBuffer_Stop(Bp_BatchBuffer_t* buf);
+void BpBatchBuffer_Reset(Bp_BatchBuffer_t* buf);
+
+/* Configuration updates (thread-safe) */
+Bp_EC BpBatchBuffer_SetTimeout(Bp_BatchBuffer_t* buf, unsigned long timeout_us);
+Bp_EC BpBatchBuffer_SetOverflowBehaviour(Bp_BatchBuffer_t* buf, OverflowBehaviour_t behaviour);
 
 Bp_EC Bp_BatchBuffer_Deinit(Bp_BatchBuffer_t* buffer);
 
@@ -247,33 +312,31 @@ static inline unsigned long Bp_batch_capacity(Bp_BatchBuffer_t* buf)
 
 static inline Bp_EC Bp_allocate_buffers(Bp_Filter_t* dpipe, int buffer_idx)
 {
-    assert(dpipe->dtype != DTYPE_NDEF);
+    Bp_BatchBuffer_t* buf = &dpipe->input_buffers[buffer_idx];
+    assert(buf->dtype != DTYPE_NDEF);
 
-    dpipe->input_buffers[buffer_idx].data_ring =
-        malloc(dpipe->data_width *
-               Bp_ring_capacity(&dpipe->input_buffers[buffer_idx]));
-    dpipe->input_buffers[buffer_idx].batch_ring =
-        malloc(sizeof(Bp_Batch_t) *
-               Bp_ring_capacity(&dpipe->input_buffers[buffer_idx]));
-    dpipe->input_buffers[buffer_idx].head = 0;
-    dpipe->input_buffers[buffer_idx].tail = 0;
+    buf->data_ring = malloc(buf->data_width * Bp_ring_capacity(buf));
+    buf->batch_ring = malloc(sizeof(Bp_Batch_t) * Bp_ring_capacity(buf));
+    buf->head = 0;
+    buf->tail = 0;
 
-    assert(dpipe->input_buffers[buffer_idx].data_ring != NULL);
-    assert(dpipe->input_buffers[buffer_idx].batch_ring != NULL);
+    assert(buf->data_ring != NULL);
+    assert(buf->batch_ring != NULL);
     return Bp_EC_OK;
 }
 
 static inline Bp_EC Bp_deallocate_buffers(Bp_Filter_t* dpipe, int buffer_idx)
 {
-    assert(dpipe->dtype != DTYPE_NDEF);
+    Bp_BatchBuffer_t* buf = &dpipe->input_buffers[buffer_idx];
+    assert(buf->dtype != DTYPE_NDEF);
 
-    free(dpipe->input_buffers[buffer_idx].data_ring);
-    free(dpipe->input_buffers[buffer_idx].batch_ring);
+    free(buf->data_ring);
+    free(buf->batch_ring);
 
-    dpipe->input_buffers[buffer_idx].data_ring = NULL;
-    dpipe->input_buffers[buffer_idx].batch_ring = NULL;
-    dpipe->input_buffers[buffer_idx].head = 0;
-    dpipe->input_buffers[buffer_idx].tail = 0;
+    buf->data_ring = NULL;
+    buf->batch_ring = NULL;
+    buf->head = 0;
+    buf->tail = 0;
     return Bp_EC_OK;
 }
 
@@ -381,27 +444,30 @@ static inline Bp_Batch_t Bp_allocate(Bp_Filter_t* dpipe, Bp_BatchBuffer_t* buf)
 {
     Bp_Batch_t batch = {0};
 
-    // Check overflow behavior before waiting
-    if (dpipe->overflow_behaviour == OVERFLOW_DROP && Bp_full(buf)) {
-        batch.ec =
-            Bp_EC_NOSPACE;  // Signal that allocation failed due to overflow
+    // Check overflow behavior before waiting - now using buffer's config
+    if (buf->overflow_behaviour == OVERFLOW_DROP && Bp_full(buf)) {
+        batch.ec = Bp_EC_NOSPACE;  // Signal that allocation failed due to overflow
         return batch;
     }
 
-    // Calculate timeout in microseconds from filter timeout
-    unsigned long timeout_us = dpipe->timeout.tv_sec * 1000000UL + dpipe->timeout.tv_nsec / 1000;
-    
-    Bp_EC wait_result = Bp_await_not_full(buf, timeout_us);
+    // Use buffer's timeout configuration
+    Bp_EC wait_result = Bp_await_not_full(buf, buf->timeout_us);
     if (wait_result == Bp_EC_OK) {
         size_t idx = buf->head & ((1u << buf->ring_capacity_expo) - 1u);
         void* data_ptr = (char*) buf->data_ring +
-                         idx * dpipe->data_width * Bp_batch_capacity(buf);
+                         idx * buf->data_width * Bp_batch_capacity(buf);
         batch.capacity = Bp_batch_capacity(buf);
         batch.data = data_ptr;
         batch.batch_id = idx;
-        batch.dtype = dpipe->dtype;
+        batch.dtype = buf->dtype;
+        
+        // Update statistics
+        buf->total_batches++;
     } else {
         batch.ec = wait_result;  // Could be TIMEOUT, STOPPED, etc
+        if (wait_result == Bp_EC_NOSPACE) {
+            buf->dropped_batches++;
+        }
     }
     return batch;
 }
@@ -418,10 +484,8 @@ static inline void Bp_submit_batch(Bp_Filter_t* dpipe, Bp_BatchBuffer_t* buf,
 static inline Bp_Batch_t Bp_head(Bp_Filter_t* dpipe, Bp_BatchBuffer_t* buf)
 {
     Bp_Batch_t batch = {0};
-    // Calculate timeout in microseconds from filter timeout
-    unsigned long timeout_us = dpipe->timeout.tv_sec * 1000000UL + dpipe->timeout.tv_nsec / 1000;
-    
-    Bp_EC wait_result = Bp_await_not_empty(buf, timeout_us);
+    // Use buffer's timeout configuration
+    Bp_EC wait_result = Bp_await_not_empty(buf, buf->timeout_us);
     if (wait_result == Bp_EC_OK) {
         size_t idx = buf->tail & ((1u << buf->ring_capacity_expo) - 1u);
         batch = buf->batch_ring[idx];
@@ -435,6 +499,85 @@ static inline void Bp_delete_tail(Bp_Filter_t* dpipe, Bp_BatchBuffer_t* buf)
 {
     buf->tail++;
     pthread_cond_signal(&buf->not_full);
+}
+
+/* Buffer-centric inline operations */
+static inline Bp_Batch_t BpBatchBuffer_Allocate_Inline(Bp_BatchBuffer_t* buf)
+{
+    Bp_Batch_t batch = {0};
+
+    // Check overflow behavior before waiting
+    if (buf->overflow_behaviour == OVERFLOW_DROP && Bp_full(buf)) {
+        batch.ec = Bp_EC_NOSPACE;
+        buf->dropped_batches++;
+        return batch;
+    }
+
+    Bp_EC wait_result = Bp_await_not_full(buf, buf->timeout_us);
+    if (wait_result == Bp_EC_OK) {
+        size_t idx = buf->head & ((1u << buf->ring_capacity_expo) - 1u);
+        void* data_ptr = (char*) buf->data_ring +
+                         idx * buf->data_width * Bp_batch_capacity(buf);
+        batch.capacity = Bp_batch_capacity(buf);
+        batch.data = data_ptr;
+        batch.batch_id = idx;
+        batch.dtype = buf->dtype;
+        
+        // Update statistics
+        buf->total_batches++;
+    } else {
+        batch.ec = wait_result;
+    }
+    return batch;
+}
+
+static inline Bp_EC BpBatchBuffer_Submit_Inline(Bp_BatchBuffer_t* buf, const Bp_Batch_t* batch)
+{
+    size_t idx = buf->head & ((1u << buf->ring_capacity_expo) - 1u);
+    buf->batch_ring[idx] = *batch;
+    buf->head++;
+    pthread_cond_signal(&buf->not_empty);
+    return Bp_EC_OK;
+}
+
+static inline Bp_Batch_t BpBatchBuffer_Head_Inline(Bp_BatchBuffer_t* buf)
+{
+    Bp_Batch_t batch = {0};
+    Bp_EC wait_result = Bp_await_not_empty(buf, buf->timeout_us);
+    if (wait_result == Bp_EC_OK) {
+        size_t idx = buf->tail & ((1u << buf->ring_capacity_expo) - 1u);
+        batch = buf->batch_ring[idx];
+    } else {
+        batch.ec = wait_result;
+    }
+    return batch;
+}
+
+static inline Bp_EC BpBatchBuffer_DeleteTail_Inline(Bp_BatchBuffer_t* buf)
+{
+    buf->tail++;
+    pthread_cond_signal(&buf->not_full);
+    return Bp_EC_OK;
+}
+
+static inline bool BpBatchBuffer_IsEmpty_Inline(const Bp_BatchBuffer_t* buf)
+{
+    return buf->head == buf->tail;
+}
+
+static inline bool BpBatchBuffer_IsFull_Inline(const Bp_BatchBuffer_t* buf)
+{
+    return (buf->head - buf->tail) >= Bp_ring_capacity((Bp_BatchBuffer_t*)buf);
+}
+
+static inline size_t BpBatchBuffer_Available_Inline(const Bp_BatchBuffer_t* buf)
+{
+    return buf->head - buf->tail;
+}
+
+static inline size_t BpBatchBuffer_Capacity_Inline(const Bp_BatchBuffer_t* buf)
+{
+    return Bp_ring_capacity((Bp_BatchBuffer_t*)buf);
 }
 
 /* Worker thread entry point */

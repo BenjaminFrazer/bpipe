@@ -478,7 +478,8 @@ const BpFilterConfig BP_CONFIG_FLOAT_STANDARD = {
     .overflow_behaviour = OVERFLOW_BLOCK,
     .auto_allocate_buffers = true,
     .memory_pool = NULL,
-    .alignment = 0
+    .alignment = 0,
+    .timeout_us = 1000000
 };
 
 const BpFilterConfig BP_CONFIG_INT_STANDARD = {
@@ -491,7 +492,8 @@ const BpFilterConfig BP_CONFIG_INT_STANDARD = {
     .overflow_behaviour = OVERFLOW_BLOCK,
     .auto_allocate_buffers = true,
     .memory_pool = NULL,
-    .alignment = 0
+    .alignment = 0,
+    .timeout_us = 1000000
 };
 
 const BpFilterConfig BP_CONFIG_HIGH_THROUGHPUT = {
@@ -504,7 +506,8 @@ const BpFilterConfig BP_CONFIG_HIGH_THROUGHPUT = {
     .overflow_behaviour = OVERFLOW_BLOCK,
     .auto_allocate_buffers = true,
     .memory_pool = NULL,
-    .alignment = 0
+    .alignment = 0,
+    .timeout_us = 1000000
 };
 
 const BpFilterConfig BP_CONFIG_LOW_LATENCY = {
@@ -517,7 +520,8 @@ const BpFilterConfig BP_CONFIG_LOW_LATENCY = {
     .overflow_behaviour = OVERFLOW_BLOCK,
     .auto_allocate_buffers = true,
     .memory_pool = NULL,
-    .alignment = 0
+    .alignment = 0,
+    .timeout_us = 1000000
 };
 
 /* Internal helper to apply defaults to partial configs */
@@ -610,11 +614,19 @@ Bp_EC BpFilter_Init(Bp_Filter_t* filter, const BpFilterConfig* config) {
         return Bp_EC_MUTEX_INIT_FAIL;
     }
     
-    /* Initialize input buffers based on configuration */
+    /* Initialize input buffers based on configuration using new enhanced buffer API */
     for (int i = 0; i < working_config.number_of_input_filters && i < MAX_SOURCES; i++) {
-        Bp_EC buffer_init_res = Bp_BatchBuffer_Init(&(filter->input_buffers[i]), 
-                                                    working_config.batch_size,
-                                                    1 << working_config.number_of_batches_exponent);
+        BpBufferConfig_t buffer_config = {
+            .batch_size = working_config.batch_size,
+            .number_of_batches = 1 << working_config.number_of_batches_exponent,
+            .data_width = filter->data_width,
+            .dtype = working_config.dtype,
+            .overflow_behaviour = working_config.overflow_behaviour,
+            .timeout_us = working_config.timeout_us,
+            .name = NULL  // Could add debug names later
+        };
+        
+        Bp_EC buffer_init_res = BpBatchBuffer_InitFromConfig(&(filter->input_buffers[i]), &buffer_config);
         if (buffer_init_res != Bp_EC_OK) {
             /* Clean up any previously initialized buffers */
             for (int j = 0; j < i; j++) {
@@ -637,6 +649,204 @@ Bp_EC BpFilter_Init(Bp_Filter_t* filter, const BpFilterConfig* config) {
             }
         }
     }
+    
+    return Bp_EC_OK;
+}
+
+/* =====================================================
+ * Buffer-Centric API Implementation
+ * ===================================================== */
+
+/* Initialize buffer from configuration structure */
+Bp_EC BpBatchBuffer_InitFromConfig(Bp_BatchBuffer_t* buffer, const BpBufferConfig_t* config)
+{
+    if (!buffer || !config) return Bp_EC_NOSPACE;
+
+    // Initialize basic buffer state
+    buffer->head = 0;
+    buffer->tail = 0;
+    buffer->ring_capacity_expo = 0;
+    buffer->batch_capacity_expo = 0;
+    buffer->stopped = false;
+
+    // Initialize statistics
+    buffer->total_batches = 0;
+    buffer->dropped_batches = 0;
+    buffer->blocked_time_ns = 0;
+
+    // Copy configuration into buffer structure
+    buffer->data_width = config->data_width;
+    buffer->dtype = config->dtype;
+    buffer->overflow_behaviour = config->overflow_behaviour;
+    buffer->timeout_us = config->timeout_us;
+
+    // Copy debug name if provided
+    if (config->name && strlen(config->name) < sizeof(buffer->name)) {
+        strncpy(buffer->name, config->name, sizeof(buffer->name) - 1);
+        buffer->name[sizeof(buffer->name) - 1] = '\0';
+    } else {
+        buffer->name[0] = '\0';
+    }
+
+    // Calculate ring capacity exponent (find log2 of number_of_batches)
+    size_t temp = config->number_of_batches;
+    while (temp > 1) {
+        buffer->ring_capacity_expo++;
+        temp >>= 1;
+    }
+    if (buffer->ring_capacity_expo > MAX_CAPACITY_EXPO) {
+        buffer->ring_capacity_expo = MAX_CAPACITY_EXPO;
+    }
+
+    // Calculate batch capacity exponent (find log2 of batch_size)
+    temp = config->batch_size;
+    while (temp > 1) {
+        buffer->batch_capacity_expo++;
+        temp >>= 1;
+    }
+    if (buffer->batch_capacity_expo > MAX_CAPACITY_EXPO) {
+        buffer->batch_capacity_expo = MAX_CAPACITY_EXPO;
+    }
+
+    // Initialize pthread synchronization objects
+    if (pthread_mutex_init(&buffer->mutex, NULL) != 0) {
+        return Bp_EC_MUTEX_INIT_FAIL;
+    }
+
+    if (pthread_cond_init(&buffer->not_empty, NULL) != 0) {
+        pthread_mutex_destroy(&buffer->mutex);
+        return Bp_EC_COND_INIT_FAIL;
+    }
+
+    if (pthread_cond_init(&buffer->not_full, NULL) != 0) {
+        pthread_mutex_destroy(&buffer->mutex);
+        pthread_cond_destroy(&buffer->not_empty);
+        return Bp_EC_COND_INIT_FAIL;
+    }
+
+    // Allocate ring buffers
+    buffer->data_ring = malloc(buffer->data_width * Bp_ring_capacity(buffer));
+    buffer->batch_ring = malloc(sizeof(Bp_Batch_t) * Bp_ring_capacity(buffer));
+
+    if (!buffer->data_ring || !buffer->batch_ring) {
+        free(buffer->data_ring);
+        free(buffer->batch_ring);
+        pthread_mutex_destroy(&buffer->mutex);
+        pthread_cond_destroy(&buffer->not_empty);
+        pthread_cond_destroy(&buffer->not_full);
+        return Bp_EC_NOSPACE;
+    }
+
+    return Bp_EC_OK;
+}
+
+/* Create and initialize buffer in one step */
+Bp_BatchBuffer_t* BpBatchBuffer_Create(const BpBufferConfig_t* config)
+{
+    if (!config) return NULL;
+
+    Bp_BatchBuffer_t* buffer = malloc(sizeof(Bp_BatchBuffer_t));
+    if (!buffer) return NULL;
+
+    Bp_EC result = BpBatchBuffer_InitFromConfig(buffer, config);
+    if (result != Bp_EC_OK) {
+        free(buffer);
+        return NULL;
+    }
+
+    return buffer;
+}
+
+/* Destroy buffer created with BpBatchBuffer_Create */
+void BpBatchBuffer_Destroy(Bp_BatchBuffer_t* buffer)
+{
+    if (!buffer) return;
+    
+    Bp_BatchBuffer_Deinit(buffer);
+    free(buffer);
+}
+
+/* Buffer-centric core operations */
+Bp_Batch_t BpBatchBuffer_Allocate(Bp_BatchBuffer_t* buf)
+{
+    return BpBatchBuffer_Allocate_Inline(buf);
+}
+
+Bp_EC BpBatchBuffer_Submit(Bp_BatchBuffer_t* buf, const Bp_Batch_t* batch)
+{
+    return BpBatchBuffer_Submit_Inline(buf, batch);
+}
+
+Bp_Batch_t BpBatchBuffer_Head(Bp_BatchBuffer_t* buf)
+{
+    return BpBatchBuffer_Head_Inline(buf);
+}
+
+Bp_EC BpBatchBuffer_DeleteTail(Bp_BatchBuffer_t* buf)
+{
+    return BpBatchBuffer_DeleteTail_Inline(buf);
+}
+
+/* Utility operations */
+bool BpBatchBuffer_IsEmpty(const Bp_BatchBuffer_t* buf)
+{
+    return BpBatchBuffer_IsEmpty_Inline(buf);
+}
+
+bool BpBatchBuffer_IsFull(const Bp_BatchBuffer_t* buf)
+{
+    return BpBatchBuffer_IsFull_Inline(buf);
+}
+
+size_t BpBatchBuffer_Available(const Bp_BatchBuffer_t* buf)
+{
+    return BpBatchBuffer_Available_Inline(buf);
+}
+
+size_t BpBatchBuffer_Capacity(const Bp_BatchBuffer_t* buf)
+{
+    return BpBatchBuffer_Capacity_Inline(buf);
+}
+
+/* Control operations */
+void BpBatchBuffer_Stop(Bp_BatchBuffer_t* buf)
+{
+    BpBatchBuffer_stop(buf);  // Use existing implementation
+}
+
+void BpBatchBuffer_Reset(Bp_BatchBuffer_t* buf)
+{
+    if (!buf) return;
+    
+    pthread_mutex_lock(&buf->mutex);
+    buf->head = 0;
+    buf->tail = 0;
+    buf->stopped = false;
+    buf->total_batches = 0;
+    buf->dropped_batches = 0;
+    buf->blocked_time_ns = 0;
+    pthread_mutex_unlock(&buf->mutex);
+}
+
+/* Configuration updates (thread-safe) */
+Bp_EC BpBatchBuffer_SetTimeout(Bp_BatchBuffer_t* buf, unsigned long timeout_us)
+{
+    if (!buf) return Bp_EC_NOSPACE;
+    
+    pthread_mutex_lock(&buf->mutex);
+    buf->timeout_us = timeout_us;
+    pthread_mutex_unlock(&buf->mutex);
+    
+    return Bp_EC_OK;
+}
+
+Bp_EC BpBatchBuffer_SetOverflowBehaviour(Bp_BatchBuffer_t* buf, OverflowBehaviour_t behaviour)
+{
+    if (!buf) return Bp_EC_NOSPACE;
+    
+    pthread_mutex_lock(&buf->mutex);
+    buf->overflow_behaviour = behaviour;
+    pthread_mutex_unlock(&buf->mutex);
     
     return Bp_EC_OK;
 }
