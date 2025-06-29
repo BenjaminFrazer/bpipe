@@ -7,13 +7,13 @@ SRC_DIR=bpipe
 TEST_SRC_DIR=tests
 BUILD_DIR=build
 UNITY_SRC=lib/Unity/src/unity.c
-TESTS=$(TEST_SRC_DIR)/test_core_filter.c $(TEST_SRC_DIR)/test_signal_gen.c $(TEST_SRC_DIR)/test_sentinel.c $(TEST_SRC_DIR)/test_simple_multi_output.c $(TEST_SRC_DIR)/test_resampler.c
-OBJ_FILES=$(SRC_DIR)/core.c $(SRC_DIR)/signal_gen.c $(SRC_DIR)/tee.c $(SRC_DIR)/resampler.c
+TESTS=$(TEST_SRC_DIR)/test_core_filter.c $(TEST_SRC_DIR)/test_signal_gen.c $(TEST_SRC_DIR)/test_sentinel.c $(TEST_SRC_DIR)/test_simple_multi_output.c $(TEST_SRC_DIR)/test_math_ops.c $(TEST_SRC_DIR)/test_math_ops_integration.c
+OBJ_FILES=$(SRC_DIR)/core.c $(SRC_DIR)/signal_gen.c $(SRC_DIR)/tee.c $(SRC_DIR)/math_ops.c
 
 .PHONY: all clean run test test-c test-py lint lint-c lint-py lint-fix clang-format-check clang-format-fix clang-tidy-check cppcheck-check ruff-check ruff-format-check ruff-fix
 
 all: | $(BUILD_DIR)
-all: $(BUILD_DIR)/test_core_filter $(BUILD_DIR)/test_signal_gen $(BUILD_DIR)/test_sentinel $(BUILD_DIR)/test_simple_multi_output $(BUILD_DIR)/test_resampler
+all: $(BUILD_DIR)/test_core_filter $(BUILD_DIR)/test_signal_gen $(BUILD_DIR)/test_sentinel $(BUILD_DIR)/test_simple_multi_output $(BUILD_DIR)/test_math_ops $(BUILD_DIR)/test_math_ops_integration
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
@@ -27,19 +27,28 @@ $(BUILD_DIR)/%.o: $(TEST_SRC_DIR)/%.c | $(BUILD_DIR)
 $(BUILD_DIR)/unity.o: $(UNITY_SRC) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(BUILD_DIR)/test_core_filter: $(BUILD_DIR)/core.o $(BUILD_DIR)/signal_gen.o $(BUILD_DIR)/tee.o $(BUILD_DIR)/unity.o $(BUILD_DIR)/test_core_filter.o
+$(BUILD_DIR)/test_core_filter: $(BUILD_DIR)/core.o $(BUILD_DIR)/signal_gen.o $(BUILD_DIR)/tee.o $(BUILD_DIR)/math_ops.o $(BUILD_DIR)/unity.o $(BUILD_DIR)/test_core_filter.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(BUILD_DIR)/test_signal_gen: $(BUILD_DIR)/core.o $(BUILD_DIR)/signal_gen.o $(BUILD_DIR)/tee.o $(BUILD_DIR)/unity.o $(BUILD_DIR)/test_signal_gen.o
+$(BUILD_DIR)/test_signal_gen: $(BUILD_DIR)/core.o $(BUILD_DIR)/signal_gen.o $(BUILD_DIR)/tee.o $(BUILD_DIR)/math_ops.o $(BUILD_DIR)/unity.o $(BUILD_DIR)/test_signal_gen.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(BUILD_DIR)/test_sentinel: $(BUILD_DIR)/core.o $(BUILD_DIR)/signal_gen.o $(BUILD_DIR)/tee.o $(BUILD_DIR)/unity.o $(BUILD_DIR)/test_sentinel.o
+$(BUILD_DIR)/test_sentinel: $(BUILD_DIR)/core.o $(BUILD_DIR)/signal_gen.o $(BUILD_DIR)/tee.o $(BUILD_DIR)/math_ops.o $(BUILD_DIR)/unity.o $(BUILD_DIR)/test_sentinel.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(BUILD_DIR)/test_simple_multi_output: $(BUILD_DIR)/core.o $(BUILD_DIR)/signal_gen.o $(BUILD_DIR)/tee.o $(BUILD_DIR)/unity.o $(BUILD_DIR)/test_simple_multi_output.o
+$(BUILD_DIR)/test_simple_multi_output: $(BUILD_DIR)/core.o $(BUILD_DIR)/signal_gen.o $(BUILD_DIR)/tee.o $(BUILD_DIR)/math_ops.o $(BUILD_DIR)/unity.o $(BUILD_DIR)/test_simple_multi_output.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-$(BUILD_DIR)/test_resampler: $(BUILD_DIR)/core.o $(BUILD_DIR)/signal_gen.o $(BUILD_DIR)/tee.o $(BUILD_DIR)/resampler.o $(BUILD_DIR)/unity.o $(BUILD_DIR)/test_resampler.o
+$(BUILD_DIR)/test_math_ops: $(BUILD_DIR)/core.o $(BUILD_DIR)/signal_gen.o $(BUILD_DIR)/tee.o $(BUILD_DIR)/math_ops.o $(BUILD_DIR)/unity.o $(BUILD_DIR)/test_math_ops.o
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+$(BUILD_DIR)/test_math_ops_integration: $(BUILD_DIR)/core.o $(BUILD_DIR)/signal_gen.o $(BUILD_DIR)/tee.o $(BUILD_DIR)/math_ops.o $(BUILD_DIR)/unity.o $(BUILD_DIR)/test_math_ops_integration.o
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+$(BUILD_DIR)/test_math_ops_simple_integration: $(BUILD_DIR)/core.o $(BUILD_DIR)/signal_gen.o $(BUILD_DIR)/tee.o $(BUILD_DIR)/math_ops.o $(BUILD_DIR)/unity.o $(BUILD_DIR)/test_math_ops_simple_integration.o
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
+$(BUILD_DIR)/test_math_ops_performance: $(BUILD_DIR)/core.o $(BUILD_DIR)/signal_gen.o $(BUILD_DIR)/tee.o $(BUILD_DIR)/math_ops.o $(BUILD_DIR)/unity.o $(BUILD_DIR)/test_math_ops_performance.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 clean:
@@ -50,18 +59,16 @@ run: all
 	./$(BUILD_DIR)/test_signal_gen
 	./$(BUILD_DIR)/test_sentinel
 	./$(BUILD_DIR)/test_simple_multi_output
-	./$(BUILD_DIR)/test_resampler
+	./$(BUILD_DIR)/test_math_ops
+	./$(BUILD_DIR)/test_math_ops_integration
 
 run-safe: all
 	./run_with_timeout.sh 30 ./$(BUILD_DIR)/test_core_filter
 	./run_with_timeout.sh 30 ./$(BUILD_DIR)/test_signal_gen
 	./run_with_timeout.sh 30 ./$(BUILD_DIR)/test_sentinel
 	./run_with_timeout.sh 30 ./$(BUILD_DIR)/test_simple_multi_output
-	./run_with_timeout.sh 30 ./$(BUILD_DIR)/test_resampler
-
-# Individual test targets
-test_resampler: $(BUILD_DIR)/test_resampler
-	$(BUILD_DIR)/test_resampler
+	./run_with_timeout.sh 30 ./$(BUILD_DIR)/test_math_ops
+	./run_with_timeout.sh 30 ./$(BUILD_DIR)/test_math_ops_integration
 
 # Test targets
 test: test-c test-py
@@ -72,6 +79,8 @@ test-c: all
 	./$(BUILD_DIR)/test_signal_gen
 	./$(BUILD_DIR)/test_sentinel
 	./$(BUILD_DIR)/test_simple_multi_output
+	./$(BUILD_DIR)/test_math_ops
+	./$(BUILD_DIR)/test_math_ops_integration
 
 test-py: build-py
 	@echo "Running Python tests..."
