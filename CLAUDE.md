@@ -62,6 +62,12 @@ This is a **modular real-time telemetry data processing framework** built in C w
 - on exiting plan mode for a new feature claude MUST writing the plan to a markdown file in the specs/ dir. 
 - the plan should have a todo list, check off items as you progress 
 
+### Issues
+- Issues are tracked in the `issues/` folder as markdown files, one per issue.
+- open issues are pre-fixed with "OPEN" 
+- closed issues are pre-fixed with "CLOSED"
+- an issue should identify which tests are failing and the failure signature.
+
 ### Task Workflow
 - Task lookup: Use `get_task.sh` script to extract task info `tasks.md`
 - create a plan for a new feature in in plan mode and commit to main
