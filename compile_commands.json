@@ -26,7 +26,7 @@
 	},
 	{
 		"directory": "/home/benf/repos/bpipe/",
-		"command": "gcc -I./bpipe -I./lib/Unity/src -std=c99 -Wall -Werror -pthread -save-temps=obj -c bpipe/core_python.c -o build/core_python.o",
+		"command": "gcc -I./bpipe -I./lib/Unity/src -I/usr/include/python3.10 -std=c99 -Wall -Werror -pthread -save-temps=obj -c bpipe/core_python.c -o build/core_python.o",
 		"file": "bpipe/core_python.c"
 	},
 	{
