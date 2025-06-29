@@ -16,6 +16,7 @@ void setUp(void)
 void tearDown(void)
 {
     // Clean up code for the test filter
+    BpFilter_Deinit(&test_filter);
 }
 
 void test_BpFilter_Init_Success(void)
@@ -384,6 +385,10 @@ int main(int argc, char* argv[])
             RUN_TEST(test_Overflow_Behavior_Block_Default);
         } else if (strcmp(test_name, "test_Overflow_Behavior_Drop_Mode") == 0) {
             RUN_TEST(test_Overflow_Behavior_Drop_Mode);
+        } else if (strcmp(test_name, "test_Await_Timeout_Behavior") == 0) {
+            RUN_TEST(test_Await_Timeout_Behavior);
+        } else if (strcmp(test_name, "test_Await_Stopped_Behavior") == 0) {
+            RUN_TEST(test_Await_Stopped_Behavior);
         }
     } else {
         // Run all tests with debug output
@@ -415,6 +420,10 @@ int main(int argc, char* argv[])
         RUN_TEST(test_Overflow_Behavior_Block_Default);
         printf("Running test_Overflow_Behavior_Drop_Mode\n");
         RUN_TEST(test_Overflow_Behavior_Drop_Mode);
+        printf("Running test_Await_Timeout_Behavior\n");
+        RUN_TEST(test_Await_Timeout_Behavior);
+        printf("Running test_Await_Stopped_Behavior\n");
+        RUN_TEST(test_Await_Stopped_Behavior);
     }
     
     return UNITY_END();

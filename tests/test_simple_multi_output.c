@@ -21,11 +21,33 @@ void test_multiple_sink_connections(void)
     Bp_Filter_t source;
     Bp_Filter_t sink1, sink2, sink3;
     
-    // Initialize filters
-    BpFilter_Init(&source, BpPassThroughTransform, 0, 128, 64, 6, 0);
-    BpFilter_Init(&sink1, BpPassThroughTransform, 0, 128, 64, 6, 1);
-    BpFilter_Init(&sink2, BpPassThroughTransform, 0, 128, 64, 6, 1);
-    BpFilter_Init(&sink3, BpPassThroughTransform, 0, 128, 64, 6, 1);
+    // Initialize filters using new configuration API
+    BpFilterConfig source_config = {
+        .transform = BpPassThroughTransform,
+        .dtype = DTYPE_FLOAT,
+        .buffer_size = 128,
+        .batch_size = 64,
+        .number_of_batches_exponent = 6,
+        .number_of_input_filters = 0,  // Source doesn't need input buffers
+        .overflow_behaviour = OVERFLOW_BLOCK,
+        .auto_allocate_buffers = false
+    };
+    
+    BpFilterConfig sink_config = {
+        .transform = BpPassThroughTransform,
+        .dtype = DTYPE_FLOAT,
+        .buffer_size = 128,
+        .batch_size = 64,
+        .number_of_batches_exponent = 6,
+        .number_of_input_filters = 1,
+        .overflow_behaviour = OVERFLOW_BLOCK,
+        .auto_allocate_buffers = true
+    };
+    
+    BpFilter_Init(&source, &source_config);
+    BpFilter_Init(&sink1, &sink_config);
+    BpFilter_Init(&sink2, &sink_config);
+    BpFilter_Init(&sink3, &sink_config);
     
     // Test adding sinks
     TEST_ASSERT_EQUAL(0, source.n_sinks);
@@ -59,22 +81,24 @@ void test_multi_output_data_distribution(void)
     
     // Initialize with square wave
     BpSignalGen_Init(&source, BP_WAVE_SQUARE, 10.0f, 1.0f, 0.0f, 0.0f, 128, 64, 6);
-    BpFilter_Init(&sink1, BpPassThroughTransform, 0, 128, 64, 6, 1);
-    BpFilter_Init(&sink2, BpPassThroughTransform, 0, 128, 64, 6, 1);
-    BpFilter_Init(&sink3, BpPassThroughTransform, 0, 128, 64, 6, 1);
     
-    // Set data properties for sinks to match source
-    sink1.dtype = DTYPE_FLOAT;
-    sink1.data_width = sizeof(float);
-    sink2.dtype = DTYPE_FLOAT;
-    sink2.data_width = sizeof(float);
-    sink3.dtype = DTYPE_FLOAT;
-    sink3.data_width = sizeof(float);
+    // Initialize sinks using new configuration API
+    BpFilterConfig sink_config = {
+        .transform = BpPassThroughTransform,
+        .dtype = DTYPE_FLOAT,
+        .buffer_size = 128,
+        .batch_size = 64,
+        .number_of_batches_exponent = 6,
+        .number_of_input_filters = 1,
+        .overflow_behaviour = OVERFLOW_BLOCK,
+        .auto_allocate_buffers = true
+    };
     
-    // Allocate buffers for sinks
-    Bp_allocate_buffers(&sink1, 0);
-    Bp_allocate_buffers(&sink2, 0);
-    Bp_allocate_buffers(&sink3, 0);
+    BpFilter_Init(&sink1, &sink_config);
+    BpFilter_Init(&sink2, &sink_config);
+    BpFilter_Init(&sink3, &sink_config);
+    
+    // Data properties and buffers are now set automatically by the config
     
     // Connect all sinks to source
     Bp_add_sink(&source.base, &sink1);
