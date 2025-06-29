@@ -50,6 +50,40 @@ Batches are the unit of data transfer containing:
 - **Head/tail indices** - for partial batch processing
 - **Error codes** - including completion signals
 
+#### Fixed-Rate Batch Design
+
+A critical architectural decision in bpipe is that **all samples within a batch are assumed to have fixed, regular timing**. This is specified by:
+- `t_ns` - timestamp of the first sample in the batch
+- `period_ns` - fixed interval between samples (0 for irregular data)
+
+This design optimizes for high-performance processing of regularly-sampled data (audio, video, radar, SDR) while still supporting irregular data through reduced batch sizes.
+
+**Regular Data (Optimal Performance):**
+```c
+// 1000 Hz audio: 64 samples per batch
+// Overhead: 1 batch header per 64 samples = ~1.6%
+Batch {
+    t_ns = 1000000,      // Start time
+    period_ns = 1000,    // 1ms between samples
+    data[64]             // 64 contiguous samples
+}
+```
+
+**Irregular Data (Reduced Performance):**
+```c
+// Irregular sensor: 1 sample per batch
+// Higher overhead but correct timing preserved
+Batch { t_ns = 1000000, period_ns = 0, data[1] }
+Batch { t_ns = 1002300, period_ns = 0, data[1] }  // 2.3ms later
+Batch { t_ns = 1003100, period_ns = 0, data[1] }  // 0.8ms later
+```
+
+This trade-off ensures:
+- **Maximum performance** for common high-rate, fixed-rate signals
+- **Correct handling** of irregular data with individual timestamps
+- **Simple processing** - no complex per-sample timestamp arrays
+- **Clear performance model** - users can predict and optimize
+
 ## Data Flow Model
 
 ### Connection Architecture
@@ -171,5 +205,25 @@ source2 -> filter2 -> filter3
 3. **Batch-oriented** - Reduces overhead, enables vectorization
 4. **Self-contained buffers** - Clean APIs while maintaining performance
 5. **Configuration structs** - Extensible initialization without API breaks
+6. **Fixed-rate batches** - Optimizes for regular data, handles irregular data correctly
+
+### Impact on Filter Design
+
+The fixed-rate batch design influences how filters should be implemented:
+
+**For Transform Filters:**
+- Can assume all samples in a batch have regular spacing
+- Use `period_ns` for time-dependent calculations
+- Process entire batches with vectorized operations
+
+**For Multi-Input Filters:**
+- Cannot assume input timing alignment
+- Should be preceded by synchronization filters when needed
+- Focus on computation, not timing reconciliation
+
+**For Sources with Irregular Data:**
+- Configure with `batch_size = 1` for optimal latency
+- Set `period_ns = 0` to indicate irregular timing
+- Pre-allocate many small batches to reduce allocation overhead
 
 This architecture balances simplicity, performance, and flexibility for real-time telemetry processing applications.
