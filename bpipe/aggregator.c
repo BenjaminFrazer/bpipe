@@ -209,8 +209,18 @@ int BpAggregatorPy_init(PyObject* self, PyObject* args, PyObject* kwds)
         return -1;
     }
 
-    Bp_EC ec = BpFilter_Init(&agg->base, BpAggregatorTransform, 0,
-                             element_size * 1024, 1024, 10, n_inputs);
+    BpFilterConfig config = {
+        .transform = BpAggregatorTransform,
+        .dtype = (SampleDtype_t)dtype,
+        .buffer_size = element_size * 1024,
+        .batch_size = 1024,
+        .number_of_batches_exponent = 10,
+        .number_of_input_filters = n_inputs,
+        .overflow_behaviour = OVERFLOW_BLOCK,
+        .auto_allocate_buffers = true
+    };
+    
+    Bp_EC ec = BpFilter_Init(&agg->base, &config);
     if (ec != Bp_EC_OK) {
         PyErr_Format(PyExc_RuntimeError, "Failed to initialize filter: %d", ec);
         return -1;

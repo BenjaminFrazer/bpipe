@@ -11,10 +11,19 @@ Bp_EC BpSignalGen_Init(Bp_SignalGen_t *gen, BpWaveform_t waveform,
 {
     if (!gen) return Bp_EC_NOSPACE;
 
-    // Initialize the base filter first
-    Bp_EC result =
-        BpFilter_Init(&gen->base, BpSignalGenTransform, 0, buffer_size,
-                      batch_size, number_of_batches_exponent, 0);
+    // Initialize the base filter first using new config API
+    BpFilterConfig config = {
+        .transform = BpSignalGenTransform,
+        .dtype = DTYPE_FLOAT,  // Signal generators typically output floats
+        .buffer_size = buffer_size,
+        .batch_size = batch_size,
+        .number_of_batches_exponent = number_of_batches_exponent,
+        .number_of_input_filters = 0,  // Signal generators don't need input buffers
+        .overflow_behaviour = OVERFLOW_BLOCK,
+        .auto_allocate_buffers = false  // Source filters don't need input buffer allocation
+    };
+    
+    Bp_EC result = BpFilter_Init(&gen->base, &config);
     if (result != Bp_EC_OK) {
         return result;
     }
@@ -26,12 +35,6 @@ Bp_EC BpSignalGen_Init(Bp_SignalGen_t *gen, BpWaveform_t waveform,
     gen->phase = phase;
     gen->x_offset = x_offset;
     gen->sample_idx = 0;
-
-    // Set up the base filter properties for signal generation
-    gen->base.dtype = DTYPE_FLOAT;  // Signal generators typically output floats
-    gen->base.data_width = sizeof(float);
-    // Signal generators don't need input buffers - they generate data
-    // internally
 
     return Bp_EC_OK;
 }

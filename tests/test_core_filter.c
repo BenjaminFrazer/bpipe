@@ -20,21 +20,37 @@ void tearDown(void)
 
 void test_BpFilter_Init_Success(void)
 {
-    Bp_EC result = BpFilter_Init(&test_filter, NULL, 0, 128, 64, 6, 1);
+    BpFilterConfig config = {
+        .transform = BpPassThroughTransform,
+        .dtype = DTYPE_FLOAT,
+        .buffer_size = 128,
+        .batch_size = 64,
+        .number_of_batches_exponent = 6,
+        .number_of_input_filters = 1
+    };
+    Bp_EC result = BpFilter_Init(&test_filter, &config);
     TEST_ASSERT_EQUAL_UINT(Bp_EC_OK, result);
 }
 
 void test_BpFilter_Init_Failure(void)
 {
-    Bp_EC result = BpFilter_Init(&test_filter, NULL, 0, 128, 64, 6, 1);
-    TEST_ASSERT_EQUAL_UINT(Bp_EC_OK, result);
+    Bp_EC result = BpFilter_Init(&test_filter, NULL);
+    TEST_ASSERT_EQUAL_UINT(Bp_EC_CONFIG_REQUIRED, result);
 }
 
 void test_Bp_add_sink_Success(void)
 {
     Bp_Filter_t filter1, filter2;
-    BpFilter_Init(&filter1, BpPassThroughTransform, 0, 128, 64, 6, 1);
-    BpFilter_Init(&filter2, BpPassThroughTransform, 0, 128, 64, 6, 1);
+    BpFilterConfig config = {
+        .transform = BpPassThroughTransform,
+        .dtype = DTYPE_FLOAT,
+        .buffer_size = 128,
+        .batch_size = 64,
+        .number_of_batches_exponent = 6,
+        .number_of_input_filters = 1
+    };
+    BpFilter_Init(&filter1, &config);
+    BpFilter_Init(&filter2, &config);
 
     Bp_EC result = Bp_add_sink(&filter1, &filter2);
     TEST_ASSERT_EQUAL_UINT(Bp_EC_OK, result);
@@ -45,9 +61,17 @@ void test_Bp_add_sink_Success(void)
 void test_Bp_add_multiple_sinks(void)
 {
     Bp_Filter_t filter1, filter2, filter3;
-    BpFilter_Init(&filter1, BpPassThroughTransform, 0, 128, 64, 6, 1);
-    BpFilter_Init(&filter2, BpPassThroughTransform, 0, 128, 64, 6, 1);
-    BpFilter_Init(&filter3, BpPassThroughTransform, 0, 128, 64, 6, 1);
+    BpFilterConfig config = {
+        .transform = BpPassThroughTransform,
+        .dtype = DTYPE_FLOAT,
+        .buffer_size = 128,
+        .batch_size = 64,
+        .number_of_batches_exponent = 6,
+        .number_of_input_filters = 1
+    };
+    BpFilter_Init(&filter1, &config);
+    BpFilter_Init(&filter2, &config);
+    BpFilter_Init(&filter3, &config);
 
     TEST_ASSERT_EQUAL_UINT(Bp_EC_OK, Bp_add_sink(&filter1, &filter2));
     TEST_ASSERT_EQUAL_UINT(Bp_EC_OK, Bp_add_sink(&filter1, &filter3));
@@ -60,9 +84,17 @@ void test_Bp_add_multiple_sinks(void)
 void test_Bp_remove_sink_Success(void)
 {
     Bp_Filter_t filter1, filter2, filter3;
-    BpFilter_Init(&filter1, BpPassThroughTransform, 0, 128, 64, 6, 1);
-    BpFilter_Init(&filter2, BpPassThroughTransform, 0, 128, 64, 6, 1);
-    BpFilter_Init(&filter3, BpPassThroughTransform, 0, 128, 64, 6, 1);
+    BpFilterConfig config = {
+        .transform = BpPassThroughTransform,
+        .dtype = DTYPE_FLOAT,
+        .buffer_size = 128,
+        .batch_size = 64,
+        .number_of_batches_exponent = 6,
+        .number_of_input_filters = 1
+    };
+    BpFilter_Init(&filter1, &config);
+    BpFilter_Init(&filter2, &config);
+    BpFilter_Init(&filter3, &config);
 
     Bp_add_sink(&filter1, &filter2);
     Bp_add_sink(&filter1, &filter3);
@@ -76,7 +108,15 @@ void test_Bp_remove_sink_Success(void)
 void test_multi_transform_function(void)
 {
     Bp_Filter_t filter;
-    BpFilter_Init(&filter, BpPassThroughTransform, 0, 128, 64, 6, 1);
+    BpFilterConfig config = {
+        .transform = BpPassThroughTransform,
+        .dtype = DTYPE_FLOAT,
+        .buffer_size = 128,
+        .batch_size = 64,
+        .number_of_batches_exponent = 6,
+        .number_of_input_filters = 1
+    };
+    BpFilter_Init(&filter, &config);
 
     // Test that transform is set correctly
     TEST_ASSERT_TRUE(filter.transform != NULL);
@@ -85,9 +125,15 @@ void test_multi_transform_function(void)
 void test_Bp_Filter_Start_Success(void)
 {
     Bp_Filter_t filter;
-    BpFilter_Init(&filter, BpPassThroughTransform, 0, 128, 64, 6, 0);  // No inputs
-    filter.dtype = DTYPE_UNSIGNED;
-    filter.data_width = sizeof(unsigned);
+    BpFilterConfig config = {
+        .transform = BpPassThroughTransform,
+        .dtype = DTYPE_UNSIGNED,
+        .buffer_size = 128,
+        .batch_size = 64,
+        .number_of_batches_exponent = 6,
+        .number_of_input_filters = 0
+    };
+    BpFilter_Init(&filter, &config);
 
     // Test starting a filter
     Bp_EC result = Bp_Filter_Start(&filter);
@@ -101,9 +147,15 @@ void test_Bp_Filter_Start_Success(void)
 void test_Bp_Filter_Start_Already_Running(void)
 {
     Bp_Filter_t filter;
-    BpFilter_Init(&filter, BpPassThroughTransform, 0, 128, 64, 6, 0);  // No inputs
-    filter.dtype = DTYPE_UNSIGNED;
-    filter.data_width = sizeof(unsigned);
+    BpFilterConfig config = {
+        .transform = BpPassThroughTransform,
+        .dtype = DTYPE_UNSIGNED,
+        .buffer_size = 128,
+        .batch_size = 64,
+        .number_of_batches_exponent = 6,
+        .number_of_input_filters = 0
+    };
+    BpFilter_Init(&filter, &config);
 
     // Start the filter first
     Bp_Filter_Start(&filter);
@@ -119,9 +171,15 @@ void test_Bp_Filter_Start_Already_Running(void)
 void test_Bp_Filter_Stop_Success(void)
 {
     Bp_Filter_t filter;
-    BpFilter_Init(&filter, BpPassThroughTransform, 0, 128, 64, 6, 0);  // No inputs
-    filter.dtype = DTYPE_UNSIGNED;
-    filter.data_width = sizeof(unsigned);
+    BpFilterConfig config = {
+        .transform = BpPassThroughTransform,
+        .dtype = DTYPE_UNSIGNED,
+        .buffer_size = 128,
+        .batch_size = 64,
+        .number_of_batches_exponent = 6,
+        .number_of_input_filters = 0
+    };
+    BpFilter_Init(&filter, &config);
 
     // Start then stop the filter
     Bp_Filter_Start(&filter);
@@ -135,7 +193,15 @@ void test_Bp_Filter_Stop_Success(void)
 void test_Bp_Filter_Stop_Not_Running(void)
 {
     Bp_Filter_t filter;
-    BpFilter_Init(&filter, BpPassThroughTransform, 0, 128, 64, 6, 0);  // No inputs
+    BpFilterConfig config = {
+        .transform = BpPassThroughTransform,
+        .dtype = DTYPE_FLOAT,
+        .buffer_size = 128,
+        .batch_size = 64,
+        .number_of_batches_exponent = 6,
+        .number_of_input_filters = 0
+    };
+    BpFilter_Init(&filter, &config);
 
     // Try to stop a filter that's not running - should succeed
     Bp_EC result = Bp_Filter_Stop(&filter);
@@ -159,7 +225,15 @@ void test_Bp_Filter_Stop_Null_Filter(void)
 void test_Overflow_Behavior_Block_Default(void)
 {
     Bp_Filter_t filter;
-    BpFilter_Init(&filter, BpPassThroughTransform, 0, 128, 64, 6, 1);
+    BpFilterConfig config = {
+        .transform = BpPassThroughTransform,
+        .dtype = DTYPE_FLOAT,
+        .buffer_size = 128,
+        .batch_size = 64,
+        .number_of_batches_exponent = 6,
+        .number_of_input_filters = 1
+    };
+    BpFilter_Init(&filter, &config);
 
     // Default behavior should be OVERFLOW_BLOCK
     TEST_ASSERT_EQUAL_UINT(OVERFLOW_BLOCK, filter.overflow_behaviour);
@@ -168,10 +242,15 @@ void test_Overflow_Behavior_Block_Default(void)
 void test_Overflow_Behavior_Drop_Mode(void)
 {
     Bp_Filter_t filter;
-    BpFilter_Init(&filter, BpPassThroughTransform, 0, 128, 64, 2,
-                  1);  // Small buffer
-    filter.dtype = DTYPE_UNSIGNED;
-    filter.data_width = sizeof(unsigned);
+    BpFilterConfig config = {
+        .transform = BpPassThroughTransform,
+        .dtype = DTYPE_UNSIGNED,
+        .buffer_size = 128,
+        .batch_size = 64,
+        .number_of_batches_exponent = 2,
+        .number_of_input_filters = 1
+    };
+    BpFilter_Init(&filter, &config);
     filter.overflow_behaviour = OVERFLOW_DROP;
     filter.running = true;  // Set running to true for testing
     Bp_allocate_buffers(&filter, 0);
@@ -208,7 +287,15 @@ void test_Overflow_Behavior_Drop_Mode(void)
 void test_Await_Timeout_Behavior(void)
 {
     Bp_Filter_t filter;
-    BpFilter_Init(&filter, BpPassThroughTransform, 0, 128, 32, 6, 1);
+    BpFilterConfig config = {
+        .transform = BpPassThroughTransform,
+        .dtype = DTYPE_FLOAT,
+        .buffer_size = 128,
+        .batch_size = 32,
+        .number_of_batches_exponent = 6,
+        .number_of_input_filters = 1
+    };
+    BpFilter_Init(&filter, &config);
     filter.timeout.tv_sec = 0;
     filter.timeout.tv_nsec = 100000000;  // 100ms timeout
     
@@ -236,7 +323,15 @@ void test_Await_Timeout_Behavior(void)
 void test_Await_Stopped_Behavior(void)
 {
     Bp_Filter_t filter;
-    BpFilter_Init(&filter, BpPassThroughTransform, 0, 128, 32, 6, 1);
+    BpFilterConfig config = {
+        .transform = BpPassThroughTransform,
+        .dtype = DTYPE_FLOAT,
+        .buffer_size = 128,
+        .batch_size = 32,
+        .number_of_batches_exponent = 6,
+        .number_of_input_filters = 1
+    };
+    BpFilter_Init(&filter, &config);
     
     Bp_BatchBuffer_t* buf = &filter.input_buffers[0];
     

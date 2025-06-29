@@ -55,6 +55,11 @@ typedef enum _Bp_EC {
     Bp_EC_ALREADY_RUNNING = -9,
     Bp_EC_THREAD_CREATE_FAIL = -10,
     Bp_EC_THREAD_JOIN_FAIL = -11,
+    Bp_EC_DTYPE_MISMATCH = -12,     /* Source/sink data types don't match */
+    Bp_EC_WIDTH_MISMATCH = -13,     /* Data width mismatch */
+    Bp_EC_INVALID_DTYPE = -14,      /* Invalid or unsupported data type */
+    Bp_EC_INVALID_CONFIG = -15,     /* Invalid configuration parameters */
+    Bp_EC_CONFIG_REQUIRED = -16,    /* Configuration missing required fields */
 } Bp_EC;
 
 typedef struct _Batch {
@@ -83,6 +88,44 @@ typedef struct _DataPipe Bp_Filter_t;
 typedef void(TransformFcn_t)(Bp_Filter_t* filt, Bp_Batch_t** input_batches,
                              int n_inputs, Bp_Batch_t* const* output_batches,
                              int n_outputs);
+
+/* Configuration structure for filter initialization */
+typedef struct {
+    TransformFcn_t* transform;
+    SampleDtype_t dtype;
+    size_t buffer_size;
+    int batch_size;
+    int number_of_batches_exponent;
+    int number_of_input_filters;
+    
+    /* Future extensibility without breaking API */
+    OverflowBehaviour_t overflow_behaviour;  /* Default: OVERFLOW_BLOCK */
+    bool auto_allocate_buffers;             /* Default: true */
+    void* memory_pool;                      /* Default: NULL (use malloc) */
+    size_t alignment;                       /* Default: 0 (natural alignment) */
+} BpFilterConfig;
+
+/* Default configuration helper */
+#define BP_FILTER_CONFIG_DEFAULT { \
+    .transform = NULL, \
+    .dtype = DTYPE_NDEF, \
+    .buffer_size = 128, \
+    .batch_size = 64, \
+    .number_of_batches_exponent = 6, \
+    .number_of_input_filters = 1, \
+    .overflow_behaviour = OVERFLOW_BLOCK, \
+    .auto_allocate_buffers = true, \
+    .memory_pool = NULL, \
+    .alignment = 0 \
+}
+
+/* Type error structure for enhanced error reporting */
+typedef struct {
+    Bp_EC code;
+    const char* message;
+    SampleDtype_t expected_type;
+    SampleDtype_t actual_type;
+} BpTypeError;
 
 typedef struct _err_info {
     Bp_EC ec;
@@ -122,16 +165,26 @@ typedef struct _DataPipe {
     Bp_BatchBuffer_t input_buffers[MAX_SOURCES];
 } Bp_Filter_t;
 
-Bp_EC BpFilter_Init(Bp_Filter_t* filter, TransformFcn_t transform_function,
-                    int initial_state, size_t buffer_size, int batch_size,
-                    int number_of_batches_exponent,
-                    int number_of_input_filters);
+/* Configuration-based initialization API */
+Bp_EC BpFilter_Init(Bp_Filter_t* filter, const BpFilterConfig* config);
+
+/* Configuration validation function */
+Bp_EC BpFilterConfig_Validate(const BpFilterConfig* config);
+
+/* Predefined configurations for common use cases */
+extern const BpFilterConfig BP_CONFIG_FLOAT_STANDARD;
+extern const BpFilterConfig BP_CONFIG_INT_STANDARD;
+extern const BpFilterConfig BP_CONFIG_HIGH_THROUGHPUT;
+extern const BpFilterConfig BP_CONFIG_LOW_LATENCY;
 
 Bp_EC BpFilter_Deinit(Bp_Filter_t* filter);
 
 /* Multi-I/O connection functions */
 Bp_EC Bp_add_sink(Bp_Filter_t* filter, Bp_Filter_t* sink);
 Bp_EC Bp_add_source(Bp_Filter_t* filter, Bp_Filter_t* source);
+
+/* Enhanced connection function with detailed error reporting */
+Bp_EC Bp_add_sink_with_error(Bp_Filter_t* source, Bp_Filter_t* sink, BpTypeError* error);
 Bp_EC Bp_remove_sink(Bp_Filter_t* filter, const Bp_Filter_t* sink);
 Bp_EC Bp_remove_source(Bp_Filter_t* filter, const Bp_Filter_t* source);
 

@@ -5,81 +5,6 @@
 #include <time.h>
 #include <unistd.h>
 
-Bp_EC Bp_Filter_Init(Bp_Filter_t *filter, TransformFcn_t transform_function,
-                     int initial_state, size_t buffer_size_expo,
-                     int batch_size_expo, int number_of_batches_exponent,
-                     int number_of_input_filters)
-{
-    if (buffer_size_expo <= 0) buffer_size_expo = 10;
-    if (number_of_batches_exponent <= 0) number_of_batches_exponent = 10;
-
-    // Initialize first input buffer for compatibility
-    filter->input_buffers[0].ring_capacity_expo = buffer_size_expo;
-    filter->input_buffers[0].batch_capacity_expo = number_of_batches_exponent;
-
-    filter->transform = transform_function;
-    filter->running = false;
-    filter->n_sources = 0;
-    filter->n_sinks = 0;
-    filter->overflow_behaviour =
-        OVERFLOW_BLOCK;  // Default to blocking behavior
-    memset(filter->sources, 0, sizeof(filter->sources));
-    memset(filter->sinks, 0, sizeof(filter->sinks));
-    memset(filter->input_buffers, 0, sizeof(filter->input_buffers));
-
-    // Initialize timeout to a reasonable value (1 second)
-    filter->timeout.tv_sec = time(NULL) + 1;
-    filter->timeout.tv_nsec = 0;
-
-    // Initialize filter mutex
-    if (pthread_mutex_init(&filter->filter_mutex, NULL) != 0) {
-        return Bp_EC_MUTEX_INIT_FAIL;
-    }
-
-    return Bp_EC_OK;
-}
-
-Bp_EC BpFilter_Init(Bp_Filter_t *filter, TransformFcn_t transform_function,
-                    int initial_state, size_t buffer_size, int batch_size,
-                    int number_of_batches_exponent, int number_of_input_filters)
-{
-    if (batch_size <= 0) batch_size = 64;
-    if (number_of_batches_exponent <= 0) number_of_batches_exponent = 64;
-
-    // Initialize multi-I/O arrays
-    memset(filter->sources, 0, sizeof(filter->sources));
-    memset(filter->sinks, 0, sizeof(filter->sinks));
-    filter->n_sources = 0;
-    filter->n_sinks = 0;
-    
-    // Initialize all input buffers to zero first
-    memset(filter->input_buffers, 0, sizeof(filter->input_buffers));
-
-    // Initialize input buffers based on number_of_input_filters
-    for (int i = 0; i < number_of_input_filters && i < MAX_SOURCES; i++) {
-        Bp_EC buffer_init_res =
-            Bp_BatchBuffer_Init(&(filter->input_buffers[i]), batch_size,
-                                1 << number_of_batches_exponent);
-        if (buffer_init_res != Bp_EC_OK) {
-            return buffer_init_res;
-        }
-    }
-
-    filter->transform = transform_function;
-    filter->running = false;
-    filter->overflow_behaviour =
-        OVERFLOW_BLOCK;  // Default to blocking behavior
-
-    // Initialize timeout to a reasonable value (1 second)
-    filter->timeout.tv_sec = time(NULL) + 1;
-    filter->timeout.tv_nsec = 0;
-
-    // Initialize filter mutex
-    if (pthread_mutex_init(&filter->filter_mutex, NULL) != 0) {
-        return Bp_EC_MUTEX_INIT_FAIL;
-    }
-    return Bp_EC_OK;
-}
 
 Bp_EC BpFilter_Deinit(Bp_Filter_t *filter)
 {
@@ -398,19 +323,7 @@ void *Bp_Worker(void *filter)
 /* Multi-I/O connection functions */
 Bp_EC Bp_add_sink(Bp_Filter_t *filter, Bp_Filter_t *sink)
 {
-    if (!filter || !sink) return Bp_EC_NOSPACE;
-
-    pthread_mutex_lock(&filter->filter_mutex);
-    if (filter->n_sinks >= MAX_SINKS) {
-        pthread_mutex_unlock(&filter->filter_mutex);
-        return Bp_EC_NOSPACE;
-    }
-
-    filter->sinks[filter->n_sinks] = sink;
-    filter->n_sinks++;
-    pthread_mutex_unlock(&filter->filter_mutex);
-
-    return Bp_EC_OK;
+    return Bp_add_sink_with_error(filter, sink, NULL);
 }
 
 Bp_EC Bp_add_source(Bp_Filter_t *filter, Bp_Filter_t *source)
@@ -552,4 +465,241 @@ void BpPassThroughTransform(Bp_Filter_t *filt, Bp_Batch_t **input_batches,
         output_batch->head += ncopy;
         input_batch->tail += ncopy;
     }
+}
+
+/* Predefined configurations for common use cases */
+const BpFilterConfig BP_CONFIG_FLOAT_STANDARD = {
+    .transform = BpPassThroughTransform,
+    .dtype = DTYPE_FLOAT,
+    .buffer_size = 128,
+    .batch_size = 64,
+    .number_of_batches_exponent = 6,
+    .number_of_input_filters = 1,
+    .overflow_behaviour = OVERFLOW_BLOCK,
+    .auto_allocate_buffers = true,
+    .memory_pool = NULL,
+    .alignment = 0
+};
+
+const BpFilterConfig BP_CONFIG_INT_STANDARD = {
+    .transform = BpPassThroughTransform,
+    .dtype = DTYPE_INT,
+    .buffer_size = 128,
+    .batch_size = 64,
+    .number_of_batches_exponent = 6,
+    .number_of_input_filters = 1,
+    .overflow_behaviour = OVERFLOW_BLOCK,
+    .auto_allocate_buffers = true,
+    .memory_pool = NULL,
+    .alignment = 0
+};
+
+const BpFilterConfig BP_CONFIG_HIGH_THROUGHPUT = {
+    .transform = BpPassThroughTransform,
+    .dtype = DTYPE_FLOAT,
+    .buffer_size = 1024,
+    .batch_size = 256,
+    .number_of_batches_exponent = 8,
+    .number_of_input_filters = 1,
+    .overflow_behaviour = OVERFLOW_BLOCK,
+    .auto_allocate_buffers = true,
+    .memory_pool = NULL,
+    .alignment = 0
+};
+
+const BpFilterConfig BP_CONFIG_LOW_LATENCY = {
+    .transform = BpPassThroughTransform,
+    .dtype = DTYPE_FLOAT,
+    .buffer_size = 32,
+    .batch_size = 16,
+    .number_of_batches_exponent = 4,
+    .number_of_input_filters = 1,
+    .overflow_behaviour = OVERFLOW_BLOCK,
+    .auto_allocate_buffers = true,
+    .memory_pool = NULL,
+    .alignment = 0
+};
+
+/* Internal helper to apply defaults to partial configs */
+static void BpFilterConfig_ApplyDefaults(BpFilterConfig* config) {
+    if (config->buffer_size == 0) config->buffer_size = 128;
+    if (config->batch_size == 0) config->batch_size = 64;
+    if (config->number_of_batches_exponent == 0) {
+        config->number_of_batches_exponent = 6;
+    }
+    if (config->number_of_input_filters == 0) {
+        config->number_of_input_filters = 1;
+    }
+}
+
+/* Configuration validation */
+Bp_EC BpFilterConfig_Validate(const BpFilterConfig* config) {
+    if (!config) {
+        return Bp_EC_CONFIG_REQUIRED;
+    }
+    
+    if (!config->transform) {
+        return Bp_EC_CONFIG_REQUIRED;
+    }
+    
+    if (config->dtype == DTYPE_NDEF || config->dtype >= DTYPE_MAX) {
+        return Bp_EC_INVALID_DTYPE;
+    }
+    
+    if (config->buffer_size == 0) {
+        return Bp_EC_INVALID_CONFIG;
+    }
+    
+    if (config->batch_size == 0) {
+        return Bp_EC_INVALID_CONFIG;
+    }
+    
+    if (config->number_of_batches_exponent > MAX_CAPACITY_EXPO) {
+        return Bp_EC_INVALID_CONFIG;
+    }
+    
+    if (config->number_of_input_filters < 0 || config->number_of_input_filters > MAX_SOURCES) {
+        return Bp_EC_INVALID_CONFIG;
+    }
+    
+    return Bp_EC_OK;
+}
+
+/* Configuration-based initialization function */
+Bp_EC BpFilter_Init(Bp_Filter_t* filter, const BpFilterConfig* config) {
+    if (!filter) {
+        return Bp_EC_NULL_FILTER;
+    }
+    
+    if (!config) {
+        return Bp_EC_CONFIG_REQUIRED;
+    }
+    
+    /* Validate configuration */
+    Bp_EC validation_result = BpFilterConfig_Validate(config);
+    if (validation_result != Bp_EC_OK) {
+        return validation_result;
+    }
+    
+    /* Make a copy of config to apply defaults */
+    BpFilterConfig working_config = *config;
+    BpFilterConfig_ApplyDefaults(&working_config);
+    
+    /* Initialize multi-I/O arrays */
+    memset(filter->sources, 0, sizeof(filter->sources));
+    memset(filter->sinks, 0, sizeof(filter->sinks));
+    filter->n_sources = 0;
+    filter->n_sinks = 0;
+    
+    /* Initialize all input buffers to zero first */
+    memset(filter->input_buffers, 0, sizeof(filter->input_buffers));
+    
+    /* Set filter properties from configuration */
+    filter->transform = working_config.transform;
+    filter->running = false;
+    filter->overflow_behaviour = working_config.overflow_behaviour;
+    filter->dtype = working_config.dtype;
+    filter->data_width = _data_size_lut[working_config.dtype];
+    
+    /* Initialize timeout to a reasonable value (1 second) */
+    filter->timeout.tv_sec = time(NULL) + 1;
+    filter->timeout.tv_nsec = 0;
+    
+    /* Initialize filter mutex */
+    if (pthread_mutex_init(&filter->filter_mutex, NULL) != 0) {
+        return Bp_EC_MUTEX_INIT_FAIL;
+    }
+    
+    /* Initialize input buffers based on configuration */
+    for (int i = 0; i < working_config.number_of_input_filters && i < MAX_SOURCES; i++) {
+        Bp_EC buffer_init_res = Bp_BatchBuffer_Init(&(filter->input_buffers[i]), 
+                                                    working_config.batch_size,
+                                                    1 << working_config.number_of_batches_exponent);
+        if (buffer_init_res != Bp_EC_OK) {
+            /* Clean up any previously initialized buffers */
+            for (int j = 0; j < i; j++) {
+                Bp_BatchBuffer_Deinit(&(filter->input_buffers[j]));
+            }
+            pthread_mutex_destroy(&filter->filter_mutex);
+            return buffer_init_res;
+        }
+        
+        /* Allocate buffers automatically if configured to do so */
+        if (working_config.auto_allocate_buffers) {
+            Bp_EC alloc_result = Bp_allocate_buffers(filter, i);
+            if (alloc_result != Bp_EC_OK) {
+                /* Clean up */
+                for (int j = 0; j <= i; j++) {
+                    Bp_BatchBuffer_Deinit(&(filter->input_buffers[j]));
+                }
+                pthread_mutex_destroy(&filter->filter_mutex);
+                return alloc_result;
+            }
+        }
+    }
+    
+    return Bp_EC_OK;
+}
+
+/* Enhanced connection function with detailed error reporting */
+Bp_EC Bp_add_sink_with_error(Bp_Filter_t* source, Bp_Filter_t* sink, BpTypeError* error) {
+    if (!source || !sink) {
+        if (error) {
+            error->code = Bp_EC_NULL_FILTER;
+            error->message = "Source or sink filter is NULL";
+            error->expected_type = DTYPE_NDEF;
+            error->actual_type = DTYPE_NDEF;
+        }
+        return Bp_EC_NULL_FILTER;
+    }
+    
+    /* Type checking */
+    if (source->dtype != DTYPE_NDEF && sink->dtype != DTYPE_NDEF && 
+        source->dtype != sink->dtype) {
+        if (error) {
+            error->code = Bp_EC_DTYPE_MISMATCH;
+            error->message = "Source and sink data types do not match";
+            error->expected_type = sink->dtype;
+            error->actual_type = source->dtype;
+        }
+        return Bp_EC_DTYPE_MISMATCH;
+    }
+    
+    /* Data width checking */
+    if (source->data_width != 0 && sink->data_width != 0 &&
+        source->data_width != sink->data_width) {
+        if (error) {
+            error->code = Bp_EC_WIDTH_MISMATCH;
+            error->message = "Source and sink data widths do not match";
+            error->expected_type = sink->dtype;
+            error->actual_type = source->dtype;
+        }
+        return Bp_EC_WIDTH_MISMATCH;
+    }
+    
+    /* If type checking passed, perform the actual connection */
+    pthread_mutex_lock(&source->filter_mutex);
+    if (source->n_sinks >= MAX_SINKS) {
+        pthread_mutex_unlock(&source->filter_mutex);
+        if (error) {
+            error->code = Bp_EC_NOSPACE;
+            error->message = "Maximum number of sinks reached";
+            error->expected_type = sink->dtype;
+            error->actual_type = source->dtype;
+        }
+        return Bp_EC_NOSPACE;
+    }
+
+    source->sinks[source->n_sinks] = sink;
+    source->n_sinks++;
+    pthread_mutex_unlock(&source->filter_mutex);
+    
+    if (error) {
+        error->code = Bp_EC_OK;
+        error->message = "Connection successful";
+        error->expected_type = sink->dtype;
+        error->actual_type = source->dtype;
+    }
+    
+    return Bp_EC_OK;
 }

@@ -22,8 +22,8 @@ typedef struct {
 } Bp_TeeFilter_t;
 
 /* Initialize a tee filter */
-Bp_EC BpTeeFilter_Init(Bp_TeeFilter_t* tee, size_t buffer_size, int batch_size,
-                       int number_of_batches_exponent);
+Bp_EC BpTeeFilter_Init(Bp_TeeFilter_t* tee, SampleDtype_t dtype, size_t buffer_size, 
+                       int batch_size, int number_of_batches_exponent);
 
 /* Tee transform function - copies input to ALL outputs explicitly */
 void BpTeeTransform(Bp_Filter_t* filt, Bp_Batch_t** input_batches, int n_inputs,

@@ -2,15 +2,24 @@
 #include <string.h>
 #include <stdint.h>
 
-Bp_EC BpTeeFilter_Init(Bp_TeeFilter_t* tee, size_t buffer_size, int batch_size,
-                       int number_of_batches_exponent)
+Bp_EC BpTeeFilter_Init(Bp_TeeFilter_t* tee, SampleDtype_t dtype, size_t buffer_size, 
+                       int batch_size, int number_of_batches_exponent)
 {
     if (!tee) return Bp_EC_NOSPACE;
 
-    // Initialize base filter with BpTeeTransform
-    // Tee filters have 1 input
-    return BpFilter_Init(&tee->base, BpTeeTransform, 0, buffer_size, batch_size,
-                         number_of_batches_exponent, 1);
+    // Initialize base filter with BpTeeTransform using new config API
+    BpFilterConfig config = {
+        .transform = BpTeeTransform,
+        .dtype = dtype,
+        .buffer_size = buffer_size,
+        .batch_size = batch_size,
+        .number_of_batches_exponent = number_of_batches_exponent,
+        .number_of_input_filters = 1,  // Tee filters have 1 input
+        .overflow_behaviour = OVERFLOW_BLOCK,
+        .auto_allocate_buffers = true
+    };
+    
+    return BpFilter_Init(&tee->base, &config);
 }
 
 void BpTeeTransform(Bp_Filter_t* filt, Bp_Batch_t** input_batches, int n_inputs,
