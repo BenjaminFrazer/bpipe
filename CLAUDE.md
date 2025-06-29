@@ -26,39 +26,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a **modular real-time telemetry data processing framework** built in C with Python bindings. The system implements a push-based data processing pipeline using directed acyclic graphs (DAGs).
 
-### Core Components
-
-#### Filter Architecture (`Bp_Filter_t`)
-- **Base component**: All processing elements inherit from `Bp_Filter_t` (bpipe/core.h:85-99)
-- **Transform functions**: Components process data via `TransformFcn_t` callbacks
-- **Threading**: Each filter runs in its own pthread worker thread
-- **Buffering**: Ring buffer system with configurable capacity and overflow behavior
-- **Error handling**: Comprehensive error codes via `Bp_EC` enum
-
-#### Batch Processing (`Bp_Batch_t`)
-- **Data structure**: Batches contain metadata (timestamps, sequence numbers) and payload data
-- **Types**: Support for float, int, unsigned data types via `SampleDtype_t`
-- **Ring buffers**: Circular buffer implementation with exponential capacity sizing
-
-#### Specialized Filters
-- **Signal Generator** (`Bp_SignalGen_t`): Generates waveforms (square, sine, triangle, sawtooth)
-- **Python Filters** (`BpFilterPy_t`): Allows custom Python transform functions via CPython API
-
-### Data Flow
-1. Components connect via `.set_sink()` method
-2. Data flows through ring buffers between components
-3. Backpressure handling: configurable to block or drop samples on overflow
-4. Thread synchronization via pthread mutexes and condition variables
+### documentation
+- key documentation to read is:
+    - core data model : /docs/core_datamodel.md
+- keep documentation updated.
 
 ### Build System
 - **C compilation**: Makefile with gcc, Unity testing framework
 - **Python extension**: setuptools with C extension module
 - **Test framework**: Unity (lib/Unity/) for C unit tests
 - **Compiler flags**: `-std=c99 -Wall -Werror -pthread -save-temps`
-
-### Style guide
-- avoid try catches
-- no uneccessary layers of abstraction
 
 ### Key Files
 - `bpipe/core.h`: Core data structures and inline functions
@@ -81,3 +58,14 @@ This is a **modular real-time telemetry data processing framework** built in C w
 - Branch naming: Create branches named after TASK_ID from `tasks.md`
 - complete work in seperate git worktree
 - Work logging: Record changes in `<TASK_ID>_log.md` files
+- create a worktree under the /trees directory of the main repo to avoid interfering with other agent's work.
+
+### Task completion
+- commit code under feature branch before asking for review.
+- create a summary of task status, out-standing issues and judgement of whether code is production ready.
+- once code is pushed to main remove task worktree.
+
+### Code Philosophy
+- do not support legacy api's if the api changes migrate everything.
+- avoid try catches
+- no uneccessary layers of abstraction
