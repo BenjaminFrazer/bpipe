@@ -10,6 +10,25 @@ typedef struct {
     PyObject_HEAD Bp_Filter_t base;
 } BpFilterPy_t;
 
+/* Parameter structure for Python initialization */
+typedef struct {
+    int capacity_exp;        /* Python parameter */
+    SampleDtype_t dtype;     /* Python parameter */
+    int batch_size;          /* Optional, with default */
+    int buffer_size;         /* Calculated from batch_size */
+} BpPythonInitParams;
+
+/* Default parameters that match current behavior */
+#define BP_PYTHON_INIT_PARAMS_DEFAULT { \
+    .capacity_exp = 10,                 \
+    .dtype = DTYPE_FLOAT,               \
+    .batch_size = 64,                   \
+    .buffer_size = 128                  \
+}
+
+/* Parameter parsing and mapping functions (implemented in core_python.c) */
+
+int BpFilterBase_init(PyObject *self, PyObject *args, PyObject *kwds);
 int Bp_init(PyObject *self, PyObject *args, PyObject *kwds);
 int BpFilterPy_init(PyObject *self, PyObject *args, PyObject *kwds);
 

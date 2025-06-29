@@ -313,6 +313,13 @@ static inline unsigned long Bp_batch_capacity(Bp_BatchBuffer_t* buf)
 static inline Bp_EC Bp_allocate_buffers(Bp_Filter_t* dpipe, int buffer_idx)
 {
     Bp_BatchBuffer_t* buf = &dpipe->input_buffers[buffer_idx];
+    
+    /* For backward compatibility: if buffer dtype not set, copy from filter */
+    if (buf->dtype == DTYPE_NDEF && dpipe->dtype != DTYPE_NDEF) {
+        buf->dtype = dpipe->dtype;
+        buf->data_width = dpipe->data_width;
+    }
+    
     assert(buf->dtype != DTYPE_NDEF);
 
     buf->data_ring = malloc(buf->data_width * Bp_ring_capacity(buf));

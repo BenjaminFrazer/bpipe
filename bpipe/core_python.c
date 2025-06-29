@@ -3,6 +3,66 @@
 #include <string.h>
 #include "aggregator.h"
 
+/* =====================================================
+ * Parameter Mapping Infrastructure
+ * ===================================================== */
+
+/* Parse Python initialization parameters from args/kwargs */
+static int parse_python_init_params(PyObject* args, PyObject* kwds, 
+                                   BpPythonInitParams* params)
+{
+    if (!params) {
+        return -1;
+    }
+    
+    /* Initialize with defaults */
+    *params = (BpPythonInitParams)BP_PYTHON_INIT_PARAMS_DEFAULT;
+    
+    /* Parse arguments - matching current Bp_init interface */
+    static char* kwlist[] = {"capacity_exp", "dtype", NULL};
+    if (!PyArg_ParseTupleAndKeywords(
+            args, kwds, "i|$i", kwlist,
+            &params->capacity_exp, &params->dtype)) {
+        return -1;
+    }
+    
+    /* Validate capacity_exp - allow wide range but warn about large values */
+    if (params->capacity_exp < 4 || params->capacity_exp > MAX_CAPACITY_EXPO) {
+        PyErr_SetString(PyExc_ValueError, "capacity_exp must be between 4 and 30");
+        return -1;
+    }
+    
+    /* Validate dtype */
+    if (params->dtype <= DTYPE_NDEF || params->dtype >= DTYPE_MAX) {
+        PyErr_SetString(PyExc_ValueError, "Invalid dtype value");
+        return -1;
+    }
+    
+    return 0; /* Success */
+}
+
+/* Convert Python parameters to C filter configuration */
+static void python_params_to_config(const BpPythonInitParams* params,
+                                   BpFilterConfig* config)
+{
+    if (!params || !config) {
+        return;
+    }
+    
+    /* Start with default configuration */
+    *config = (BpFilterConfig)BP_FILTER_CONFIG_DEFAULT;
+    
+    /* Map Python parameters to C configuration */
+    config->dtype = params->dtype;
+    config->batch_size = params->batch_size;
+    config->buffer_size = params->buffer_size;
+    config->number_of_batches_exponent = params->capacity_exp;
+    config->number_of_input_filters = 1; /* Single input for basic Python filters */
+    
+    /* Set transform to NULL initially - will be set by subclass */
+    config->transform = NULL;
+}
+
 /* Include waveform constants from signal_gen.h without full inclusion */
 #define BP_WAVE_SQUARE 0
 #define BP_WAVE_SINE 1
@@ -171,30 +231,92 @@ static void Bp_dealoc(PyObject* self)
     Py_TYPE(self)->tp_free(self);
 }
 
-int Bp_init(PyObject* self, PyObject* args, PyObject* kwds)
+/* Base class initialization - enhanced version of original Bp_init */
+int BpFilterBase_init(PyObject* self, PyObject* args, PyObject* kwds)
 {
     BpFilterPy_t* filter = (BpFilterPy_t*) self;
     Bp_Filter_t* dpipe = &filter->base;
-    static char* kwlist[] = {"capacity_exp", "dtype", NULL};
-    if (!PyArg_ParseTupleAndKeywords(
-            args, kwds, "i|$i", kwlist,
-            (int*) &dpipe->input_buffers[0].ring_capacity_expo, &dpipe->dtype))
+    BpPythonInitParams params = BP_PYTHON_INIT_PARAMS_DEFAULT;
+    
+    /* 1. Parse Python arguments using new infrastructure */
+    if (parse_python_init_params(args, kwds, &params) < 0)
         return -1;
+    
+    /* 2. Initialize filter with original logic but add missing pieces */
+    /* Set basic filter properties */
+    dpipe->dtype = params.dtype;
     dpipe->data_width = _data_size_lut[dpipe->dtype];
-    pthread_mutex_init(&dpipe->input_buffers[0].mutex, NULL);
-    pthread_cond_init(&dpipe->input_buffers[0].not_full, NULL);
-    pthread_cond_init(&dpipe->input_buffers[0].not_empty, NULL);
+    dpipe->running = false;
+    dpipe->n_sources = 0;
+    dpipe->n_sinks = 0;
+    dpipe->transform = BpPassThroughTransform;
+    
+    /* Initialize the filter mutex that was missing in original code */
+    if (pthread_mutex_init(&dpipe->filter_mutex, NULL) != 0) {
+        PyErr_SetString(PyExc_OSError, "Failed to initialize filter mutex");
+        return -1;
+    }
+    
+    /* Initialize input buffer[0] using original logic */
+    dpipe->input_buffers[0].ring_capacity_expo = params.capacity_exp;
+    dpipe->input_buffers[0].batch_capacity_expo = 6; /* Default from original */
+    dpipe->input_buffers[0].dtype = dpipe->dtype;
+    dpipe->input_buffers[0].data_width = dpipe->data_width;
+    
+    /* Initialize buffer synchronization */
+    if (pthread_mutex_init(&dpipe->input_buffers[0].mutex, NULL) != 0) {
+        pthread_mutex_destroy(&dpipe->filter_mutex);
+        PyErr_SetString(PyExc_OSError, "Failed to initialize buffer mutex");
+        return -1;
+    }
+    if (pthread_cond_init(&dpipe->input_buffers[0].not_full, NULL) != 0) {
+        pthread_mutex_destroy(&dpipe->filter_mutex);
+        pthread_mutex_destroy(&dpipe->input_buffers[0].mutex);
+        PyErr_SetString(PyExc_OSError, "Failed to initialize condition variable");
+        return -1;
+    }
+    if (pthread_cond_init(&dpipe->input_buffers[0].not_empty, NULL) != 0) {
+        pthread_mutex_destroy(&dpipe->filter_mutex);
+        pthread_mutex_destroy(&dpipe->input_buffers[0].mutex);
+        pthread_cond_destroy(&dpipe->input_buffers[0].not_full);
+        PyErr_SetString(PyExc_OSError, "Failed to initialize condition variable");
+        return -1;
+    }
+    
+    /* Allocate buffers using original approach */
     Bp_EC result = Bp_allocate_buffers(dpipe, 0);
-    return (result == Bp_EC_OK) ? 0 : -1;
+    if (result != Bp_EC_OK) {
+        /* Cleanup on failure */
+        pthread_mutex_destroy(&dpipe->filter_mutex);
+        pthread_mutex_destroy(&dpipe->input_buffers[0].mutex);
+        pthread_cond_destroy(&dpipe->input_buffers[0].not_full);
+        pthread_cond_destroy(&dpipe->input_buffers[0].not_empty);
+        PyErr_SetString(PyExc_RuntimeError, "Buffer allocation failed");
+        return -1;
+    }
+    
+    return 0;
+}
+
+/* Legacy wrapper for backward compatibility */
+int Bp_init(PyObject* self, PyObject* args, PyObject* kwds)
+{
+    return BpFilterBase_init(self, args, kwds);
 }
 
 int BpFilterPy_init(PyObject* self, PyObject* args, PyObject* kwds)
 {
-    if (BpFilterBase.tp_init) {
-        if (BpFilterBase.tp_init(self, args, kwds) < 0) return -1;
-    }
+    /* 1. Call base class init (which calls BpFilter_Init) */
+    if (BpFilterBase_init(self, args, kwds) < 0)
+        return -1;
+    
+    /* 2. Set Python-specific transform */
     BpFilterPy_t* filter = (BpFilterPy_t*) self;
     filter->base.transform = BpPyTransform;
+    
+    /* 3. Initialize Python-specific fields */
+    /* filter->impl = NULL;  // Will be set by set_impl if needed */
+    
     return 0;
 }
 
@@ -274,7 +396,7 @@ PyTypeObject BpFilterBase = {
     .tp_doc = "Data Pipe Filter Base class",
     .tp_methods = BpFilterBase_methods,
     .tp_new = PyType_GenericNew,
-    .tp_init = Bp_init,
+    .tp_init = BpFilterBase_init,
     .tp_dealloc = Bp_dealoc,
 };
 
