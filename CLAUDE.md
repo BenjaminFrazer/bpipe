@@ -7,9 +7,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Building and Testing
 - **Build all tests**: `make all`
 - **Run all tests**: `make run`
+- **Run all tests with timeout protection**: `make run-safe` (30 second timeout per test)
 - **Clean build artifacts**: `make clean`
 - **Build specific tests**: `make test_core_filter`, `make test_signal_gen`, `make test_sentinel`
 - **Build Python extension**: `python setup.py build_ext --inplace`
+
+### Test Timeout Utility
+- **Purpose**: Prevent tests from hanging indefinitely (e.g., test_core_filter timing issue)
+- **Usage**: `./run_with_timeout.sh <timeout_seconds> <executable> [args...]`
+- **Example**: `./run_with_timeout.sh 30 ./build/test_core_filter`
+- **Make target**: `make run-safe` runs all tests with 30s timeout
+- **Logging**: Timeout events are logged to `timeout.log`
+- **Exit codes**: 0=success, 1=test failure, 124=timeout, 2=usage error
 
 ### Linting and Code Quality
 - **Run all linting**: `make lint` (runs both C and Python checks)
@@ -56,9 +65,9 @@ This is a **modular real-time telemetry data processing framework** built in C w
 - Task lookup: Use `get_task.sh` script to extract task info `tasks.md`
 - create a plan for a new feature in in plan mode and commit to main
 - Branch naming: Create branches named after TASK_ID from `tasks.md`
-- complete work in seperate git worktree
+- all work on source-code MUST be conducted in git worktrees to isolate agents from one-another.
 - Work logging: Record changes in `<TASK_ID>_log.md` files
-- create a worktree under the /trees directory of the main repo to avoid interfering with other agent's work.
+- git worktree are created under the /trees directory.
 
 ### Task completion
 - commit code under feature branch before asking for review.
