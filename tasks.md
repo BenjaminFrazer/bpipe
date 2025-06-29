@@ -8,98 +8,24 @@
     - Identify Challenges and Impacts of changes.
     - Propose alternative aproaches to achieve goal.
 
-## PYTEST
-
-### Goal
-- add pytest unit test framework to this repository.
-- migrate existing python tests to pytest.
-
-## SOURCE_SINK_FLAG
-
-### Goal
-- add `is_source` and `is_sink` flag to core filter type.
-- allows certain filters to be only inputs or outputs.
-
-### Behaviour
-- if `is_source=0` the filter's `set_sink` should fail.
-- if `is_sink=0` a filter attempting to call `set_sink` on this filter as a target should fail.
-
-## PYFILT_AGREGATOR
-
-### Goal
-- create a C based filter which will agregate each input into a seperate numpy vector.
-- the numpy array for each input buffer will be stored in a python list.
-- the list of arrays will be accessible as the arrays member.
-- each vector in arrays will be a read-only numpy vector of the type of it's corresponding input buffer.
-
-### Use-case
-- This filter will be a generic foundation for a family of python sinks such as:
-    - Matplot lib plotters.
-    - python based static (non-realtime) data analysis.
-    - File writers.
-
-### Behaviour
-- This filter cannot be used as a source.
-- each numpy vector will be dynamically re-sized as needed up to a max capacity.
-- the filter will expose the `max_capacity` parameter in it's constructor as a kwarg. Default to a nice round power of 2 around 1Gb.
 
 
-## SAWTOOTH_DEMO
-- Create a demo script that chains a sawtooth data-source with a pass-through and writes to a plot aggregator.
+## AGREGATOR_TIMESTAMP_SUPPORT
+- Update to aggregator to support time-stamped data.
+- Agregator still retuns single dimentional contiguous array.
+- supports returning ts_start and sample_period for each vector.
+- Alligned data is assumed and obligation is on user to ensure this.
+- This means that a normal agregator can simply retain the sample_period and time-stamp of the first batch and check subsiquent batches for equal spacing.
 
-### Goal
-- a test to exersise all core features of the library working together.
-- Demonstrates filter chaining & interfaces.
-- low maintainance/high coverage
-- representative of usage
-- visual feedback
-
-### Considerations/justification
-- less maintainance burden
-- sawtooth passthrough combo makes data corruption very obvious
-- a back-to-bach test which tests three core filter components + python wrappers at "system level"
-
-### behaviour
-- The script should keep the plot window open untill the user kills it.
-- keep python code concise simple and readable avoid try catches. 
-
-
-## TIMESTAMP_AGREGATOR
+## AGREGATOR_TIMESTAMP_SUPPORT
 - Same requirements as task:PYFILT_AGREGATOR but add the requirement to save time-stamps with every sample
 - two contiguous arrays of equal length
     - uint64_t time-stamp in nanoseconds
     - array of either 4 or 8 bytes per sample depending on data width
 - brain-storm clean way to implement with existing agregator.
 
-## UPDATE_PYTESTS
-
-### Goal
-- refactor, simplify & integrate python unit tests.
-- bing inline with style guide
-- update to use pytest
-- prune obsolete tests
-
 
 ## ARCHITECTURE_IMPROVEMENTS
-
-## CSV_SOURCE
-
-## PLOT_SINK
-
-### Goal
-- build a pure python matplotlib plotting sink on-top of the agregator class.
-
-### Behaviour
-- filter should expose a `plot()` method which will create a full matplotlib time-domain plot each enabled input buffer.
-- all traces should be on the same axes.
-- plot can optionally take an existing figure handle for integration with gui's but will create a new window if not provided.
-
-## PANDAS_SINK
-
-- data is read only
-- all transforms copy the data
-- does not support the inplace method
-
 
 ## ENHANCED_AGREGATORS
 1. Circular Buffer Mode
@@ -114,31 +40,14 @@
 4. Compression Support
 - Optional compression for stored data
 - Trade CPU for memory efficiency
+5. PANDAS_SINK
+- data is read only
+- all transforms copy the data
+- does not support the inplace method
+6. FILE_SINKS
+- CSV
+- PARQUET_ARROW
 
-
-## ABSTRACTED_BATCH_ACESSORS
-- I would preffer to abstract the filter interface to remove buffer pointers so the  API simply reffering to the index of the input i.e. input 0, 1, 2 etc.
-
-### Goal
-- simplify the API by hiding implementation details
-- seperate concerns 
-
-### Example
-Original
-```c
-Bp_submit_batch(Bp_Filter_t* dpipe, Bp_BatchBuffer_t* buf)
-```
-
-New:
-```c
-Bp_submit_batch(Bp_Filter_t* dpipe, int buff_idx)
-```
-
-### affected API's
-- `Bp_submit_batch`
-- `Bp_delete_tail`
-- `Bp_head`
-- perhaps others
 
 ## C_TEST_HARNESS 
 - There will be many pure c based filters.
@@ -152,7 +61,7 @@ Create test harness for filter components which achieves the following goals:
 - Low maintainance. - Ideally ag
 
 
-## NOISE_SOURCE - Noise source
+## NOISE_SOURCE
 Implement a child class of `Bp_Filter_t`  which can be used to generate noise with configurable characteristics.
 - Standard deviation.
 - Distribution 0=gausian.
