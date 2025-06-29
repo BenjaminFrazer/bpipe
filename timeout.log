@@ -22,3 +22,7 @@
 [2025-06-29 19:18:46] SUCCESS: ./build/test_signal_gen  (completed within 30s)
 [2025-06-29 19:18:46] SUCCESS: ./build/test_sentinel  (completed within 30s)
 [2025-06-29 19:18:46] SUCCESS: ./build/test_simple_multi_output  (completed within 30s)
+[2025-06-29 20:07:48] SUCCESS: ./build/test_core_filter  (completed within 30s)
+[2025-06-29 20:07:48] SUCCESS: ./build/test_signal_gen  (completed within 30s)
+[2025-06-29 20:07:48] SUCCESS: ./build/test_sentinel  (completed within 30s)
+[2025-06-29 20:07:48] SUCCESS: ./build/test_simple_multi_output  (completed within 30s)

@@ -60,6 +60,7 @@ typedef enum _Bp_EC {
     Bp_EC_INVALID_DTYPE = -14,      /* Invalid or unsupported data type */
     Bp_EC_INVALID_CONFIG = -15,     /* Invalid configuration parameters */
     Bp_EC_CONFIG_REQUIRED = -16,    /* Configuration missing required fields */
+    Bp_EC_MALLOC_FAIL = -17,        /* Memory allocation failure */
 } Bp_EC;
 
 typedef struct _Batch {

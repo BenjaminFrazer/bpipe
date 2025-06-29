@@ -75,6 +75,7 @@ This is a **modular real-time telemetry data processing framework** built in C w
 - all work on source-code MUST be conducted in git worktrees to isolate agents from one-another.
 - Work logging: Record changes in `<TASK_ID>_log.md` files
 - git worktree are created under the /trees directory.
+- many agents may be working in paralel rebase from main regularly
 
 ### Task completion
 - commit code under feature branch before asking for review.

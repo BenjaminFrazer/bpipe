@@ -7,13 +7,13 @@ SRC_DIR=bpipe
 TEST_SRC_DIR=tests
 BUILD_DIR=build
 UNITY_SRC=lib/Unity/src/unity.c
-TESTS=$(TEST_SRC_DIR)/test_core_filter.c $(TEST_SRC_DIR)/test_signal_gen.c $(TEST_SRC_DIR)/test_sentinel.c $(TEST_SRC_DIR)/test_simple_multi_output.c
-OBJ_FILES=$(SRC_DIR)/core.c $(SRC_DIR)/signal_gen.c $(SRC_DIR)/tee.c
+TESTS=$(TEST_SRC_DIR)/test_core_filter.c $(TEST_SRC_DIR)/test_signal_gen.c $(TEST_SRC_DIR)/test_sentinel.c $(TEST_SRC_DIR)/test_simple_multi_output.c $(TEST_SRC_DIR)/test_resampler.c
+OBJ_FILES=$(SRC_DIR)/core.c $(SRC_DIR)/signal_gen.c $(SRC_DIR)/tee.c $(SRC_DIR)/resampler.c
 
 .PHONY: all clean run test test-c test-py lint lint-c lint-py lint-fix clang-format-check clang-format-fix clang-tidy-check cppcheck-check ruff-check ruff-format-check ruff-fix
 
 all: | $(BUILD_DIR)
-all: $(BUILD_DIR)/test_core_filter $(BUILD_DIR)/test_signal_gen $(BUILD_DIR)/test_sentinel $(BUILD_DIR)/test_simple_multi_output
+all: $(BUILD_DIR)/test_core_filter $(BUILD_DIR)/test_signal_gen $(BUILD_DIR)/test_sentinel $(BUILD_DIR)/test_simple_multi_output $(BUILD_DIR)/test_resampler
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
@@ -39,6 +39,9 @@ $(BUILD_DIR)/test_sentinel: $(BUILD_DIR)/core.o $(BUILD_DIR)/signal_gen.o $(BUIL
 $(BUILD_DIR)/test_simple_multi_output: $(BUILD_DIR)/core.o $(BUILD_DIR)/signal_gen.o $(BUILD_DIR)/tee.o $(BUILD_DIR)/unity.o $(BUILD_DIR)/test_simple_multi_output.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
+$(BUILD_DIR)/test_resampler: $(BUILD_DIR)/core.o $(BUILD_DIR)/signal_gen.o $(BUILD_DIR)/tee.o $(BUILD_DIR)/resampler.o $(BUILD_DIR)/unity.o $(BUILD_DIR)/test_resampler.o
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
 clean:
 	rm -rf $(BUILD_DIR)
 
@@ -47,12 +50,18 @@ run: all
 	./$(BUILD_DIR)/test_signal_gen
 	./$(BUILD_DIR)/test_sentinel
 	./$(BUILD_DIR)/test_simple_multi_output
+	./$(BUILD_DIR)/test_resampler
 
 run-safe: all
 	./run_with_timeout.sh 30 ./$(BUILD_DIR)/test_core_filter
 	./run_with_timeout.sh 30 ./$(BUILD_DIR)/test_signal_gen
 	./run_with_timeout.sh 30 ./$(BUILD_DIR)/test_sentinel
 	./run_with_timeout.sh 30 ./$(BUILD_DIR)/test_simple_multi_output
+	./run_with_timeout.sh 30 ./$(BUILD_DIR)/test_resampler
+
+# Individual test targets
+test_resampler: $(BUILD_DIR)/test_resampler
+	$(BUILD_DIR)/test_resampler
 
 # Test targets
 test: test-c test-py
