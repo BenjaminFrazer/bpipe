@@ -60,7 +60,7 @@ def create_signal_generator(waveform, frequency, amplitude=1.0, phase=0.0, x_off
             if outputs and len(outputs) > 0:
                 copy_len = min(len(data), len(outputs[0]))
                 outputs[0][:copy_len] = data[:copy_len].astype(np.float32)
-            
+
             self.sample_idx += n_samples
 
     return SignalGen()
