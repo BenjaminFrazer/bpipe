@@ -221,10 +221,9 @@ class TestEdgeCases:
     
     def test_invalid_dtype(self):
         """Test filter creation with invalid data type."""
-        # The implementation might accept any integer as dtype
-        # Just verify it doesn't crash
-        filter1 = dpcore.BpFilterBase(capacity_exp=10, dtype=999)
-        assert filter1 is not None
+        # With improved validation, invalid dtypes should be rejected
+        with pytest.raises(ValueError, match="Invalid dtype value"):
+            dpcore.BpFilterBase(capacity_exp=10, dtype=999)
     
     def test_aggregator_negative_inputs(self):
         """Test aggregator with invalid input count."""
