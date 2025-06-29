@@ -1,7 +1,67 @@
 [
 	{
 		"directory": "/home/benf/repos/bpipe/",
-		"command": "clang -I/usr/include/python3.10 -I./lib/Unity/src -o udpcom.o -c bpipe/core.c",
+		"command": "gcc -I./bpipe -I./lib/Unity/src -std=c99 -Wall -Werror -pthread -save-temps=obj -c bpipe/core.c -o build/core.o",
 		"file": "bpipe/core.c"
+	},
+	{
+		"directory": "/home/benf/repos/bpipe/",
+		"command": "gcc -I./bpipe -I./lib/Unity/src -std=c99 -Wall -Werror -pthread -save-temps=obj -c bpipe/signal_gen.c -o build/signal_gen.o",
+		"file": "bpipe/signal_gen.c"
+	},
+	{
+		"directory": "/home/benf/repos/bpipe/",
+		"command": "gcc -I./bpipe -I./lib/Unity/src -std=c99 -Wall -Werror -pthread -save-temps=obj -c bpipe/tee.c -o build/tee.o",
+		"file": "bpipe/tee.c"
+	},
+	{
+		"directory": "/home/benf/repos/bpipe/",
+		"command": "gcc -I./bpipe -I./lib/Unity/src -std=c99 -Wall -Werror -pthread -save-temps=obj -c bpipe/resampler.c -o build/resampler.o",
+		"file": "bpipe/resampler.c"
+	},
+	{
+		"directory": "/home/benf/repos/bpipe/",
+		"command": "gcc -I./bpipe -I./lib/Unity/src -std=c99 -Wall -Werror -pthread -save-temps=obj -c bpipe/aggregator.c -o build/aggregator.o",
+		"file": "bpipe/aggregator.c"
+	},
+	{
+		"directory": "/home/benf/repos/bpipe/",
+		"command": "gcc -I./bpipe -I./lib/Unity/src -std=c99 -Wall -Werror -pthread -save-temps=obj -c bpipe/core_python.c -o build/core_python.o",
+		"file": "bpipe/core_python.c"
+	},
+	{
+		"directory": "/home/benf/repos/bpipe/",
+		"command": "gcc -I./bpipe -I./lib/Unity/src -std=c99 -Wall -Werror -pthread -save-temps=obj -c tests/test_core_filter.c -o build/test_core_filter.o",
+		"file": "tests/test_core_filter.c"
+	},
+	{
+		"directory": "/home/benf/repos/bpipe/",
+		"command": "gcc -I./bpipe -I./lib/Unity/src -std=c99 -Wall -Werror -pthread -save-temps=obj -c tests/test_signal_gen.c -o build/test_signal_gen.o",
+		"file": "tests/test_signal_gen.c"
+	},
+	{
+		"directory": "/home/benf/repos/bpipe/",
+		"command": "gcc -I./bpipe -I./lib/Unity/src -std=c99 -Wall -Werror -pthread -save-temps=obj -c tests/test_sentinel.c -o build/test_sentinel.o",
+		"file": "tests/test_sentinel.c"
+	},
+	{
+		"directory": "/home/benf/repos/bpipe/",
+		"command": "gcc -I./bpipe -I./lib/Unity/src -std=c99 -Wall -Werror -pthread -save-temps=obj -c tests/test_simple_multi_output.c -o build/test_simple_multi_output.o",
+		"file": "tests/test_simple_multi_output.c"
+	},
+	{
+		"directory": "/home/benf/repos/bpipe/",
+		"command": "gcc -I./bpipe -I./lib/Unity/src -std=c99 -Wall -Werror -pthread -save-temps=obj -c tests/test_resampler.c -o build/test_resampler.o",
+		"file": "tests/test_resampler.c"
+	},
+	{
+		"directory": "/home/benf/repos/bpipe/",
+		"command": "gcc -I./bpipe -I./lib/Unity/src -std=c99 -Wall -Werror -pthread -save-temps=obj -c lib/Unity/src/unity.c -o build/unity.o",
+		"file": "lib/Unity/src/unity.c"
+	},
+	{
+		"directory": "/home/benf/repos/bpipe/examples/",
+		"command": "gcc -I../bpipe -std=c99 -Wall -Werror -pthread -c examples/multi_rate_sync.c -o examples/build/multi_rate_sync.o",
+		"file": "examples/multi_rate_sync.c"
 	}
 ]

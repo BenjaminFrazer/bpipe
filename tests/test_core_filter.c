@@ -285,10 +285,62 @@ void test_Overflow_Behavior_Block_Default(void)
 
 void test_Overflow_Behavior_Drop_Mode(void)
 {
-    // TEMPORARY: Skip this test as it has issues with Bp_allocate hanging
-    // TODO: Fix the Bp_allocate implementation to properly handle drop mode
-    // This test is causing hangs due to potential issues in the core allocate function
-    TEST_IGNORE_MESSAGE("Skipping overflow drop mode test due to Bp_allocate hanging issue");
+    Bp_Filter_t filter;
+    
+    // Use the new API to properly configure overflow behavior
+    BpFilterConfig config = {
+        .transform = BpPassThroughTransform,
+        .dtype = DTYPE_UNSIGNED,
+        .buffer_size = 128,
+        .batch_size = 64,
+        .number_of_batches_exponent = 2,  // Small ring buffer (4 batches)
+        .number_of_input_filters = 1,
+        .overflow_behaviour = OVERFLOW_DROP,  // Set drop mode during initialization
+        .auto_allocate_buffers = true,
+        .timeout_us = 1000000
+    };
+    
+    Bp_EC init_result = BpFilter_Init(&filter, &config);
+    TEST_ASSERT_EQUAL(Bp_EC_OK, init_result);
+    
+    Bp_BatchBuffer_t* buf = &filter.input_buffers[0];
+    
+    // Verify the buffer got the overflow behavior setting
+    TEST_ASSERT_EQUAL(OVERFLOW_DROP, buf->overflow_behaviour);
+    
+    // Test that Bp_allocate succeeds when buffer is not full
+    Bp_Batch_t batch1 = Bp_allocate(&filter, buf);
+    TEST_ASSERT_EQUAL(Bp_EC_OK, batch1.ec);
+    TEST_ASSERT_NOT_NULL(batch1.data);
+    
+    // Simulate a full buffer by setting head far ahead of tail
+    // Ring capacity is 1 << 2 = 4, so head - tail >= 4 means full
+    buf->head = 1000;
+    buf->tail = 0;
+    
+    // Verify buffer is considered full
+    TEST_ASSERT_TRUE(Bp_full(buf));
+    
+    // Now try to allocate when buffer is full with drop mode - should fail immediately
+    Bp_Batch_t batch2 = Bp_allocate(&filter, buf);
+    TEST_ASSERT_EQUAL(Bp_EC_NOSPACE, batch2.ec);
+    TEST_ASSERT_NULL(batch2.data);
+    
+    // Test that block mode would behave differently (for comparison)
+    // Change buffer to blocking mode
+    buf->overflow_behaviour = OVERFLOW_BLOCK;
+    buf->timeout_us = 100000;  // 100ms timeout to prevent hanging
+    
+    // Reset to non-full state
+    buf->head = 0;
+    buf->tail = 0;
+    
+    Bp_Batch_t batch3 = Bp_allocate(&filter, buf);
+    TEST_ASSERT_EQUAL(Bp_EC_OK, batch3.ec);
+    TEST_ASSERT_NOT_NULL(batch3.data);
+    
+    // Clean up
+    BpFilter_Deinit(&filter);
 }
 
 void test_Await_Timeout_Behavior(void)
