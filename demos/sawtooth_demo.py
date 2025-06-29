@@ -1,42 +1,55 @@
 #!/usr/bin/env python3
 """
-Simple sawtooth signal demonstration.
+Sawtooth signal demonstration.
 
-Creates a sawtooth signal generator -> passthrough filter -> plot aggregator pipeline.
-Displays the plot and keeps the window open until the user closes it.
+Creates a sawtooth signal -> passthrough filter -> plot sink pipeline.
+Shows clean data flow without glitches/corruptions.
 """
 
-import os
-import sys
-
-# Add parent directory to path
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 import time
-
+import numpy as np
 import matplotlib.pyplot as plt
-
 import bpipe
 
 
-# Create passthrough filter by inheriting BpFilterPy
+class SawtoothSource(bpipe.BpFilterPy):
+    """Simple sawtooth generator for demo."""
+    
+    def __init__(self, frequency=0.01, amplitude=1.0):
+        super().__init__(capacity_exp=10, dtype=bpipe.DTYPE_FLOAT)
+        self.frequency = frequency
+        self.amplitude = amplitude
+        self.sample_idx = 0
+
+    def transform(self, inputs, outputs):
+        # Generate sawtooth data
+        n_samples = 32
+        t = np.arange(self.sample_idx, self.sample_idx + n_samples)
+        phase = (self.frequency * t) % 1.0
+        data = self.amplitude * (2 * phase - 1)
+        
+        if outputs and len(outputs) > 0:
+            copy_len = min(len(data), len(outputs[0]))
+            outputs[0][:copy_len] = data[:copy_len].astype(np.float32)
+        
+        self.sample_idx += n_samples
+
+
 class Passthrough(bpipe.BpFilterPy):
+    """Simple passthrough filter for demonstrating pipeline integrity."""
+    
     def __init__(self):
         super().__init__(capacity_exp=10, dtype=bpipe.DTYPE_FLOAT)
 
     def transform(self, inputs, outputs):
         if inputs and len(inputs[0]) > 0:
-            outputs[0][:len(inputs[0])] = inputs[0]
+            copy_len = min(len(inputs[0]), len(outputs[0]))
+            outputs[0][:copy_len] = inputs[0][:copy_len]
 
 
 def main():
     # Create pipeline components
-    signal = bpipe.create_signal_generator(
-        waveform='sawtooth',
-        frequency=0.01,  # 1 cycle per 100 samples
-        amplitude=1.0
-    )
-
+    signal = SawtoothSource(frequency=0.01, amplitude=1.0)
     passthrough = Passthrough()
     plot_sink = bpipe.PlotSink(max_points=1000)
 
@@ -44,25 +57,23 @@ def main():
     signal.add_sink(passthrough)
     passthrough.add_sink(plot_sink)
 
-    # Start all components
+    # Start pipeline
     signal.run()
-    passthrough.run()
+    passthrough.run()  
     plot_sink.run()
 
-    # Collect data for 2 seconds
-    print("Collecting data...")
+    # Collect data
+    print("Collecting sawtooth data...")
     time.sleep(2)
 
-    # Stop data collection
+    # Stop pipeline
     signal.stop()
     passthrough.stop()
     plot_sink.stop()
 
-    # Create plot
-    print("Displaying plot...")
+    # Display results
+    print("Displaying sawtooth plot...")
     plot_sink.plot(title="Sawtooth Signal Demo")
-
-    # Keep plot window open
     plt.show()
 
 

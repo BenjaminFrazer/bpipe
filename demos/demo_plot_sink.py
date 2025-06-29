@@ -2,128 +2,88 @@
 """
 Demo script showing PlotSink functionality.
 
-Creates synthetic data, feeds it to a PlotSink, and demonstrates plotting.
+Demonstrates basic PlotSink usage patterns.
 """
 
-import os
-import sys
-
-import numpy as np
-
-# Add parent directory to path to import dpcore
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-try:
-    import dpcore
-    print("✓ dpcore module loaded successfully")
-except ImportError as e:
-    print(f"✗ Failed to import dpcore: {e}")
-    print("Run 'python setup.py build_ext --inplace' first")
-    sys.exit(1)
-
-try:
-    import matplotlib
-    matplotlib.use('Agg')  # Use non-interactive backend for demo
-    import matplotlib.pyplot as plt
-    print("✓ matplotlib loaded successfully")
-except ImportError as e:
-    print(f"✗ Failed to import matplotlib: {e}")
-    print("Run 'pip install matplotlib' first")
-    sys.exit(1)
-
-from bpipe.filters import PlotSink
+import time
+import matplotlib.pyplot as plt
+import bpipe
 
 
 def demo_basic_plotting():
     """Demonstrate basic PlotSink functionality."""
-    print("\n=== PlotSink Demo ===")
-
-    # Create PlotSink
     print("Creating PlotSink...")
-    sink = PlotSink(max_capacity_bytes=1024*1024, max_points=1000)
-    print(f"✓ PlotSink created with max_points={sink.max_points}")
+    sink = bpipe.PlotSink(max_points=1000)
+    print(f"PlotSink created with max_points={sink.max_points}")
 
-    # Check initial state
-    print(f"Initial arrays: {len(sink.arrays)} buffer(s)")
-    print(f"Initial sizes: {sink.sizes}")
-    print(f"Running: {sink.running}")
-
-    # Simulate adding some data directly to the aggregator
-    # (In real usage, this would come from connected filters)
-    print("\nSimulating data collection...")
-
-    # Generate test data
-    t = np.linspace(0, 4*np.pi, 100)
-    signal1 = np.sin(t).astype(np.float32)
-    signal2 = (0.5 * np.cos(2*t)).astype(np.float32)
-
-    print(f"Generated signal1: {len(signal1)} samples")
-    print(f"Generated signal2: {len(signal2)} samples")
-
-    # For this demo, we'll create aggregators directly and populate them
-    # In real usage, data would flow through the filter pipeline
-    agg1 = dpcore.BpAggregatorPy(max_capacity_bytes=1024*1024)
-    agg2 = dpcore.BpAggregatorPy(max_capacity_bytes=1024*1024)
-
-    # Note: In actual usage, the aggregator would collect data automatically
-    # from connected filters. For this demo, we'll show the plotting API.
-
-    print("\n=== Testing PlotSink API ===")
-
-    # Test error handling with no data
-    try:
-        sink.plot()
-        print("✗ Expected error for no data")
-    except RuntimeError as e:
-        print(f"✓ Correctly caught error: {e}")
-
-    # Test API structure
-    print("\nPlotSink methods available:")
-    methods = [method for method in dir(sink) if not method.startswith('_')]
-    for method in sorted(methods):
-        print(f"  - {method}")
-
-    # Test matplotlib import error handling
-    print("\n✓ PlotSink demo completed successfully!")
-    print("✓ All error handling works correctly")
-    print("✓ API structure is correct")
-
-    return True
+    # Create signal generator for data
+    gen = bpipe.create_signal_generator('sine', frequency=0.05, amplitude=1.0)
+    
+    print("Connecting generator to sink...")
+    gen.add_sink(sink)
+    
+    print("Starting pipeline...")
+    gen.run()
+    sink.run()
+    
+    print("Collecting data...")
+    time.sleep(1.0)
+    
+    print("Stopping pipeline...")
+    gen.stop()
+    sink.stop()
+    
+    print("Creating plot...")
+    fig = sink.plot(title="PlotSink Demo")
+    fig.savefig('plot_sink_demo.png', dpi=150, bbox_inches='tight')
+    print("Plot saved to plot_sink_demo.png")
+    
+    return fig
 
 
-def demo_plot_api():
-    """Demonstrate the plot method API without actual plotting."""
-    print("\n=== Plot API Demo ===")
+def demo_multi_input():
+    """Demonstrate PlotSink with multiple inputs."""
+    print("\nMulti-input PlotSink demo...")
+    
+    sink = bpipe.PlotSink(max_points=500)
+    
+    # Create multiple signal generators
+    gen1 = bpipe.create_signal_generator('sine', frequency=0.02, amplitude=1.0)
+    gen2 = bpipe.create_signal_generator('square', frequency=0.03, amplitude=0.8)
+    
+    gen1.add_sink(sink)
+    gen2.add_sink(sink)
+    
+    gen1.run()
+    gen2.run()
+    sink.run()
+    
+    time.sleep(1.5)
+    
+    gen1.stop()
+    gen2.stop()
+    sink.stop()
+    
+    fig = sink.plot(title="Multi-Input PlotSink Demo")
+    fig.savefig('multi_input_demo.png', dpi=150, bbox_inches='tight')
+    print("Multi-input plot saved to multi_input_demo.png")
+    
+    return fig
 
-    sink = PlotSink()
 
-    # Show plot method signature
-    import inspect
-    sig = inspect.signature(sink.plot)
-    print(f"plot method signature: {sig}")
-
-    # Show default parameter values
-    for name, param in sig.parameters.items():
-        default = param.default if param.default != inspect.Parameter.empty else "no default"
-        print(f"  {name}: {default}")
-
-    print("✓ Plot API demo completed")
-
-
-if __name__ == "__main__":
+def main():
+    """Main demo function."""
     print("PlotSink Integration Demo")
     print("=" * 40)
 
-    try:
-        success = demo_basic_plotting()
-        demo_plot_api()
+    demo_basic_plotting()
+    demo_multi_input()
+    
+    print("\nPlotSink demos completed successfully!")
+    print("Generated plots:")
+    print("   - plot_sink_demo.png: Basic PlotSink usage")
+    print("   - multi_input_demo.png: Multiple input demonstration")
 
-        if success:
-            print("\n🎉 All demos completed successfully!")
-            print("PlotSink is ready for use.")
 
-    except Exception as e:
-        print(f"\n❌ Demo failed: {e}")
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
+if __name__ == "__main__":
+    main()

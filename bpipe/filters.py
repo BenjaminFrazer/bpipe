@@ -41,27 +41,27 @@ def create_signal_generator(waveform, frequency, amplitude=1.0, phase=0.0, x_off
             self.sample_idx = 0
 
         def transform(self, inputs, outputs):
-            # For a source filter, generate data into the first output
+            # Generate data - sources don't use inputs
+            n_samples = min(batch_size, 64)  # Fixed batch size
+            t = np.arange(self.sample_idx, self.sample_idx + n_samples, dtype=np.float32)
+
+            if self.waveform == dpcore.BP_WAVE_SINE:
+                data = self.amplitude * np.sin(2 * np.pi * self.frequency * t + self.phase) + self.x_offset
+            elif self.waveform == dpcore.BP_WAVE_SQUARE:
+                data = self.amplitude * np.sign(np.sin(2 * np.pi * self.frequency * t + self.phase)) + self.x_offset
+            elif self.waveform == dpcore.BP_WAVE_TRIANGLE:
+                data = self.amplitude * (2/np.pi) * np.arcsin(np.sin(2 * np.pi * self.frequency * t + self.phase)) + self.x_offset
+            elif self.waveform == dpcore.BP_WAVE_SAWTOOTH:
+                data = self.amplitude * (2 * ((self.frequency * t + self.phase) % 1) - 1) + self.x_offset
+            else:
+                data = np.zeros(n_samples, dtype=np.float32)
+
+            # Copy to output
             if outputs and len(outputs) > 0:
-                # Generate batch_size samples
-                n_samples = min(batch_size, len(outputs[0]) if hasattr(outputs[0], '__len__') else batch_size)
-                t = np.arange(self.sample_idx, self.sample_idx + n_samples, dtype=np.float32)
-
-                if self.waveform == dpcore.BP_WAVE_SINE:
-                    data = self.amplitude * np.sin(2 * np.pi * self.frequency * t + self.phase) + self.x_offset
-                elif self.waveform == dpcore.BP_WAVE_SQUARE:
-                    data = self.amplitude * np.sign(np.sin(2 * np.pi * self.frequency * t + self.phase)) + self.x_offset
-                elif self.waveform == dpcore.BP_WAVE_TRIANGLE:
-                    # Triangle wave using arcsin
-                    data = self.amplitude * (2/np.pi) * np.arcsin(np.sin(2 * np.pi * self.frequency * t + self.phase)) + self.x_offset
-                elif self.waveform == dpcore.BP_WAVE_SAWTOOTH:
-                    # Sawtooth using modulo
-                    data = self.amplitude * (2 * ((self.frequency * t + self.phase) % 1) - 1) + self.x_offset
-
-                # Ensure data is float32 to match DTYPE_FLOAT
-                data = data.astype(np.float32)
-                outputs[0][:n_samples] = data
-                self.sample_idx += n_samples
+                copy_len = min(len(data), len(outputs[0]))
+                outputs[0][:copy_len] = data[:copy_len].astype(np.float32)
+            
+            self.sample_idx += n_samples
 
     return SignalGen()
 
