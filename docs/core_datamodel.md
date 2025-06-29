@@ -1,0 +1,175 @@
+# Bpipe Core Data Model
+
+## Overview
+
+Bpipe is a real-time telemetry data processing framework built around a simple yet powerful data model. At its core, the framework uses a **push-based, filter-owned buffer** architecture where data flows through a directed acyclic graph (DAG) of processing components.
+
+## Core Concepts
+
+### 1. Filters (`Bp_Filter_t`)
+
+Filters are the primary processing units in bpipe. Each filter:
+- **Owns its input buffers** - ensuring clear lifecycle management
+- **Runs in its own thread** - enabling parallel processing
+- **Transforms data** - via a user-defined transform function
+- **Pushes to sink buffers** - maintaining a push-based data flow
+
+```c
+// Filter initialization with configuration
+BpFilterConfig config = {
+    .transform = MyTransformFunction,
+    .dtype = DTYPE_FLOAT,
+    .buffer_size = 128,
+    .batch_size = 64,
+    .number_of_batches_exponent = 6,
+    .number_of_input_filters = 1
+};
+BpFilter_Init(&filter, &config);
+```
+
+### 2. Batch Buffers (`Bp_BatchBuffer_t`)
+
+Buffers are self-contained ring buffers that:
+- **Store batches of data** - not individual samples
+- **Handle synchronization** - with built-in mutex and condition variables
+- **Manage overflow** - via configurable block/drop behavior
+- **Operate independently** - all operations work on buffer pointers
+
+```c
+// Direct buffer operations (proposed enhancement)
+Bp_Batch_t batch = BpBatchBuffer_Allocate(&filter.input_buffers[0]);
+// Process batch...
+BpBatchBuffer_Submit(&filter.input_buffers[0], &batch);
+```
+
+### 3. Batches (`Bp_Batch_t`)
+
+Batches are the unit of data transfer containing:
+- **Data pointer** - to the actual samples
+- **Metadata** - timestamps, sequence numbers, data type
+- **Head/tail indices** - for partial batch processing
+- **Error codes** - including completion signals
+
+## Data Flow Model
+
+### Connection Architecture
+
+```
+┌─────────────┐         ┌─────────────┐         ┌─────────────┐
+│   Source    │         │  Transform  │         │    Sink     │
+│             │ push to │             │ push to │             │
+│  [output]---┼────────>│ [input][out]┼────────>│  [input]    │
+│             │         │             │         │             │
+└─────────────┘         └─────────────┘         └─────────────┘
+```
+
+Key principles:
+1. **Filters own their input buffers** - no shared ownership complexity
+2. **Sources push to sink buffers** - via references obtained during connection
+3. **Data flows in batches** - amortizing synchronization overhead
+4. **Backpressure is automatic** - buffers block or drop based on configuration
+
+### Connection Example
+
+```c
+// Create pipeline: source -> transform -> sink
+BpFilter_Init(&source, &source_config);
+BpFilter_Init(&transform, &transform_config);  
+BpFilter_Init(&sink, &sink_config);
+
+// Connect: sources get references to sink input buffers
+Bp_add_sink(&source, &transform);      // source pushes to transform.input_buffers[0]
+Bp_add_sink(&transform, &sink);        // transform pushes to sink.input_buffers[0]
+
+// Start processing
+BpFilter_Start(&source);
+BpFilter_Start(&transform);
+BpFilter_Start(&sink);
+```
+
+## Buffer Management
+
+### Self-Contained Design
+
+Each buffer contains:
+- **Ring buffer storage** - for both data and batch metadata
+- **Synchronization primitives** - mutex, not_empty, not_full conditions
+- **Configuration** - capacity, data type, overflow behavior
+- **State tracking** - head/tail indices, stopped flag
+
+This self-contained design enables:
+- **Direct operations** - no need to pass filter context
+- **Independent testing** - buffers can be tested in isolation
+- **Clear interfaces** - operations work on typed buffer pointers
+
+### Overflow Handling
+
+Buffers support two overflow behaviors:
+- **OVERFLOW_BLOCK** - Producer waits when buffer full (default)
+- **OVERFLOW_DROP** - New data dropped when buffer full
+
+## Threading Model
+
+Each filter runs a worker thread that:
+1. **Reads from input buffers** - with timeout support
+2. **Calls transform function** - user-defined processing
+3. **Writes to output buffers** - of connected sinks
+4. **Handles completion** - propagates termination signals
+
+Thread safety is ensured by:
+- **Buffer-level locking** - each buffer has its own mutex
+- **Filter mutex** - protects connection changes
+- **Condition variables** - efficient waiting for data/space
+
+## Type System
+
+Strong typing throughout:
+- **Data types** - DTYPE_FLOAT, DTYPE_INT, DTYPE_UNSIGNED
+- **Type checking** - at connection time with detailed errors
+- **Consistent sizing** - data_width derived from type
+
+## Performance Considerations
+
+The architecture optimizes for:
+- **Cache locality** - filters and their buffers in contiguous memory
+- **Batch processing** - amortizes synchronization costs
+- **Zero-copy potential** - batches reference buffer memory directly
+- **Inline operations** - critical path functions are header-inlined
+- **Lock-free reads** - where possible in hot paths
+
+## Usage Patterns
+
+### Simple Pipeline
+```c
+// Most common: linear processing chain
+source -> filter1 -> filter2 -> sink
+```
+
+### Fan-Out
+```c
+// One source, multiple sinks (automatic distribution)
+source -> [sink1, sink2, sink3]
+```
+
+### Fan-In
+```c
+// Multiple sources, one sink (via multiple input buffers)
+[source1, source2] -> combiner -> sink
+```
+
+### Complex DAG
+```c
+// Arbitrary directed acyclic graphs supported
+source1 -> filter1 -> [filter3, filter4] -> sink
+source2 -> filter2 -> filter3
+```
+
+## Key Design Decisions
+
+1. **Filter-owned buffers** - Simplifies lifecycle, improves cache locality
+2. **Push-based model** - Natural for streaming, good backpressure handling
+3. **Batch-oriented** - Reduces overhead, enables vectorization
+4. **Self-contained buffers** - Clean APIs while maintaining performance
+5. **Configuration structs** - Extensible initialization without API breaks
+
+This architecture balances simplicity, performance, and flexibility for real-time telemetry processing applications.
