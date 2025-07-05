@@ -92,7 +92,7 @@ clang-format-check:
 
 clang-format-fix:
 	@echo "Fixing C code formatting..."
-	@clang-format -i $(SRC_DIR)/*.c $(SRC_DIR)/*.h tests/*.c
+	@clang-format -i $(SRC_DIR)/*.c $(SRC_DIR)/*.h
 
 clang-tidy-check:
 	@echo "Running clang-tidy static analysis..."
