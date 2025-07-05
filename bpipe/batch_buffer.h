@@ -206,3 +206,14 @@ Bp_EC bb_del(Batch_buff_t *buff);
  * block until space is available.
  */
 Bp_EC bb_submit(Batch_buff_t *buff);
+
+/* Buffer allocation and lifecycle management */
+Bp_EC bb_init(Batch_buff_t *buff, const char *name, SampleDtype_t dtype,
+              size_t ring_capacity_expo, size_t batch_capacity_expo,
+              OverflowBehaviour_t overflow_behaviour, unsigned long timeout_us);
+
+Bp_EC bb_deinit(Batch_buff_t *buff);
+
+Bp_EC bb_start(Batch_buff_t *buff);
+
+Bp_EC bb_stop(Batch_buff_t *buff);

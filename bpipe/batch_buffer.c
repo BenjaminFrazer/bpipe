@@ -1,5 +1,6 @@
 #include "batch_buffer.h"
 #include <bits/types/struct_iovec.h>
+#include <string.h>
 
 size_t _data_size_lut[] = {
     [DTYPE_NDEF] = 0,
@@ -162,5 +163,171 @@ Bp_EC bb_submit(Batch_buff_t *buff) {
     pthread_mutex_unlock(&buff->mutex);
   }
 
+  return Bp_EC_OK;
+}
+
+/* Initialize a batch buffer with specified parameters
+ * @param buff Buffer to initialize
+ * @param name Buffer name (e.g., "filter1.input[0]")
+ * @param dtype Data type for buffer elements
+ * @param ring_capacity_expo Ring buffer capacity as power of 2 (e.g., 10 = 1024 slots)
+ * @param batch_capacity_expo Batch size as power of 2 (e.g., 8 = 256 elements per batch)
+ * @param overflow_behaviour How to handle buffer overflow (BLOCK or DROP)
+ * @param timeout_us Default timeout in microseconds for blocking operations
+ * @return Bp_EC_OK on success, error code on failure
+ */
+Bp_EC bb_init(Batch_buff_t *buff, const char *name, SampleDtype_t dtype,
+              size_t ring_capacity_expo, size_t batch_capacity_expo,
+              OverflowBehaviour_t overflow_behaviour, unsigned long timeout_us) {
+  
+  if (!buff) {
+    return Bp_EC_NULL_FILTER;
+  }
+  
+  if (dtype >= DTYPE_MAX || dtype == DTYPE_NDEF) {
+    return Bp_EC_INVALID_DTYPE;
+  }
+  
+  if (ring_capacity_expo > 30 || batch_capacity_expo > 20) {
+    return Bp_EC_INVALID_CONFIG;
+  }
+  
+  /* Clear the structure */
+  memset(buff, 0, sizeof(Batch_buff_t));
+  
+  /* Copy name */
+  strncpy(buff->name, name ? name : "unnamed", sizeof(buff->name) - 1);
+  buff->name[sizeof(buff->name) - 1] = '\0';
+  
+  /* Set configuration */
+  buff->dtype = dtype;
+  buff->ring_capacity_expo = ring_capacity_expo;
+  buff->batch_capacity_expo = batch_capacity_expo;
+  buff->overflow_behaviour = overflow_behaviour;
+  buff->timeout_us = timeout_us;
+  
+  /* Calculate sizes */
+  size_t ring_capacity = 1UL << ring_capacity_expo;
+  size_t batch_capacity = 1UL << batch_capacity_expo;
+  size_t data_width = bb_getdatawidth(dtype);
+  
+  /* Allocate ring buffers */
+  buff->batch_ring = calloc(ring_capacity, sizeof(Bp_Batch_t));
+  if (!buff->batch_ring) {
+    return Bp_EC_MALLOC_FAIL;
+  }
+  
+  buff->data_ring = calloc(ring_capacity * batch_capacity, data_width);
+  if (!buff->data_ring) {
+    free(buff->batch_ring);
+    buff->batch_ring = NULL;
+    return Bp_EC_MALLOC_FAIL;
+  }
+  
+  /* Initialize synchronization primitives */
+  if (pthread_mutex_init(&buff->mutex, NULL) != 0) {
+    free(buff->data_ring);
+    free(buff->batch_ring);
+    return Bp_EC_MUTEX_INIT_FAIL;
+  }
+  
+  if (pthread_cond_init(&buff->not_empty, NULL) != 0) {
+    pthread_mutex_destroy(&buff->mutex);
+    free(buff->data_ring);
+    free(buff->batch_ring);
+    return Bp_EC_COND_INIT_FAIL;
+  }
+  
+  if (pthread_cond_init(&buff->not_full, NULL) != 0) {
+    pthread_cond_destroy(&buff->not_empty);
+    pthread_mutex_destroy(&buff->mutex);
+    free(buff->data_ring);
+    free(buff->batch_ring);
+    return Bp_EC_COND_INIT_FAIL;
+  }
+  
+  /* Initialize atomic variables */
+  atomic_store(&buff->producer.head, 0);
+  atomic_store(&buff->consumer.tail, 0);
+  atomic_store(&buff->producer.total_batches, 0);
+  atomic_store(&buff->producer.dropped_batches, 0);
+  atomic_store(&buff->running, true);
+  
+  return Bp_EC_OK;
+}
+
+/* Deinitialize and free resources used by a batch buffer
+ * @param buff Buffer to deinitialize
+ * @return Bp_EC_OK on success, error code on failure
+ */
+Bp_EC bb_deinit(Batch_buff_t *buff) {
+  if (!buff) {
+    return Bp_EC_NULL_FILTER;
+  }
+  
+  /* Stop the buffer to wake any waiting threads */
+  atomic_store(&buff->running, false);
+  
+  /* Wake up any threads blocked on conditions */
+  pthread_mutex_lock(&buff->mutex);
+  pthread_cond_broadcast(&buff->not_empty);
+  pthread_cond_broadcast(&buff->not_full);
+  pthread_mutex_unlock(&buff->mutex);
+  
+  /* Give threads a moment to exit their wait states */
+  usleep(1000);
+  
+  /* Destroy synchronization primitives */
+  pthread_cond_destroy(&buff->not_full);
+  pthread_cond_destroy(&buff->not_empty);
+  pthread_mutex_destroy(&buff->mutex);
+  
+  /* Free memory */
+  if (buff->data_ring) {
+    free(buff->data_ring);
+    buff->data_ring = NULL;
+  }
+  
+  if (buff->batch_ring) {
+    free(buff->batch_ring);
+    buff->batch_ring = NULL;
+  }
+  
+  /* Clear the structure */
+  memset(buff, 0, sizeof(Batch_buff_t));
+  
+  return Bp_EC_OK;
+}
+
+/* Start the buffer (set running flag)
+ * @param buff Buffer to start
+ * @return Bp_EC_OK on success
+ */
+Bp_EC bb_start(Batch_buff_t *buff) {
+  if (!buff) {
+    return Bp_EC_NULL_FILTER;
+  }
+  
+  atomic_store(&buff->running, true);
+  return Bp_EC_OK;
+}
+
+/* Stop the buffer (clear running flag and wake waiting threads)
+ * @param buff Buffer to stop
+ * @return Bp_EC_OK on success
+ */
+Bp_EC bb_stop(Batch_buff_t *buff) {
+  if (!buff) {
+    return Bp_EC_NULL_FILTER;
+  }
+  
+  atomic_store(&buff->running, false);
+  
+  /* Wake up any waiting threads */
+  pthread_mutex_lock(&buff->mutex);
+  pthread_cond_broadcast(&buff->not_empty);
+  pthread_cond_broadcast(&buff->not_full);
+  pthread_mutex_unlock(&buff->mutex);
+  
   return Bp_EC_OK;
 }
