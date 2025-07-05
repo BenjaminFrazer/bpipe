@@ -15,6 +15,7 @@
 #include <sys/socket.h>
 #include <time.h>
 #include <unistd.h>
+#include <stdatomic.h>
 #include "bperr.h"
 #include "core.h"
 
@@ -93,10 +94,28 @@ typedef struct _Bp_BatchBuffer {
 	void* data_ring;
 	Bp_Batch_t* batch_ring;
 
-	/* head/tail pointers */
-	size_t head;
-	size_t tail;
+	/* CRITICAL DESIGN DECISION: Producer and consumer fields are separated into
+	 * different cache lines to prevent false sharing. False sharing occurs when
+	 * different threads update variables on the same cache line, causing the
+	 * entire cache line to bounce between CPU cores. This can degrade performance
+	 * by 10-100x. The __attribute__((aligned(64))) ensures each structure starts
+	 * on a new cache line (64 bytes is typical for x86_64).
+	 */
+	
+	/* Producer-only fields - modified only by producer thread */
+	struct {
+		_Atomic size_t head;              /* Next slot to write */
+		_Atomic uint64_t total_batches;   /* Total batches submitted */
+		_Atomic uint64_t dropped_batches; /* Dropped due to overflow */
+		uint64_t blocked_time_ns;         /* Time spent blocking */
+	} producer __attribute__((aligned(64)));
 
+	/* Consumer-only fields - modified only by consumer thread */
+	struct {
+		_Atomic size_t tail;              /* Next slot to read */
+	} consumer __attribute__((aligned(64)));
+
+	/* Shared fields - accessed by both threads but only on slow path */
 	/* Capacity information */
 	size_t ring_capacity_expo;
 	size_t batch_capacity_expo;
@@ -104,27 +123,22 @@ typedef struct _Bp_BatchBuffer {
 	pthread_mutex_t mutex;
 	pthread_cond_t not_empty;
 	pthread_cond_t not_full;
-	bool running;
+	_Atomic bool running;
 
 	OverflowBehaviour_t overflow_behaviour;
 	unsigned long timeout_us;
-
-	/* Statistics */
-	uint64_t total_batches;
-	uint64_t dropped_batches;
-	uint64_t blocked_time_ns;
 } Batch_buff_t;
 
 static inline size_t get_tail_idx(Batch_buff_t* buff)
 {
 	unsigned long mask = (1u << buff->ring_capacity_expo) - 1u;
-	return buff->tail & mask;
+	return atomic_load_explicit(&buff->consumer.tail, memory_order_relaxed) & mask;
 }
 
 static inline size_t bb_get_head_idx(Batch_buff_t* buff)
 {
 	unsigned long mask = (1u << buff->ring_capacity_expo) - 1u;
-	return buff->head & mask;
+	return atomic_load_explicit(&buff->producer.head, memory_order_relaxed) & mask;
 }
 
 static inline unsigned long bb_capacity(Batch_buff_t* buf)
@@ -144,19 +158,41 @@ static inline unsigned long bb_modulo_mask(const Batch_buff_t* buff)
 }
 
 
-static inline bool bb_isempy(const Batch_buff_t* buf)
+/* Lock-free empty check for fast path */
+static inline bool bb_isempy_lockfree(const Batch_buff_t* buf)
 {
-	return buf->head == buf->tail;
+	/* Acquire ensures we see all writes from producer before reading data */
+	size_t head = atomic_load_explicit(&buf->producer.head, memory_order_acquire);
+	size_t tail = atomic_load_explicit(&buf->consumer.tail, memory_order_relaxed);
+	return head == tail;
 }
 
+/* Original function for use within mutex-protected sections */
+static inline bool bb_isempy(const Batch_buff_t* buf)
+{
+	return buf->producer.head == buf->consumer.tail;
+}
+
+/* Lock-free full check for fast path */
+static inline bool bb_isfull_lockfree(const Batch_buff_t* buff)
+{
+	size_t head = atomic_load_explicit(&buff->producer.head, memory_order_relaxed);
+	/* Acquire ensures we see consumer's progress */
+	size_t tail = atomic_load_explicit(&buff->consumer.tail, memory_order_acquire);
+	return ((head + 1) & bb_modulo_mask(buff)) == tail;
+}
+
+/* Original function for use within mutex-protected sections */
 static inline bool bb_isfull(const Batch_buff_t* buff)
 {
-	return ((buff->head+1) & bb_modulo_mask(buff)) == buff->tail;
+	return ((buff->producer.head + 1) & bb_modulo_mask(buff)) == buff->consumer.tail;
 }
 
 static inline size_t bb_space(const Batch_buff_t* buf)
 {
-	return (buf->head - buf->tail);
+	size_t head = atomic_load_explicit(&buf->producer.head, memory_order_relaxed);
+	size_t tail = atomic_load_explicit(&buf->consumer.tail, memory_order_acquire);
+	return head - tail;
 }
 
 
@@ -166,86 +202,30 @@ static inline size_t bb_space(const Batch_buff_t* buf)
  * @return Bp_EC_OK if space available, Bp_EC_TIMEOUT on timeout, Bp_EC_STOPPED
  * if buffer stopped
  */
-static inline Bp_EC bb_await_notfull(Batch_buff_t* buff, unsigned long timeout){
-	Bp_EC ec = Bp_EC_OK;
-	pthread_mutex_lock(&buff->mutex);
+Bp_EC bb_await_notfull(Batch_buff_t* buff, unsigned long timeout);
 
-	struct timespec abs_timeout = future_ts(timeout, CLOCK_MONOTONIC);
-
-	while (bb_isfull(buff) && buff->running) {
-		int ret = pthread_cond_timedwait(&buff->not_full, &buff->mutex, &abs_timeout);
-		if (ret == ETIMEDOUT) {
-			ec = Bp_EC_TIMEOUT;
-			break;
-		}
-	}
-	pthread_mutex_unlock(&buff->mutex);
-	return ec;
-}
-
-static inline Bp_EC bb_await_notempty(Batch_buff_t* buff, unsigned long timeout){
-	Bp_EC ec = Bp_EC_OK;
-	pthread_mutex_lock(&buff->mutex);
-
-	struct timespec abs_timeout = future_ts(timeout, CLOCK_MONOTONIC);
-
-	while (bb_isempy(buff) && buff->running) {
-		int ret = pthread_cond_timedwait(&buff->not_empty, &buff->mutex, &abs_timeout);
-		if (ret == ETIMEDOUT) {
-			ec = Bp_EC_TIMEOUT;
-			break;
-		}
-	}
-	pthread_mutex_unlock(&buff->mutex);
-	return ec;
-}
+Bp_EC bb_await_notempty(Batch_buff_t* buff, unsigned long timeout);
 
 /* Get the active batch. Doesn't change head or tail idx. */
 static inline Bp_Batch_t bb_get_head(Batch_buff_t* buff)
 {
-	return buff->batch_ring[buff->head];
+	size_t idx = bb_get_head_idx(buff);
+	return buff->batch_ring[idx];
 }
 
 /* Get the oldest consumable data batch. Doesn't change head or tail idx. */
-static inline Bp_Batch_t bb_get_tail(Batch_buff_t* buff)
-{
-	bb_await_notempty(buff, buff->timeout_us);
-	return buff->batch_ring[buff->tail];
-}
+Bp_Batch_t bb_get_tail(Batch_buff_t* buff);
 
-/* Delete oldest batch and increment the tail poiter marking the slot as populateable.*/
-static inline Bp_EC bb_del(Batch_buff_t* buff)
-{
-	Bp_EC ec;
-	if (bb_isempy(buff)){
-		ec = Bp_EC_BUFFER_EMPTY;
-	}
-	else {
-		buff->tail = (buff->tail + 1) & bb_modulo_mask(buff);
-		ec = Bp_EC_OK;
-	}
-}
+/* Delete oldest batch and increment the tail pointer marking the slot as populateable.*/
+Bp_EC bb_del(Batch_buff_t* buff);
 
 /* logically bb_submit increments the active slot effectively marking the current slot as consumable. 
  * Dropping behaviour:
 	 * IF the buffer is full and blocking overflow behaviour ==OVERFLOW_DROP the active slot is not 
-	 * incremented and the next batch iwll write over the current batch. This is effectivey "Dropping" it
+	 * incremented and the next batch will write over the current batch. This is effectively "Dropping" it
 	 * if no space is available
  * Blocking behaviour:
-	 * If the Buffer is full and overflow behaviour == OVERFLOW_BLOCK, this operation will block untill
+	 * If the Buffer is full and overflow behaviour == OVERFLOW_BLOCK, this operation will block until
 	 * space is available.
 */
-static inline Bp_EC bb_submit(Batch_buff_t* buff)
-{
-	Bp_EC rc; 
-	if (buff->overflow_behaviour == OVERFLOW_DROP && bb_isfull(buff)) {
-		buff->dropped_batches++;
-		rc = Bp_EC_OK;
-	}
-	else{
-		rc = bb_await_notfull(buff, buff->timeout_us);
-		buff->head = (buff->head+1) & bb_modulo_mask(buff);
-		buff->total_batches++;
-	}
-	return rc;
-}
+Bp_EC bb_submit(Batch_buff_t* buff);
