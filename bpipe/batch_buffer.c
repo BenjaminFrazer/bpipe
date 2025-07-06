@@ -1,4 +1,5 @@
 #include "batch_buffer.h"
+#include "bperr.h"
 #include <stdint.h>
 #include <string.h>
 #include <errno.h>
@@ -100,18 +101,26 @@ Bp_EC bb_await_notempty(Batch_buff_t *buff, long long timeout_us) {
   return ec;
 }
 
-/* Get the oldest consumable data batch. Doesn't change head or tail idx. */
-Batch_t* bb_get_tail(Batch_buff_t *buff, unsigned long timeout_us) {
+/* Get the oldest consumable data batch. Doesn't change head or tail idx. Returns NULL on timeout. */
+Batch_t* bb_get_tail(Batch_buff_t *buff, unsigned long timeout_us, Bp_EC* err) {
   /* Fast path - check if data available without locks */
   if (!bb_isempy_lockfree(buff)) {
     size_t idx = bb_get_tail_idx(buff);
     /* Memory fence ensures we see the batch data written by producer */
     atomic_thread_fence(memory_order_acquire);
+		*err = Bp_EC_OK;
     return &buff->batch_ring[idx];
   }
 
   /* Slow path - wait for data */
-  bb_await_notempty(buff, timeout_us);
+  Bp_EC rc = bb_await_notempty(buff, timeout_us);
+	if (err != NULL) {
+		*err = rc;
+	}
+  /* Return NULL on error.*/
+  if (rc != Bp_EC_OK) {
+		return NULL;
+  }
   size_t idx = bb_get_tail_idx(buff);
   return &buff->batch_ring[idx];
 }
@@ -213,6 +222,9 @@ Bp_EC bb_init(Batch_buff_t *buff, const char *name, BatchBuffer_config config) {
     return Bp_EC_INVALID_CONFIG;
   }
   
+	if (config.overflow_behaviour> OVERFLOW_MAX){
+		return Bp_EC_INVALID_CONFIG;
+	}
   /* Clear the structure */
   memset(buff, 0, sizeof(Batch_buff_t));
   

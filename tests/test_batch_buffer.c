@@ -1,4 +1,5 @@
 #include "unity_internals.h"
+#include <bits/pthreadtypes.h>
 #include <bits/time.h>
 #include <bits/types/struct_iovec.h>
 #include <bits/types/timer_t.h>
@@ -75,7 +76,9 @@ void test_fill_and_empty(void)
 	// Reset count for verification
 	count = 0;
 	for (int i = 0; i<ring_capacity; i++){
-		Batch_t* batch = bb_get_tail(&buff_block, 0);
+		Bp_EC err;
+		Batch_t* batch = bb_get_tail(&buff_block, 0, &err);
+		TEST_ASSERT_EQUAL_INT_MESSAGE(Bp_EC_OK, err, "Error retrieving tail.");
 		TEST_ASSERT_EQUAL_PTR_MESSAGE((char*)buff_block.data_ring + (batch_capacity * sizeof(uint32_t) * i), batch->data, "Batch data pointer in unexpected location.");
 
 		TEST_ASSERT_NOT_NULL_MESSAGE(batch, "Failed to get tail batch");
@@ -101,8 +104,15 @@ void test_fill_and_empty(void)
 
 void * submitter(void *arg){
 	Bp_EC* ec = (Bp_EC*)arg;
-	*ec = bb_submit(&buff_block, 1000000);
-	return (void*)ec;
+	*ec = bb_submit(&buff_block, 20000);
+	return NULL;
+}
+
+void * consumer(void *arg){
+	Bp_EC* ec = (Bp_EC*)arg;
+	/* we just care if we timed out */
+ (void)bb_get_tail(&buff_block, 20000, ec);
+	return NULL;
 }
 
 /* */
@@ -147,9 +157,8 @@ void test_overflow_block(void)
 	pthread_t test_blocked_submitter;
 	
 	Bp_EC submitter_ec;
-	void* ec_ptr = (void*)&submitter_ec;
 	ts_before = now_ns(CLOCK_MONOTONIC);
-	pthread_create(&test_blocked_submitter, NULL, submitter, ec_ptr);
+	pthread_create(&test_blocked_submitter, NULL, submitter, (void*)&submitter_ec);
 
 	struct timespec sleeptime = {.tv_nsec=10000000}; // 10ms
 	nanosleep(&sleeptime, NULL);
@@ -157,24 +166,109 @@ void test_overflow_block(void)
 	ec = bb_stop(&buff_block);
 	TEST_ASSERT_EQUAL_INT_MESSAGE(Bp_EC_OK, ec, "Failed to stop.");
 
-	TEST_ASSERT_EQUAL_INT_MESSAGE(0, pthread_join(test_blocked_submitter, &ec_ptr), "Failed to join");
+	TEST_ASSERT_EQUAL_INT_MESSAGE(0, pthread_join(test_blocked_submitter, NULL), "Failed to join");
 	ts_after = now_ns(CLOCK_MONOTONIC);
 	elapsed_ns = ts_after - ts_before;
-
-	ec = *((Bp_EC*)ec_ptr);
-	TEST_ASSERT_EQUAL_INT_MESSAGE(Bp_EC_STOPPED, ec, "Expected timeout fail.");
+	
+	TEST_ASSERT_EQUAL_INT_MESSAGE(Bp_EC_STOPPED, submitter_ec, "Expected stopped fail.");
 
 	/* Timeout should be at least 10ms */
 	TEST_ASSERT_GREATER_THAN_INT_MESSAGE(10000000, elapsed_ns, "Join quicker than expected.");
 	/* But not longer than 20ms */
 	TEST_ASSERT_LESS_THAN_INT_MESSAGE(12000000, elapsed_ns, "Join slower than expected. ");
+	
+	TEST_ASSERT_EQUAL_INT_MESSAGE(Bp_EC_OK, ec, "Shoudn't have timed out");
+}
+
+void test_empty_blocking_consume_timeout(){
+	// Submit the batch to advance the head pointer
+	pthread_t submitter_thread;
+	Bp_EC consumer_ec;
+
+	/* Create a thread that will be blocked by the buffer being empty */
+	long long ts_before = now_ns(CLOCK_MONOTONIC);
+	TEST_ASSERT_EQUAL_INT_MESSAGE(0, pthread_create(&submitter_thread, NULL, consumer, (void*)&consumer_ec), "Failed to create consumer thread.");
+
+	/* Join the cusumer thread, this will only be possible if the thread is un-blocked.*/
+	TEST_ASSERT_EQUAL_INT_MESSAGE(0, pthread_join(submitter_thread, NULL), "Failed to join");
+	long long ts_after = now_ns(CLOCK_MONOTONIC);
+	long long elapse_ns = ts_after-ts_before;
+
+	/* Error code should be ok since we provided data before the timeout */
+	TEST_ASSERT_EQUAL_INT_MESSAGE(Bp_EC_TIMEOUT, consumer_ec, "Expected timeout.");
+	/* Timeout is 20ms so join time should be symilar.*/
+	TEST_ASSERT_GREATER_THAN_INT_MESSAGE(20000000, elapse_ns, "Join quicker than expected.");
+	/* But not longer than 20ms */
+	TEST_ASSERT_LESS_THAN_INT_MESSAGE(22000000, elapse_ns, "Join slower than expected. ");
 
 }
+
+/* prove blocked threads will return if the bb_stop() is called */
+void test_empty_stop_unblock(){
+	// Submit the batch to advance the head pointer
+	pthread_t submitter_thread;
+	Bp_EC consumer_ec;
+
+	/* Create a thread that will be blocked by the buffer being empty */
+	long long ts_before = now_ns(CLOCK_MONOTONIC);
+	TEST_ASSERT_EQUAL_INT_MESSAGE(0, pthread_create(&submitter_thread, NULL, consumer, (void*)&consumer_ec), "Failed to create consumer thread.");
+
+	/* Wait for 10ms before submitting a batch which should ublock the consumer */
+	struct timespec sleeptime = {.tv_nsec=10000000}; // 10ms
+	nanosleep(&sleeptime, NULL);
+	TEST_ASSERT_EQUAL_INT_MESSAGE(Bp_EC_OK, bb_stop(&buff_block), "Failed to stop.");  // should be empty so no timeout needed
+	
+	/* Join the cusumer thread, this will only be possible if the thread is un-blocked.*/
+	TEST_ASSERT_EQUAL_INT_MESSAGE(0, pthread_join(submitter_thread, NULL), "Failed to join.");
+	long long ts_after = now_ns(CLOCK_MONOTONIC);
+	long long elapse_ns = ts_after-ts_before;
+
+	/* Error code should be ok since we provided data before the timeout */
+	TEST_ASSERT_EQUAL_INT_MESSAGE(Bp_EC_STOPPED, consumer_ec, "Expected stopped fail.");
+	/* Join time should be nearly imediate so ~10 seconds accounting for the wait. */
+	TEST_ASSERT_GREATER_THAN_INT_MESSAGE(10000000, elapse_ns, "Join quicker than expected.");
+	/* But not longer than 20ms */
+	TEST_ASSERT_LESS_THAN_INT_MESSAGE(12000000, elapse_ns, "Join slower than expected. ");
+
+}
+
+
+void test_empty_blocking_consume(){
+	// Submit the batch to advance the head pointer
+	pthread_t submitter_thread;
+	Bp_EC consumer_ec;
+
+	/* Create a thread that will be blocked by the buffer being empty */
+	long long ts_before = now_ns(CLOCK_MONOTONIC);
+	TEST_ASSERT_EQUAL_INT_MESSAGE(0, pthread_create(&submitter_thread, NULL, consumer, (void*)&consumer_ec), "Failed to create consumer thread.");
+
+	/* Wait for 10ms before submitting a batch which should ublock the consumer */
+	struct timespec sleeptime = {.tv_nsec=10000000}; // 10ms
+	nanosleep(&sleeptime, NULL);
+	TEST_ASSERT_EQUAL_INT_MESSAGE(Bp_EC_OK, bb_submit(&buff_block, 0), "Failed to sumbmit");  // should be empty so no timeout needed
+	
+	/* Join the cusumer thread, this will only be possible if the thread is un-blocked.*/
+	TEST_ASSERT_EQUAL_INT_MESSAGE(0, pthread_join(submitter_thread, NULL), "Failed to join");
+	long long ts_after = now_ns(CLOCK_MONOTONIC);
+	long long elapse_ns = ts_after-ts_before;
+
+	/* Error code should be ok since we provided data before the timeout */
+	TEST_ASSERT_EQUAL_INT_MESSAGE(Bp_EC_OK, consumer_ec, "Expected stopped fail.");
+	/* Join time should be nearly imediate so ~10 seconds accounting for the wait. */
+	TEST_ASSERT_GREATER_THAN_INT_MESSAGE(10000000, elapse_ns, "Join quicker than expected.");
+	/* But not longer than 20ms */
+	TEST_ASSERT_LESS_THAN_INT_MESSAGE(12000000, elapse_ns, "Join slower than expected. ");
+
+}
+
 
 int main(int argc, char* argv[])
 {
     UNITY_BEGIN();
 		RUN_TEST(test_fill_and_empty);
 		RUN_TEST(test_overflow_block);
+		RUN_TEST(test_empty_stop_unblock);
+		RUN_TEST(test_empty_blocking_consume_timeout);
+		RUN_TEST(test_empty_blocking_consume);
     return UNITY_END();
 }

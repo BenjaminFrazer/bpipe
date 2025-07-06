@@ -5,6 +5,7 @@
 #include "batch_buffer.h"
 #include <arpa/inet.h>
 #include <assert.h>
+#include <bits/types/struct_iovec.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
@@ -24,6 +25,19 @@
 #define MAX_INPUTS 10
 #define MAX_CAPACITY_EXPO 30 // max 1GB capacity
 #define MAX_RING_CAPACITY_EXPO 12 // max 4016 entries in ring buffer
+//
+
+typedef enum _CORE_FILT_T {
+	FILT_T_NDEF = 0, 				 /* Un-initialised filter Guard */
+	FILT_T_MAP  = 1, 				 /* map a single function across all input sample to all output samples.*/
+	FILT_T_MAP_STATE = 1, 	 /* Function will be passed a state scratchpad */
+	FILT_T_MAP_MP, 		 			 /* Map will be applied to batches in paralel.*/
+	FILT_T_SIMO_TEE, 				 /* Map a single input to multiple consumers */
+	FILT_T_MIMO_SYNCRONISER, /* Produce batches aligned to the same sample times */
+	FILT_T_MISO_ELEMENTWISE, /* Map multiple inputs to a single ouptput, assumes time alignment. */
+	FILT_T_OVERLAP_BATCHES,  /* Used to create repeating regions at the start of the batch. Used for batched convolution.*/
+	FILT_T_MAX,							 /* Overflow guard. */
+}CORE_FILT_T;
 
 /* Transform function signature
  * Note: Transforms should only write to output_batches[0]. The framework
@@ -35,10 +49,10 @@ typedef void* (Worker_t)(void *);
 typedef struct _Core_filt_config_t {
   const char *name;
 	size_t size; // size of the whole filter struct (needed for inheritance).
-	size_t n_inputs;
+	size_t n_inputs; // 
+	size_t max_supported_sinks; // some filters only support 1->1 mapping other like the T support one -> many or many -> many
 	BatchBuffer_config buff_config;
-	OverflowBehaviour_t overflow;
-	size_t timeout;
+	unsigned long timeout_us;
 }Core_filt_config_t;
 
 typedef struct _Filter_t {
@@ -47,8 +61,10 @@ typedef struct _Filter_t {
 	bool running;
 	Worker_t *worker;
 	Err_info worker_err_info;
-	struct timespec timeout;
+	unsigned long timeout_us;
+	size_t max_suppported_sinks;
 	int n_input_buffers;
+	size_t n_sink_buffers;
 	int n_sinks;
 	size_t data_width;
 	pthread_t worker_thread;

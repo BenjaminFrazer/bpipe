@@ -10,22 +10,22 @@ Bp_EC filt_init(Filter_t* f, Core_filt_config_t config)
 	if (f==NULL){
 		return Bp_EC_NULL_FILTER;
 	}
-	if (config.timeout < 0){
+
+	if (config.timeout_us < 0){
 		return Bp_EC_INVALID_CONFIG;
 	}
-	if (config.overflow > OVERFLOW_MAX){
+	f->timeout_us = config.timeout_us;
+
+	if (config.max_supported_sinks> MAX_SINKS){
 		return Bp_EC_INVALID_CONFIG;
 	}
-	if (config.buff_config.batch_capacity_expo > MAX_CAPACITY_EXPO){
-		return Bp_EC_INVALID_CONFIG;
-	}
-	if (config.buff_config.ring_capacity_expo > MAX_RING_CAPACITY_EXPO){
-		return Bp_EC_INVALID_CONFIG;
-	}
-	if (config.n_inputs > MAX_SINKS){
+	f->max_suppported_sinks = config.max_supported_sinks;
+
+	if (config.n_inputs > MAX_INPUTS){
 		return Bp_EC_INVALID_CONFIG;
 	}
 	f->n_input_buffers = config.n_inputs;
+
 	for (int i = 0; i<config.n_inputs; i++){
 		Bp_EC rc = bb_init(&f->input_buffers[i], "NDEF", config.buff_config);
 		if (rc != Bp_EC_OK){

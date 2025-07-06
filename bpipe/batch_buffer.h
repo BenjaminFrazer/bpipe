@@ -202,7 +202,7 @@ static inline Batch_t* bb_get_head(Batch_buff_t *buff) {
 }
 
 /* Get the oldest consumable data batch. Doesn't change head or tail idx. */
-Batch_t* bb_get_tail(Batch_buff_t *buff, unsigned long timeout_us);
+Batch_t* bb_get_tail(Batch_buff_t *buff, unsigned long timeout_us, Bp_EC* ec);
 
 /* Delete oldest batch and increment the tail pointer marking the slot as
  * populateable.*/
