@@ -20,38 +20,82 @@ size_t _data_size_lut[] = {
  * @return Bp_EC_OK if space available, Bp_EC_TIMEOUT on timeout, Bp_EC_STOPPED
  * if buffer stopped
  */
-Bp_EC bb_await_notfull(Batch_buff_t *buff, unsigned long timeout) {
+Bp_EC bb_await_notfull(Batch_buff_t *buff, long long timeout_us) {
   Bp_EC ec = Bp_EC_OK;
   pthread_mutex_lock(&buff->mutex);
 
-  struct timespec abs_timeout = future_ts(timeout, CLOCK_MONOTONIC);
+  /* Calculate absolute timeout once, before the loop */
+  struct timespec abs_timeout;
+  if (timeout_us > 0) {
+    abs_timeout = future_ts(timeout_us * 1000, CLOCK_REALTIME);
+    /* DEBUG: Uncomment to debug timeout issues
+    long long now = now_ns(CLOCK_REALTIME);
+    long long abs_ns = abs_timeout.tv_sec * 1000000000LL + abs_timeout.tv_nsec;
+    fprintf(stderr, "bb_await_notfull: timeout_us=%lld, wait_ns=%lld, current_time=%lld, abs_time=%lld\n", 
+            timeout_us, abs_ns - now, now, abs_ns);
+    */
+  }
 
   while (bb_isfull(buff) && atomic_load(&buff->running)) {
-    int ret =
-        pthread_cond_timedwait(&buff->not_full, &buff->mutex, &abs_timeout);
-    if (ret == ETIMEDOUT) {
-      ec = Bp_EC_TIMEOUT;
-      break;
+    if (timeout_us == 0) {
+      // Wait indefinitely
+      pthread_cond_wait(&buff->not_full, &buff->mutex);
+    } else {
+      int ret = pthread_cond_timedwait(&buff->not_full, &buff->mutex, &abs_timeout);
+      if (ret == ETIMEDOUT) {
+        ec = Bp_EC_TIMEOUT;
+        break;
+      } else if (ret != 0) {
+        /* Some other error occurred - treat as timeout for safety */
+        ec = Bp_EC_TIMEOUT;
+        break;
+      }
+      /* Continue looping on spurious wakeup (ret == 0 but condition still true) */
     }
   }
+  
+  /* Check why we exited the loop */
+  if (ec == Bp_EC_OK && !atomic_load(&buff->running)) {
+    ec = Bp_EC_STOPPED;
+  }
+  
   pthread_mutex_unlock(&buff->mutex);
   return ec;
 }
 
-Bp_EC bb_await_notempty(Batch_buff_t *buff, unsigned long timeout) {
+Bp_EC bb_await_notempty(Batch_buff_t *buff, long long timeout_us) {
   Bp_EC ec = Bp_EC_OK;
   pthread_mutex_lock(&buff->mutex);
 
-  struct timespec abs_timeout = future_ts(timeout, CLOCK_MONOTONIC);
+  /* Calculate absolute timeout once, before the loop */
+  struct timespec abs_timeout;
+  if (timeout_us > 0) {
+    abs_timeout = future_ts(timeout_us * 1000, CLOCK_REALTIME);
+  }
 
   while (bb_isempy(buff) && atomic_load(&buff->running)) {
-    int ret =
-        pthread_cond_timedwait(&buff->not_empty, &buff->mutex, &abs_timeout);
-    if (ret == ETIMEDOUT) {
-      ec = Bp_EC_TIMEOUT;
-      break;
+    if (timeout_us == 0) {
+      // Wait indefinitely
+      pthread_cond_wait(&buff->not_empty, &buff->mutex);
+    } else {
+      int ret = pthread_cond_timedwait(&buff->not_empty, &buff->mutex, &abs_timeout);
+      if (ret == ETIMEDOUT) {
+        ec = Bp_EC_TIMEOUT;
+        break;
+      } else if (ret != 0) {
+        /* Some other error occurred - treat as timeout for safety */
+        ec = Bp_EC_TIMEOUT;
+        break;
+      }
+      /* Continue looping on spurious wakeup (ret == 0 but condition still true) */
     }
   }
+  
+  /* Check why we exited the loop */
+  if (ec == Bp_EC_OK && !atomic_load(&buff->running)) {
+    ec = Bp_EC_STOPPED;
+  }
+  
   pthread_mutex_unlock(&buff->mutex);
   return ec;
 }
@@ -236,7 +280,7 @@ Bp_EC bb_init(Batch_buff_t *buff, const char *name, SampleDtype_t dtype,
 		buff->batch_ring[i].tail=0;
 		buff->batch_ring[i].head=0;
 		buff->batch_ring[i].t_ns=-1;
-		buff->batch_ring[i].data = buff->data_ring + bb_batch_size(buff)*i;
+		buff->batch_ring[i].data = (char*)buff->data_ring + (bb_batch_size(buff) * data_width * i);
 	}
   
   return Bp_EC_OK;

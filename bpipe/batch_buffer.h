@@ -72,6 +72,8 @@ typedef struct _Batch {
   void *data;
 } Batch_t;
 
+#define BATCH_GET_SAMPLE_U32(batch, idx) (((uint32_t*)(batch)->data) + (idx))
+
 typedef struct _Bp_BatchBuffer {
   /* Existing synchronization and storage */
   char name[32]; /* e.g., "filter1.input[0]" */
@@ -148,7 +150,9 @@ static inline bool bb_isempy_lockfree(const Batch_buff_t *buf) {
 
 /* Original function for use within mutex-protected sections */
 static inline bool bb_isempy(const Batch_buff_t *buf) {
-  return buf->producer.head == buf->consumer.tail;
+  size_t head = atomic_load(&buf->producer.head);
+  size_t tail = atomic_load(&buf->consumer.tail);
+  return head == tail;
 }
 
 /* Lock-free full check for fast path */
@@ -163,8 +167,9 @@ static inline bool bb_isfull_lockfree(const Batch_buff_t *buff) {
 
 /* Original function for use within mutex-protected sections */
 static inline bool bb_isfull(const Batch_buff_t *buff) {
-  return ((buff->producer.head + 1) & bb_modulo_mask(buff)) ==
-         buff->consumer.tail;
+  size_t head = atomic_load(&buff->producer.head);
+  size_t tail = atomic_load(&buff->consumer.tail);
+  return ((head + 1) & bb_modulo_mask(buff)) == tail;
 }
 
 static inline size_t bb_space(const Batch_buff_t *buf) {
@@ -179,9 +184,9 @@ static inline size_t bb_space(const Batch_buff_t *buf) {
  * @return Bp_EC_OK if space available, Bp_EC_TIMEOUT on timeout, Bp_EC_STOPPED
  * if buffer stopped
  */
-Bp_EC bb_await_notfull(Batch_buff_t *buff, unsigned long timeout);
+Bp_EC bb_await_notfull(Batch_buff_t *buff, long long timeout);
 
-Bp_EC bb_await_notempty(Batch_buff_t *buff, unsigned long timeout);
+Bp_EC bb_await_notempty(Batch_buff_t *buff, long long timeout);
 
 /* Get the active batch. Doesn't change head or tail idx. */
 static inline Batch_t* bb_get_head(Batch_buff_t *buff) {

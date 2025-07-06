@@ -53,7 +53,7 @@ test-c: all
 	@echo "Running C tests..."
 	@for test in $(TEST_EXECUTABLES); do \
 		echo "Running $$test..."; \
-		$$test || exit 1; \
+		scripts/run_with_timeout.sh 1 $$test || exit 1; \
 	done
 	@echo "All C tests passed!"
 
