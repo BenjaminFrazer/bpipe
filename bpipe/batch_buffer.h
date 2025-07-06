@@ -76,7 +76,7 @@ typedef struct _Batch {
   Bp_EC ec;
   void *meta;
 	//SampleDtype_t dtype;
-  void *data;
+  char *data;
 } Batch_t;
 
 #define BATCH_GET_SAMPLE_U32(batch, idx) (((uint32_t*)(batch)->data) + (idx))
@@ -202,7 +202,7 @@ static inline Batch_t* bb_get_head(Batch_buff_t *buff) {
 }
 
 /* Get the oldest consumable data batch. Doesn't change head or tail idx. */
-Batch_t* bb_get_tail(Batch_buff_t *buff, unsigned long timeout_us, Bp_EC* ec);
+Batch_t* bb_get_tail(Batch_buff_t *buff, unsigned long timeout_us, Bp_EC* err);
 
 /* Delete oldest batch and increment the tail pointer marking the slot as
  * populateable.*/

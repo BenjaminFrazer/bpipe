@@ -180,7 +180,7 @@ void test_overflow_block(void)
 	TEST_ASSERT_EQUAL_INT_MESSAGE(Bp_EC_OK, ec, "Shoudn't have timed out");
 }
 
-/* Demonstrate blocked consumer threads return after timout */
+/* Demonstrate blocked consumer threads return after timout. */
 void test_empty_blocking_consume_timeout(){
 	// Submit the batch to advance the head pointer
 	pthread_t submitter_thread;

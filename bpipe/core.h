@@ -30,6 +30,7 @@
 typedef enum _CORE_FILT_T {
 	FILT_T_NDEF = 0, 				 /* Un-initialised filter Guard */
 	FILT_T_MAP  = 1, 				 /* map a single function across all input sample to all output samples.*/
+	FILT_T_CAST,						 /* Convert one type into another */
 	FILT_T_MAP_STATE = 1, 	 /* Function will be passed a state scratchpad */
 	FILT_T_MAP_MP, 		 			 /* Map will be applied to batches in paralel.*/
 	FILT_T_SIMO_TEE, 				 /* Map a single input to multiple consumers */
@@ -39,12 +40,15 @@ typedef enum _CORE_FILT_T {
 	FILT_T_MAX,							 /* Overflow guard. */
 }CORE_FILT_T;
 
+/* Forward declaration */
+typedef struct _Filter_t Filter_t;
+
 /* Transform function signature
  * Note: Transforms should only write to output_batches[0]. The framework
  * automatically distributes data to additional outputs when n_outputs > 1.
  * For explicit control over multi-output distribution, use BpTeeFilter.
  */
-typedef void* (Worker_t)(void *);
+typedef void* (Worker_t)(void*);
 
 typedef struct _Core_filt_config_t {
   const char *name;
@@ -58,6 +62,7 @@ typedef struct _Core_filt_config_t {
 typedef struct _Filter_t {
 	char name[32];
 	size_t size;
+	CORE_FILT_T type;
 	bool running;
 	Worker_t *worker;
 	Err_info worker_err_info;
@@ -67,6 +72,7 @@ typedef struct _Filter_t {
 	size_t n_sink_buffers;
 	int n_sinks;
 	size_t data_width;
+	Bp_EC worker_err;
 	pthread_t worker_thread;
 	pthread_mutex_t filter_mutex; // Protects sinks arrays
 	Batch_buff_t input_buffers[MAX_INPUTS];
