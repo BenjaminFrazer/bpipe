@@ -180,6 +180,7 @@ void test_overflow_block(void)
 	TEST_ASSERT_EQUAL_INT_MESSAGE(Bp_EC_OK, ec, "Shoudn't have timed out");
 }
 
+/* Demonstrate blocked consumer threads return after timout */
 void test_empty_blocking_consume_timeout(){
 	// Submit the batch to advance the head pointer
 	pthread_t submitter_thread;
@@ -203,7 +204,7 @@ void test_empty_blocking_consume_timeout(){
 
 }
 
-/* prove blocked threads will return if the bb_stop() is called */
+/* Demonstrate blocked threads will return if the bb_stop() is called */
 void test_empty_stop_unblock(){
 	// Submit the batch to advance the head pointer
 	pthread_t submitter_thread;
@@ -233,6 +234,7 @@ void test_empty_stop_unblock(){
 }
 
 
+/* Demonstrate ability to un-block consumer thread when new data is available */
 void test_empty_blocking_consume(){
 	// Submit the batch to advance the head pointer
 	pthread_t submitter_thread;
