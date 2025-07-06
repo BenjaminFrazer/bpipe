@@ -27,6 +27,9 @@ typedef enum _Bp_EC {
   Bp_EC_MALLOC_FAIL = -17,     /* Memory allocation failure */
   Bp_EC_THREAD_CREATE_NAME_FAIL = -18, /* Failed to name thread */
   Bp_EC_BUFFER_EMPTY = -19,
+	Bp_EC_CONNECTION_OCCUPIED = 20,
+	Bp_EC_INVALID_SINK_IDX= 21,
+	Bp_EC_NULL_BUFF = 22,
 } Bp_EC;
 
 typedef struct _err_info {

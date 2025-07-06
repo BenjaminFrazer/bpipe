@@ -1,12 +1,17 @@
 #include "batch_buffer.h"
-#include <bits/types/struct_iovec.h>
+#include <stdint.h>
 #include <string.h>
+#include <errno.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+#include <unistd.h>
 
 size_t _data_size_lut[] = {
     [DTYPE_NDEF] = 0,
-    [DTYPE_INT] = sizeof(int),
+    [DTYPE_I32] = sizeof(int32_t),
     [DTYPE_FLOAT] = sizeof(float),
-    [DTYPE_UNSIGNED] = sizeof(unsigned),
+    [DTYPE_U32] = sizeof(uint32_t),
 };
 
 /* Wait for buffer to have space available
@@ -52,23 +57,23 @@ Bp_EC bb_await_notempty(Batch_buff_t *buff, unsigned long timeout) {
 }
 
 /* Get the oldest consumable data batch. Doesn't change head or tail idx. */
-Bp_Batch_t bb_get_tail(Batch_buff_t *buff) {
+Batch_t* bb_get_tail(Batch_buff_t *buff, unsigned long timeout_us) {
   /* Fast path - check if data available without locks */
   if (!bb_isempy_lockfree(buff)) {
-    size_t idx = get_tail_idx(buff);
+    size_t idx = bb_get_tail_idx(buff);
     /* Memory fence ensures we see the batch data written by producer */
     atomic_thread_fence(memory_order_acquire);
-    return buff->batch_ring[idx];
+    return &buff->batch_ring[idx];
   }
 
   /* Slow path - wait for data */
-  bb_await_notempty(buff, buff->timeout_us);
-  size_t idx = get_tail_idx(buff);
-  return buff->batch_ring[idx];
+  bb_await_notempty(buff, timeout_us);
+  size_t idx = bb_get_tail_idx(buff);
+  return &buff->batch_ring[idx];
 }
 
 /* Delete oldest batch and increment the tail pointer marking the slot as
- * populateable. Lock-free implementation for SPSC scenario.
+ * populateable. Fails if run on an empty buffer.
  */
 Bp_EC bb_del(Batch_buff_t *buff) {
   /* Fast path - check without locks */
@@ -78,37 +83,16 @@ Bp_EC bb_del(Batch_buff_t *buff) {
       atomic_load_explicit(&buff->consumer.tail, memory_order_relaxed);
 
   if (current_tail == current_head) {
-    /* Buffer is empty - need to wait or return error */
-    if (buff->timeout_us == 0) {
+    /* Buffer is empty - deletion isn't possible. */
       return Bp_EC_BUFFER_EMPTY;
     }
 
-    /* Slow path - wait for data */
-    Bp_EC ec = bb_await_notempty(buff, buff->timeout_us);
-    if (ec != Bp_EC_OK) {
-      return ec;
-    }
-
-    /* Re-check after wait */
-    current_head =
-        atomic_load_explicit(&buff->producer.head, memory_order_acquire);
-    current_tail =
-        atomic_load_explicit(&buff->consumer.tail, memory_order_relaxed);
-    if (current_tail == current_head) {
-      return Bp_EC_BUFFER_EMPTY;
-    }
-  }
-
-  /* Fast path - we have data, increment tail */
+  /* Not empty, increment tail */
   size_t new_tail = (current_tail + 1) & bb_modulo_mask(buff);
   atomic_store_explicit(&buff->consumer.tail, new_tail, memory_order_release);
 
-  /* Signal producer if buffer was previously full */
-  if (((current_head + 1) & bb_modulo_mask(buff)) == current_tail) {
-    pthread_mutex_lock(&buff->mutex);
-    pthread_cond_signal(&buff->not_full);
-    pthread_mutex_unlock(&buff->mutex);
-  }
+  /* Signal producer that buffer isn't full. Mutex does not need to be aquired for this step given SPSC*/
+	pthread_cond_signal(&buff->not_full);
 
   return Bp_EC_OK;
 }
@@ -124,7 +108,7 @@ Bp_EC bb_del(Batch_buff_t *buff) {
  *   If the buffer is full and overflow behaviour == OVERFLOW_BLOCK, this
  * operation will block until space is available.
  */
-Bp_EC bb_submit(Batch_buff_t *buff) {
+Bp_EC bb_submit(Batch_buff_t *buff, unsigned long timeout_us) {
   /* Fast path - check if full without locks */
   size_t current_head =
       atomic_load_explicit(&buff->producer.head, memory_order_relaxed);
@@ -142,7 +126,7 @@ Bp_EC bb_submit(Batch_buff_t *buff) {
     }
 
     /* Slow path - need to wait for space */
-    Bp_EC rc = bb_await_notfull(buff, buff->timeout_us);
+    Bp_EC rc = bb_await_notfull(buff, timeout_us);
     if (rc != Bp_EC_OK) {
       return rc;
     }
@@ -156,12 +140,7 @@ Bp_EC bb_submit(Batch_buff_t *buff) {
   atomic_store_explicit(&buff->producer.head, next_head, memory_order_release);
   atomic_fetch_add(&buff->producer.total_batches, 1);
 
-  /* Signal consumer if buffer was previously empty */
-  if (current_head == current_tail) {
-    pthread_mutex_lock(&buff->mutex);
-    pthread_cond_signal(&buff->not_empty);
-    pthread_mutex_unlock(&buff->mutex);
-  }
+	pthread_cond_signal(&buff->not_empty);
 
   return Bp_EC_OK;
 }
@@ -178,7 +157,7 @@ Bp_EC bb_submit(Batch_buff_t *buff) {
  */
 Bp_EC bb_init(Batch_buff_t *buff, const char *name, SampleDtype_t dtype,
               size_t ring_capacity_expo, size_t batch_capacity_expo,
-              OverflowBehaviour_t overflow_behaviour, unsigned long timeout_us) {
+              OverflowBehaviour_t overflow_behaviour) {
   
   if (!buff) {
     return Bp_EC_NULL_FILTER;
@@ -204,7 +183,6 @@ Bp_EC bb_init(Batch_buff_t *buff, const char *name, SampleDtype_t dtype,
   buff->ring_capacity_expo = ring_capacity_expo;
   buff->batch_capacity_expo = batch_capacity_expo;
   buff->overflow_behaviour = overflow_behaviour;
-  buff->timeout_us = timeout_us;
   
   /* Calculate sizes */
   size_t ring_capacity = 1UL << ring_capacity_expo;
@@ -212,7 +190,7 @@ Bp_EC bb_init(Batch_buff_t *buff, const char *name, SampleDtype_t dtype,
   size_t data_width = bb_getdatawidth(dtype);
   
   /* Allocate ring buffers */
-  buff->batch_ring = calloc(ring_capacity, sizeof(Bp_Batch_t));
+  buff->batch_ring = calloc(ring_capacity, sizeof(Batch_t));
   if (!buff->batch_ring) {
     return Bp_EC_MALLOC_FAIL;
   }
@@ -252,6 +230,14 @@ Bp_EC bb_init(Batch_buff_t *buff, const char *name, SampleDtype_t dtype,
   atomic_store(&buff->producer.total_batches, 0);
   atomic_store(&buff->producer.dropped_batches, 0);
   atomic_store(&buff->running, true);
+
+	/* Populate key batch data*/
+	for (int i = 0; i< bb_n_batches(buff); i++) {
+		buff->batch_ring[i].tail=0;
+		buff->batch_ring[i].head=0;
+		buff->batch_ring[i].t_ns=-1;
+		buff->batch_ring[i].data = buff->data_ring + bb_batch_size(buff)*i;
+	}
   
   return Bp_EC_OK;
 }
@@ -275,7 +261,11 @@ Bp_EC bb_deinit(Batch_buff_t *buff) {
   pthread_mutex_unlock(&buff->mutex);
   
   /* Give threads a moment to exit their wait states */
-  usleep(1000);
+  struct timespec delay = {
+    .tv_sec = 0,
+    .tv_nsec = 1000000  /* 1 millisecond = 1,000,000 nanoseconds */
+  };
+  nanosleep(&delay, NULL);
   
   /* Destroy synchronization primitives */
   pthread_cond_destroy(&buff->not_full);

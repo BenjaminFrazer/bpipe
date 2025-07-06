@@ -1,7 +1,9 @@
+#ifndef BATCH_BUFFER_H
+#define BATCH_BUFFER_H
+
 #include "bperr.h"
 #include <arpa/inet.h>
 #include <assert.h>
-#include <errno.h>
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <poll.h>
@@ -10,9 +12,6 @@
 #include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 #include <sys/socket.h>
 #include <time.h>
 #include <unistd.h>
@@ -20,14 +19,15 @@
 typedef enum _SampleType {
   DTYPE_NDEF = 0,
   DTYPE_FLOAT,
-  DTYPE_INT,
-  DTYPE_UNSIGNED,
+  DTYPE_I32,
+  DTYPE_U32,
   DTYPE_MAX,
 } SampleDtype_t;
 
 typedef enum _OverflowBehaviour {
   OVERFLOW_BLOCK = 0, // Block when buffer is full (default/current behavior)
   OVERFLOW_DROP = 1,  // Drop samples when buffer is full
+	OVERFLOW_MAX
 } OverflowBehaviour_t;
 
 extern size_t _data_size_lut[DTYPE_MAX]; 
@@ -60,7 +60,7 @@ static inline struct timespec future_ts(long long time_ns, clockid_t clock) {
 typedef struct _Batch {
   size_t head;
   size_t tail;
-  int capacity;
+	//int capacity;
   long long t_ns;
   unsigned period_ns;
   size_t batch_id;
@@ -68,9 +68,9 @@ typedef struct _Batch {
    * stream */
   Bp_EC ec;
   void *meta;
-  SampleDtype_t dtype;
+	//SampleDtype_t dtype;
   void *data;
-} Bp_Batch_t;
+} Batch_t;
 
 typedef struct _Bp_BatchBuffer {
   /* Existing synchronization and storage */
@@ -78,7 +78,7 @@ typedef struct _Bp_BatchBuffer {
   SampleDtype_t dtype;
 
   void *data_ring;
-  Bp_Batch_t *batch_ring;
+  Batch_t *batch_ring;
 
   /* CRITICAL DESIGN DECISION: Producer and consumer fields are separated into
    * different cache lines to prevent false sharing. False sharing occurs when
@@ -112,10 +112,9 @@ typedef struct _Bp_BatchBuffer {
   _Atomic bool running;
 
   OverflowBehaviour_t overflow_behaviour;
-  unsigned long timeout_us;
 } Batch_buff_t;
 
-static inline size_t get_tail_idx(Batch_buff_t *buff) {
+static inline size_t bb_get_tail_idx(Batch_buff_t *buff) {
   unsigned long mask = (1u << buff->ring_capacity_expo) - 1u;
   return atomic_load_explicit(&buff->consumer.tail, memory_order_relaxed) &
          mask;
@@ -127,11 +126,11 @@ static inline size_t bb_get_head_idx(Batch_buff_t *buff) {
          mask;
 }
 
-static inline unsigned long bb_capacity(Batch_buff_t *buf) {
+static inline unsigned long bb_n_batches(Batch_buff_t *buf) {
   return 1u << buf->ring_capacity_expo;
 }
 
-static inline unsigned long batch_size(Batch_buff_t *buf) {
+static inline unsigned long bb_batch_size(Batch_buff_t *buf) {
   return 1u << buf->batch_capacity_expo;
 }
 
@@ -185,13 +184,13 @@ Bp_EC bb_await_notfull(Batch_buff_t *buff, unsigned long timeout);
 Bp_EC bb_await_notempty(Batch_buff_t *buff, unsigned long timeout);
 
 /* Get the active batch. Doesn't change head or tail idx. */
-static inline Bp_Batch_t bb_get_head(Batch_buff_t *buff) {
+static inline Batch_t* bb_get_head(Batch_buff_t *buff) {
   size_t idx = bb_get_head_idx(buff);
-  return buff->batch_ring[idx];
+  return &buff->batch_ring[idx];
 }
 
 /* Get the oldest consumable data batch. Doesn't change head or tail idx. */
-Bp_Batch_t bb_get_tail(Batch_buff_t *buff);
+Batch_t* bb_get_tail(Batch_buff_t *buff, unsigned long timeout_us);
 
 /* Delete oldest batch and increment the tail pointer marking the slot as
  * populateable.*/
@@ -205,15 +204,21 @@ Bp_EC bb_del(Batch_buff_t *buff);
  * Buffer is full and overflow behaviour == OVERFLOW_BLOCK, this operation will
  * block until space is available.
  */
-Bp_EC bb_submit(Batch_buff_t *buff);
+Bp_EC bb_submit(Batch_buff_t *buff, unsigned long timeout_us);
 
 /* Buffer allocation and lifecycle management */
 Bp_EC bb_init(Batch_buff_t *buff, const char *name, SampleDtype_t dtype,
               size_t ring_capacity_expo, size_t batch_capacity_expo,
-              OverflowBehaviour_t overflow_behaviour, unsigned long timeout_us);
+              OverflowBehaviour_t overflow_behaviour);
 
 Bp_EC bb_deinit(Batch_buff_t *buff);
 
 Bp_EC bb_start(Batch_buff_t *buff);
 
 Bp_EC bb_stop(Batch_buff_t *buff);
+
+/* Pretty printing functions */
+void bb_print(Batch_buff_t* buff);
+void bb_print_summary(Batch_buff_t* buff);
+
+#endif

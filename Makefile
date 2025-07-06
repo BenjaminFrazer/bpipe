@@ -1,17 +1,24 @@
 CC=gcc
-CFLAGS=-I./bpipe -I./lib/Unity/src -std=c99 -Wall -Werror -pthread -save-temps=obj
+CFLAGS=-I./bpipe -I./lib/Unity/src -std=c99 -Wall -Werror -pthread -save-temps=obj -g
 LDFLAGS=-lm
 SRC_DIR=bpipe
 TEST_SRC_DIR=tests
 BUILD_DIR=build
 UNITY_SRC=lib/Unity/src/unity.c
-TESTS=$(TEST_SRC_DIR)/
-OBJ_FILES=$(SRC_DIR)/
+
+# Find all test source files
+TEST_SOURCES=$(wildcard $(TEST_SRC_DIR)/test_*.c)
+# Generate test executable names from source files
+TEST_EXECUTABLES=$(patsubst $(TEST_SRC_DIR)/%.c,$(BUILD_DIR)/%,$(TEST_SOURCES))
+# Find all source files in bpipe directory
+SRC_FILES=$(wildcard $(SRC_DIR)/*.c)
+# Generate object files from source files
+OBJ_FILES=$(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(SRC_FILES))
 
 .PHONY: all clean run test test-c test-py lint lint-c lint-py lint-fix clang-format-check clang-format-fix clang-tidy-check cppcheck-check ruff-check ruff-format-check ruff-fix
 
 all: | $(BUILD_DIR)
-all: $(BUILD_DIR)/test_core_filter $(BUILD_DIR)/test_signal_gen $(BUILD_DIR)/test_sentinel $(BUILD_DIR)/test_simple_multi_output $(BUILD_DIR)/test_math_ops $(BUILD_DIR)/test_math_ops_integration
+all: $(TEST_EXECUTABLES)
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
@@ -25,28 +32,9 @@ $(BUILD_DIR)/%.o: $(TEST_SRC_DIR)/%.c | $(BUILD_DIR)
 $(BUILD_DIR)/unity.o: $(UNITY_SRC) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(BUILD_DIR)/test_core_filter: $(BUILD_DIR)/core.o $(BUILD_DIR)/signal_gen.o $(BUILD_DIR)/tee.o $(BUILD_DIR)/math_ops.o $(BUILD_DIR)/unity.o $(BUILD_DIR)/test_core_filter.o
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD_DIR)/test_signal_gen: $(BUILD_DIR)/core.o $(BUILD_DIR)/signal_gen.o $(BUILD_DIR)/tee.o $(BUILD_DIR)/math_ops.o $(BUILD_DIR)/unity.o $(BUILD_DIR)/test_signal_gen.o
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD_DIR)/test_sentinel: $(BUILD_DIR)/core.o $(BUILD_DIR)/signal_gen.o $(BUILD_DIR)/tee.o $(BUILD_DIR)/math_ops.o $(BUILD_DIR)/unity.o $(BUILD_DIR)/test_sentinel.o
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD_DIR)/test_simple_multi_output: $(BUILD_DIR)/core.o $(BUILD_DIR)/signal_gen.o $(BUILD_DIR)/tee.o $(BUILD_DIR)/math_ops.o $(BUILD_DIR)/unity.o $(BUILD_DIR)/test_simple_multi_output.o
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD_DIR)/test_math_ops: $(BUILD_DIR)/core.o $(BUILD_DIR)/signal_gen.o $(BUILD_DIR)/tee.o $(BUILD_DIR)/math_ops.o $(BUILD_DIR)/unity.o $(BUILD_DIR)/test_math_ops.o
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD_DIR)/test_math_ops_integration: $(BUILD_DIR)/core.o $(BUILD_DIR)/signal_gen.o $(BUILD_DIR)/tee.o $(BUILD_DIR)/math_ops.o $(BUILD_DIR)/unity.o $(BUILD_DIR)/test_math_ops_integration.o
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD_DIR)/test_math_ops_simple_integration: $(BUILD_DIR)/core.o $(BUILD_DIR)/signal_gen.o $(BUILD_DIR)/tee.o $(BUILD_DIR)/math_ops.o $(BUILD_DIR)/unity.o $(BUILD_DIR)/test_math_ops_simple_integration.o
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-$(BUILD_DIR)/test_math_ops_performance: $(BUILD_DIR)/core.o $(BUILD_DIR)/signal_gen.o $(BUILD_DIR)/tee.o $(BUILD_DIR)/math_ops.o $(BUILD_DIR)/unity.o $(BUILD_DIR)/test_math_ops_performance.o
+# Generic rule for building test executables
+# Each test depends on all object files from src dir, unity, and its own object file
+$(BUILD_DIR)/test_%: $(BUILD_DIR)/test_%.o $(OBJ_FILES) $(BUILD_DIR)/unity.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 clean:
@@ -63,6 +51,11 @@ test: test-c test-py
 
 test-c: all
 	@echo "Running C tests..."
+	@for test in $(TEST_EXECUTABLES); do \
+		echo "Running $$test..."; \
+		$$test || exit 1; \
+	done
+	@echo "All C tests passed!"
 
 test-py: build-py
 	@echo "Running Python tests..."
