@@ -16,10 +16,10 @@ Bp_EC filt_init(Filter_t* f, Core_filt_config_t config)
 	if (config.overflow > OVERFLOW_MAX){
 		return Bp_EC_INVALID_CONFIG;
 	}
-	if (config.batch_capacity_expo > MAX_CAPACITY_EXPO){
+	if (config.buff_config.batch_capacity_expo > MAX_CAPACITY_EXPO){
 		return Bp_EC_INVALID_CONFIG;
 	}
-	if (config.ring_capacity_expo > MAX_RING_CAPACITY_EXPO){
+	if (config.buff_config.ring_capacity_expo > MAX_RING_CAPACITY_EXPO){
 		return Bp_EC_INVALID_CONFIG;
 	}
 	if (config.n_inputs > MAX_SINKS){
@@ -27,12 +27,7 @@ Bp_EC filt_init(Filter_t* f, Core_filt_config_t config)
 	}
 	f->n_input_buffers = config.n_inputs;
 	for (int i = 0; i<config.n_inputs; i++){
-		Bp_EC rc = bb_init(&f->input_buffers[i],
-					"NDEF",
-					config.dtype,
-					config.ring_capacity_expo,
-					config.batch_capacity_expo,
-					config.overflow);
+		Bp_EC rc = bb_init(&f->input_buffers[i], "NDEF", config.buff_config);
 		if (rc != Bp_EC_OK){
 			return rc;
 		}

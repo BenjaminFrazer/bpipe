@@ -23,8 +23,10 @@ size_t batch_capacity = (1 << BATCH_CAPACITY_EXPO); //
 
 void setUp(void)
 {
-	TEST_ASSERT_EQUAL_INT_MESSAGE(Bp_EC_OK, bb_init(&buff_block, "TEST_BUFF", DTYPE_U32, RING_CAPACITY_EXPO, BATCH_CAPACITY_EXPO, OVERFLOW_BLOCK), "Failed to init buff_block");
-	TEST_ASSERT_EQUAL_INT_MESSAGE(Bp_EC_OK, bb_init(&buff_drop, "TEST_BUFF", DTYPE_U32, RING_CAPACITY_EXPO, BATCH_CAPACITY_EXPO, OVERFLOW_DROP), "Failed to init buff_drop");
+	BatchBuffer_config config = {.dtype=DTYPE_U32, .overflow_behaviour=OVERFLOW_BLOCK, .ring_capacity_expo=RING_CAPACITY_EXPO, .batch_capacity_expo=BATCH_CAPACITY_EXPO};
+	TEST_ASSERT_EQUAL_INT_MESSAGE(Bp_EC_OK, bb_init(&buff_block, "TEST_BUFF_BLOCK", config), "Failed to init buff_block");
+	config.overflow_behaviour = OVERFLOW_DROP;
+	TEST_ASSERT_EQUAL_INT_MESSAGE(Bp_EC_OK, bb_init(&buff_drop, "TEST_BUFF_DROP", config), "Failed to init buff_drop");
 	TEST_ASSERT_EQUAL_INT_MESSAGE(Bp_EC_OK, bb_start(&buff_block), "Failed to start buff_block");
 	TEST_ASSERT_EQUAL_INT_MESSAGE(Bp_EC_OK, bb_start(&buff_drop), "Failed to start buff_drop");
 }

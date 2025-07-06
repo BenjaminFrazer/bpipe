@@ -30,6 +30,13 @@ typedef enum _OverflowBehaviour {
 	OVERFLOW_MAX
 } OverflowBehaviour_t;
 
+typedef struct _BatchBuffer_config{
+	SampleDtype_t dtype;
+	size_t batch_capacity_expo;
+	size_t ring_capacity_expo;
+	OverflowBehaviour_t overflow_behaviour;
+} BatchBuffer_config;
+
 extern size_t _data_size_lut[DTYPE_MAX]; 
 /* Data-width utilities. */
 
@@ -212,9 +219,7 @@ Bp_EC bb_del(Batch_buff_t *buff);
 Bp_EC bb_submit(Batch_buff_t *buff, unsigned long timeout_us);
 
 /* Buffer allocation and lifecycle management */
-Bp_EC bb_init(Batch_buff_t *buff, const char *name, SampleDtype_t dtype,
-              size_t ring_capacity_expo, size_t batch_capacity_expo,
-              OverflowBehaviour_t overflow_behaviour);
+Bp_EC bb_init(Batch_buff_t *buff, const char *name, BatchBuffer_config config);
 
 Bp_EC bb_deinit(Batch_buff_t *buff);
 

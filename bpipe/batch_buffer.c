@@ -199,19 +199,17 @@ Bp_EC bb_submit(Batch_buff_t *buff, unsigned long timeout_us) {
  * @param timeout_us Default timeout in microseconds for blocking operations
  * @return Bp_EC_OK on success, error code on failure
  */
-Bp_EC bb_init(Batch_buff_t *buff, const char *name, SampleDtype_t dtype,
-              size_t ring_capacity_expo, size_t batch_capacity_expo,
-              OverflowBehaviour_t overflow_behaviour) {
+Bp_EC bb_init(Batch_buff_t *buff, const char *name, BatchBuffer_config config) {
   
   if (!buff) {
     return Bp_EC_NULL_FILTER;
   }
   
-  if (dtype >= DTYPE_MAX || dtype == DTYPE_NDEF) {
+  if (config.dtype >= DTYPE_MAX || config.dtype == DTYPE_NDEF) {
     return Bp_EC_INVALID_DTYPE;
   }
   
-  if (ring_capacity_expo > 30 || batch_capacity_expo > 20) {
+  if (config.ring_capacity_expo > 30 || config.batch_capacity_expo > 20) {
     return Bp_EC_INVALID_CONFIG;
   }
   
@@ -223,15 +221,15 @@ Bp_EC bb_init(Batch_buff_t *buff, const char *name, SampleDtype_t dtype,
   buff->name[sizeof(buff->name) - 1] = '\0';
   
   /* Set configuration */
-  buff->dtype = dtype;
-  buff->ring_capacity_expo = ring_capacity_expo;
-  buff->batch_capacity_expo = batch_capacity_expo;
-  buff->overflow_behaviour = overflow_behaviour;
+  buff->dtype = config.dtype;
+  buff->ring_capacity_expo = config.ring_capacity_expo;
+  buff->batch_capacity_expo = config.batch_capacity_expo;
+  buff->overflow_behaviour = config.overflow_behaviour;
   
   /* Calculate sizes */
-  size_t ring_capacity = 1UL << ring_capacity_expo;
-  size_t batch_capacity = 1UL << batch_capacity_expo;
-  size_t data_width = bb_getdatawidth(dtype);
+  size_t ring_capacity = 1UL << config.ring_capacity_expo;
+  size_t batch_capacity = 1UL << config.batch_capacity_expo;
+  size_t data_width = bb_getdatawidth(config.dtype);
   
   /* Allocate ring buffers */
   buff->batch_ring = calloc(ring_capacity, sizeof(Batch_t));

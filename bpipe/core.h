@@ -35,10 +35,8 @@ typedef void* (Worker_t)(void *);
 typedef struct _Core_filt_config_t {
   const char *name;
 	size_t size; // size of the whole filter struct (needed for inheritance).
-	SampleDtype_t dtype;
 	size_t n_inputs;
-	size_t batch_capacity_expo;
-	size_t ring_capacity_expo;
+	BatchBuffer_config buff_config;
 	OverflowBehaviour_t overflow;
 	size_t timeout;
 }Core_filt_config_t;
