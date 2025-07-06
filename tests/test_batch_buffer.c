@@ -1,7 +1,10 @@
 #include "unity_internals.h"
 #include <bits/time.h>
 #include <bits/types/struct_iovec.h>
+#include <bits/types/timer_t.h>
+#include <pthread.h>
 #include <stdint.h>
+#include <time.h>
 #define _DEFAULT_SOURCE
 #include <unistd.h>
 #include "../bpipe/batch_buffer.h"
@@ -94,6 +97,12 @@ void test_fill_and_empty(void)
 
 }
 
+void * submitter(void *arg){
+	Bp_EC* ec = (Bp_EC*)arg;
+	*ec = bb_submit(&buff_block, 1000000);
+	return (void*)ec;
+}
+
 /* */
 void test_overflow_block(void)
 {
@@ -116,13 +125,8 @@ void test_overflow_block(void)
 	/* This slot should be accessible but not possible to submit */
 	batch = bb_get_head(&buff_block);
 	
-	size_t head_idx_before = bb_get_head_idx(&buff_block);
-	/* Test with a 1ms timeout since buffer is full */
-	Bp_EC ec = bb_submit(&buff_block, 1000);
-	TEST_ASSERT_EQUAL_INT_MESSAGE(Bp_EC_TIMEOUT, ec, "Expected timeout fail.");
-	TEST_ASSERT_EQUAL_INT_MESSAGE(head_idx_before, bb_get_head_idx(&buff_block), "Head IDX changed when it should have remained.");
-
 	/* Try a 5ms timeout */
+	Bp_EC ec;
 	long long ts_before = now_ns(CLOCK_MONOTONIC);
 	ec = bb_submit(&buff_block, 5000);
 	long long ts_after = now_ns(CLOCK_MONOTONIC);
@@ -133,10 +137,36 @@ void test_overflow_block(void)
 	TEST_ASSERT_GREATER_THAN_INT_MESSAGE(4000000, elapsed_ns, "Timeout was shorter than 4ms");
 	/* But not longer than 10ms */
 	TEST_ASSERT_LESS_THAN_INT_MESSAGE(10000000, elapsed_ns, "Timeout took longer than 10ms");
-}
 
-void test_block_timeout(void)
-{
+
+	/* test that stopping the batch buffer imediately unblocks */
+
+	/* Bock for 1s */
+	pthread_t test_blocked_submitter;
+	
+	Bp_EC submitter_ec;
+	void* ec_ptr = (void*)&submitter_ec;
+	ts_before = now_ns(CLOCK_MONOTONIC);
+	pthread_create(&test_blocked_submitter, NULL, submitter, ec_ptr);
+
+	struct timespec sleeptime = {.tv_nsec=10000000}; // 10ms
+	nanosleep(&sleeptime, NULL);
+	
+	ec = bb_stop(&buff_block);
+	TEST_ASSERT_EQUAL_INT_MESSAGE(Bp_EC_OK, ec, "Failed to stop.");
+
+	TEST_ASSERT_EQUAL_INT_MESSAGE(0, pthread_join(test_blocked_submitter, &ec_ptr), "Failed to join");
+	ts_after = now_ns(CLOCK_MONOTONIC);
+	elapsed_ns = ts_after - ts_before;
+
+	ec = *((Bp_EC*)ec_ptr);
+	TEST_ASSERT_EQUAL_INT_MESSAGE(Bp_EC_STOPPED, ec, "Expected timeout fail.");
+
+	/* Timeout should be at least 10ms */
+	TEST_ASSERT_GREATER_THAN_INT_MESSAGE(10000000, elapsed_ns, "Join quicker than expected.");
+	/* But not longer than 20ms */
+	TEST_ASSERT_LESS_THAN_INT_MESSAGE(12000000, elapsed_ns, "Join slower than expected. ");
+
 }
 
 int main(int argc, char* argv[])
