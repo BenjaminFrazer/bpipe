@@ -16,6 +16,16 @@ Bp_EC filt_init(Filter_t* f, Core_filt_config_t config)
 	}
 	f->timeout_us = config.timeout_us;
 
+	if (config.filt_type >= FILT_T_MAX){
+		return Bp_EC_INVALID_CONFIG;
+	}
+	f->filt_type = config.filt_type;
+
+	if (config.size < sizeof(Filter_t)){
+		return Bp_EC_INVALID_CONFIG;
+	}
+	f->size = config.size;
+
 	if (config.max_supported_sinks> MAX_SINKS){
 		return Bp_EC_INVALID_CONFIG;
 	}

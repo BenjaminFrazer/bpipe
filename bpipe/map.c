@@ -2,6 +2,7 @@
 #include "batch_buffer.h"
 #include "bperr.h"
 #include "core.h"
+#include <bits/types/struct_iovec.h>
 #include <stdbool.h>
 #include <time.h>
 
@@ -78,6 +79,8 @@ Bp_EC map_init(Map_filt_t* f, Map_config_t config){
 	/* Map is always a 1->1 filter */
 	core_config.n_inputs = 1;
 	core_config.max_supported_sinks = 1;
+	core_config.filt_type = FILT_T_MAP;
+	core_config.size = sizeof(Map_filt_t);
 
 	Bp_EC err = filt_init(&f->base, core_config);	
 

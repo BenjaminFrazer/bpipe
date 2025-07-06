@@ -52,6 +52,7 @@ typedef void* (Worker_t)(void*);
 
 typedef struct _Core_filt_config_t {
   const char *name;
+	CORE_FILT_T filt_type;
 	size_t size; // size of the whole filter struct (needed for inheritance).
 	size_t n_inputs; // 
 	size_t max_supported_sinks; // some filters only support 1->1 mapping other like the T support one -> many or many -> many
@@ -62,7 +63,7 @@ typedef struct _Core_filt_config_t {
 typedef struct _Filter_t {
 	char name[32];
 	size_t size;
-	CORE_FILT_T type;
+	CORE_FILT_T filt_type;
 	bool running;
 	Worker_t *worker;
 	Err_info worker_err_info;
