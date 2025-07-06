@@ -12,6 +12,7 @@
 #include <poll.h>
 #include <pthread.h>
 #include <sched.h>
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -64,7 +65,7 @@ typedef struct _Filter_t {
 	char name[32];
 	size_t size;
 	CORE_FILT_T filt_type;
-	bool running;
+	atomic_bool running;
 	Worker_t *worker;
 	Err_info worker_err_info;
 	unsigned long timeout_us;
@@ -73,7 +74,6 @@ typedef struct _Filter_t {
 	size_t n_sink_buffers;
 	int n_sinks;
 	size_t data_width;
-	Bp_EC worker_err;
 	pthread_t worker_thread;
 	pthread_mutex_t filter_mutex; // Protects sinks arrays
 	Batch_buff_t input_buffers[MAX_INPUTS];

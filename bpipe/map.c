@@ -8,61 +8,88 @@
 
 
 void* map_worker(void* arg){
+	Map_filt_t* f = (Map_filt_t*)arg;
+	Batch_t *input_batch = NULL, *output_batch = NULL;
 	Bp_EC err = Bp_EC_OK;
-	Batch_t* input_batch;
-	Batch_t* output_batch;
-	size_t output_remaining=0;
-	size_t input_remaining=0;
-	Map_filt_t* f=(Map_filt_t*)arg;
-
-	if(f->base.sinks[0]==NULL){
-		f->base.worker_err = Bp_EC_NULL_BUFF;
+	
+	// Validate configuration
+	if (!f->base.sinks[0] || !f->map_fcn) {
+		f->base.worker_err_info.ec = Bp_EC_INVALID_CONFIG;
 		return NULL;
 	}
-	SampleDtype_t input_type  = f->base.input_buffers[0].dtype;
+	
+	// Check data types match
+	SampleDtype_t input_type = f->base.input_buffers[0].dtype;
 	SampleDtype_t output_type = f->base.sinks[0]->dtype;
-
-	if (input_type != output_type){
-		f->base.worker_err = Bp_EC_DTYPE_MISMATCH;
+	
+	if (input_type != output_type) {
+		f->base.worker_err_info.ec = Bp_EC_DTYPE_MISMATCH;
 		return NULL;
 	}
-	if (input_type == DTYPE_NDEF){
-		f->base.worker_err = Bp_EC_INVALID_DTYPE;
-	}
-		return NULL;
-	if (input_type >= DTYPE_MAX){
-		f->base.worker_err = Bp_EC_INVALID_DTYPE;
+	
+	if (input_type == DTYPE_NDEF || input_type >= DTYPE_MAX) {
+		f->base.worker_err_info.ec = Bp_EC_INVALID_DTYPE;
 		return NULL;
 	}
-
+	
 	size_t data_width = bb_getdatawidth(input_type);
-
-	/* Get the first batches */
-	bool running = true;
-	while (running){
-		if(output_remaining==0){
-			output_batch = bb_get_head(&f->base.input_buffers[0]); 
-			output_remaining = output_batch->head-output_batch->tail;
+	size_t batch_size = bb_batch_size(f->base.sinks[0]);
+	
+	// Main processing loop
+	while (atomic_load(&f->base.running)) {
+		// Manage input batch
+		if (!input_batch || input_batch->tail >= input_batch->head) {
+			if (input_batch) {
+				err = bb_del(&f->base.input_buffers[0]);
+				if (err != Bp_EC_OK) break;
+			}
+			
+			input_batch = bb_get_tail(&f->base.input_buffers[0], f->base.timeout_us, &err);
+			if (!input_batch) break;  // Timeout or stopped
 		}
-		if(input_remaining ==0){
-			input_batch = bb_get_tail(f->base.sinks[0], f->base.timeout_us, &err);
-			input_remaining = input_batch->head-input_batch->tail;
+		
+		// Manage output batch
+		if (!output_batch || output_batch->head >= batch_size) {
+			if (output_batch) {
+				err = bb_submit(f->base.sinks[0], f->base.timeout_us);
+				if (err != Bp_EC_OK) break;
+			}
+			
+			output_batch = bb_get_head(f->base.sinks[0]);
+			output_batch->head = 0;  // Initialize write position
 		}
-		/* Pick the smallest contiguous vector for the map function to itterate over */
-		size_t n_samples = input_remaining <= output_remaining ? input_remaining: output_remaining; 
-		char* output_head_ptr = output_batch->data + data_width*output_batch->head;
-		char* input_tail_ptr = input_batch->data + data_width*input_batch->tail;
-		err = f->map_fcn(output_head_ptr, input_tail_ptr, n_samples);
-		if (err!=Bp_EC_OK){
-			running = false;
-			f->base.worker_err = err;
-			return NULL;
-		}
-		output_batch 		 += n_samples;
-		input_batch  		 += n_samples;
-		output_remaining -= n_samples;
-		input_remaining  -= n_samples;
+		
+		// Process data
+		size_t input_available = input_batch->head - input_batch->tail;
+		size_t output_available = batch_size - output_batch->head;
+		size_t n = (input_available < output_available) ? input_available : output_available;
+		
+		if (n == 0) continue;  // Shouldn't happen, but be safe
+		
+		// Call map function with correct pointers
+		err = f->map_fcn(
+			output_batch->data + output_batch->head * data_width,
+			input_batch->data + input_batch->tail * data_width,
+			n
+		);
+		
+		if (err != Bp_EC_OK) break;
+		
+		// Update positions
+		input_batch->tail += n;
+		output_batch->head += n;
 	}
+	
+	// Set error code if we exited due to error (not just stopped)
+	if (err != Bp_EC_OK && err != Bp_EC_STOPPED) {
+		f->base.worker_err_info.ec = err;
+	}
+	
+	// Submit any remaining output
+	if (output_batch && output_batch->head > 0) {
+		bb_submit(f->base.sinks[0], 0);  // Don't wait on cleanup
+	}
+	
 	return NULL;
 }
 
