@@ -7,88 +7,68 @@
 #include <time.h>
 
 
+/* Helper macros for cleaner code */
+#define MIN(a,b) ((a) < (b) ? (a) : (b))
+#define NEEDS_NEW_BATCH(batch) (!batch || batch->tail >= batch->head)
+#define BATCH_FULL(batch, size) (batch->head >= size)
+
 void* map_worker(void* arg){
 	Map_filt_t* f = (Map_filt_t*)arg;
-	Batch_t *input_batch = NULL, *output_batch = NULL;
+	Batch_t *input = NULL, *output = NULL;
 	Bp_EC err = Bp_EC_OK;
 	
-	// Validate configuration
-	if (!f->base.sinks[0] || !f->map_fcn) {
+	// Validate all configuration at once
+	if (!f->base.sinks[0] || !f->map_fcn ||
+	    f->base.input_buffers[0].dtype != f->base.sinks[0]->dtype ||
+	    f->base.input_buffers[0].dtype == DTYPE_NDEF ||
+	    f->base.input_buffers[0].dtype >= DTYPE_MAX) {
 		f->base.worker_err_info.ec = Bp_EC_INVALID_CONFIG;
 		return NULL;
 	}
 	
-	// Check data types match
-	SampleDtype_t input_type = f->base.input_buffers[0].dtype;
-	SampleDtype_t output_type = f->base.sinks[0]->dtype;
-	
-	if (input_type != output_type) {
-		f->base.worker_err_info.ec = Bp_EC_DTYPE_MISMATCH;
-		return NULL;
-	}
-	
-	if (input_type == DTYPE_NDEF || input_type >= DTYPE_MAX) {
-		f->base.worker_err_info.ec = Bp_EC_INVALID_DTYPE;
-		return NULL;
-	}
-	
-	size_t data_width = bb_getdatawidth(input_type);
-	size_t batch_size = bb_batch_size(f->base.sinks[0]);
+	// Cache frequently used values
+	const size_t data_width = bb_getdatawidth(f->base.input_buffers[0].dtype);
+	const size_t batch_size = bb_batch_size(f->base.sinks[0]);
 	
 	// Main processing loop
 	while (atomic_load(&f->base.running)) {
-		// Manage input batch
-		if (!input_batch || input_batch->tail >= input_batch->head) {
-			if (input_batch) {
-				err = bb_del(&f->base.input_buffers[0]);
-				if (err != Bp_EC_OK) break;
-			}
-			
-			input_batch = bb_get_tail(&f->base.input_buffers[0], f->base.timeout_us, &err);
-			if (!input_batch) break;  // Timeout or stopped
+		// Get new input batch if needed
+		if (NEEDS_NEW_BATCH(input)) {
+			if (input && (err = bb_del(&f->base.input_buffers[0])) != Bp_EC_OK)
+				break;
+			if (!(input = bb_get_tail(&f->base.input_buffers[0], f->base.timeout_us, &err)))
+				break;
 		}
 		
-		// Manage output batch
-		if (!output_batch || output_batch->head >= batch_size) {
-			if (output_batch) {
-				err = bb_submit(f->base.sinks[0], f->base.timeout_us);
-				if (err != Bp_EC_OK) break;
-			}
-			
-			output_batch = bb_get_head(f->base.sinks[0]);
-			output_batch->head = 0;  // Initialize write position
+		// Get new output batch if needed
+		if (!output || BATCH_FULL(output, batch_size)) {
+			if (output && (err = bb_submit(f->base.sinks[0], f->base.timeout_us)) != Bp_EC_OK)
+				break;
+			output = bb_get_head(f->base.sinks[0]);
+			output->head = 0;
 		}
 		
-		// Process data
-		size_t input_available = input_batch->head - input_batch->tail;
-		size_t output_available = batch_size - output_batch->head;
-		size_t n = (input_available < output_available) ? input_available : output_available;
-		
-		if (n == 0) continue;  // Shouldn't happen, but be safe
-		
-		// Call map function with correct pointers
-		err = f->map_fcn(
-			output_batch->data + output_batch->head * data_width,
-			input_batch->data + input_batch->tail * data_width,
-			n
-		);
-		
-		if (err != Bp_EC_OK) break;
-		
-		// Update positions
-		input_batch->tail += n;
-		output_batch->head += n;
+		// Process available data
+		size_t n = MIN(input->head - input->tail, batch_size - output->head);
+		if (n > 0) {
+			err = f->map_fcn(
+				output->data + output->head * data_width,
+				input->data + input->tail * data_width,
+				n
+			);
+			if (err != Bp_EC_OK) break;
+			
+			input->tail += n;
+			output->head += n;
+		}
 	}
 	
-	// Set error code if we exited due to error (not just stopped)
-	if (err != Bp_EC_OK && err != Bp_EC_STOPPED) {
+	// Handle errors and cleanup
+	if (err != Bp_EC_OK && err != Bp_EC_STOPPED)
 		f->base.worker_err_info.ec = err;
-	}
 	
-	// Submit any remaining output
-	if (output_batch && output_batch->head > 0) {
-		bb_submit(f->base.sinks[0], 0);  // Don't wait on cleanup
-	}
+	if (output && output->head > 0)
+		bb_submit(f->base.sinks[0], 0);
 	
 	return NULL;
 }
