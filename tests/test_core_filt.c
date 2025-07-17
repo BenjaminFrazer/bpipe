@@ -115,6 +115,78 @@ void test_data_passthrough_single_thread(void)
   TEST_MESSAGE("Data passthrough exit");
 }
 
+void test_filter_cascade(void)
+{
+  Bp_EC err;
+  TEST_MESSAGE("Filter cascade entry");
+
+  /* Setup */
+  count_out = 0;
+  count_in = 0;
+  CHECK_ERR(filt_sink_connect(&filt1, 0, &filt2.input_buffers[0]));
+  CHECK_ERR(filt_sink_connect(&filt2, 0, &filt3.input_buffers[0]));
+  CHECK_ERR(filt_sink_connect(&filt3, 0, &output));
+  CHECK_ERR(filt_start(&filt1));
+  CHECK_ERR(filt_start(&filt2));
+  CHECK_ERR(filt_start(&filt3));
+  CHECK_ERR(bb_start(&output));
+  CHECK_ERR(filt1.worker_err_info.ec);
+  CHECK_ERR(filt2.worker_err_info.ec);
+  CHECK_ERR(filt3.worker_err_info.ec);
+
+  /* Main */
+  for (int i = 0; i < (ring_capacity * 4); i++) {
+    batch_in = bb_get_head(&filt1.input_buffers[0]);
+    for (int ii = 0; ii < batch_capacity; ii++) {
+      *((uint32_t*) batch_in->data + ii) = count_in;
+      count_in++;
+    }
+    // TEST_MESSAGE("Submitting batch to input");
+    CHECK_ERR(bb_submit(&filt1.input_buffers[0], 1000));  //
+  }
+
+  TEST_ASSERT_EQUAL_INT_MESSAGE(Bp_EC_TIMEOUT,
+                                bb_submit(&filt1.input_buffers[0], 1000),
+                                "Expected timeout");
+
+  for (int i = 0; i < (ring_capacity * 4); i++) {
+    batch_out = bb_get_tail(&output, 1000, &err);
+    CHECK_ERR(err);  //
+    for (int ii = 0; ii < batch_capacity; ii++) {
+      TEST_ASSERT_EQUAL_INT_MESSAGE(count_out,
+                                    *((uint32_t*) batch_out->data + ii),
+                                    "Expected linear increase");
+      count_out++;
+    }
+    CHECK_ERR(bb_del_tail(&output));
+  }
+}
+
+void test_cascading_complete(void)
+{
+  Bp_EC err;
+  TEST_MESSAGE("Filter cascade entry");
+
+  /* Setup */
+  count_out = 0;
+  count_in = 0;
+  CHECK_ERR(filt_sink_connect(&filt1, 0, &filt2.input_buffers[0]));
+  CHECK_ERR(filt_sink_connect(&filt2, 0, &filt3.input_buffers[0]));
+  CHECK_ERR(filt_sink_connect(&filt3, 0, &output));
+  CHECK_ERR(filt_start(&filt1));
+  CHECK_ERR(filt_start(&filt2));
+  CHECK_ERR(filt_start(&filt3));
+  CHECK_ERR(bb_start(&output));
+  CHECK_ERR(filt1.worker_err_info.ec);
+  CHECK_ERR(filt2.worker_err_info.ec);
+  CHECK_ERR(filt3.worker_err_info.ec);
+
+  for (int i = 0; i < 3; i++) {
+    batch_in = bb_get_head(&filt1.input_buffers[0]);
+    CHECK_ERR(bb_submit(&filt1.input_buffers[0], 1000));
+  }
+}
+
 void test_shutdown_with_data(void) {}
 
 int main(int argc, char* argv[])
@@ -123,5 +195,6 @@ int main(int argc, char* argv[])
   UNITY_BEGIN();
   RUN_TEST(test_init_and_teardown);
   RUN_TEST(test_data_passthrough_single_thread);
+  RUN_TEST(test_filter_cascade);
   return UNITY_END();
 }
