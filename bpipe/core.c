@@ -55,24 +55,53 @@ Bp_EC filt_init(Filter_t *f, Core_filt_config_t config)
   }
 
   if (config.name != NULL) {
-    strncpy(f->name, config.name, sizeof(f->name));
+    strncpy(f->name, config.name, sizeof(f->name) - 1);
+    f->name[sizeof(f->name) - 1] = '\0';
   } else {
-    strncpy(f->name, "NDEF", sizeof(f->name));
+    strncpy(f->name, "NDEF", sizeof(f->name) - 1);
+    f->name[sizeof(f->name) - 1] = '\0';
   }
 
   f->worker_err_info.ec = Bp_EC_OK;
+  
+  // Initialize mutex
+  if (pthread_mutex_init(&f->filter_mutex, NULL) != 0) {
+    // Clean up already allocated buffers
+    for (int i = 0; i < config.n_inputs; i++) {
+      bb_deinit(&f->input_buffers[i]);
+    }
+    return Bp_EC_MUTEX_INIT_FAIL;
+  }
+  
+  // Initialize other fields
+  f->data_width = bb_getdatawidth(config.buff_config.dtype);
+  f->n_sinks = 0;
+  f->n_sink_buffers = 0;
+  f->running = false;
+  
+  // Initialize metrics
+  f->metrics.n_batches = 0;
 
   return Bp_EC_OK;
 }
 
 Bp_EC filt_deinit(Filter_t *f)
 {
+  if (f == NULL) {
+    return Bp_EC_NULL_FILTER;
+  }
+  
+  // Deinitialize all input buffers
   for (int i = 0; i < f->n_input_buffers; i++) {
     Bp_EC rc = bb_deinit(&f->input_buffers[i]);
     if (rc != Bp_EC_OK) {
       return rc;
     }
   }
+  
+  // Destroy mutex
+  pthread_mutex_destroy(&f->filter_mutex);
+  
   return Bp_EC_OK;
 }
 
@@ -85,14 +114,21 @@ Bp_EC filt_sink_connect(Filter_t *f, size_t sink_idx, Batch_buff_t *dest_buffer)
   if (dest_buffer == NULL) {
     return Bp_EC_NULL_BUFF;
   }
-  if (sink_idx > MAX_SINKS) {
+  if (sink_idx >= MAX_SINKS) {
     return Bp_EC_INVALID_SINK_IDX;
   }
+  
+  pthread_mutex_lock(&f->filter_mutex);
+  
   if (f->sinks[sink_idx] != NULL) {
+    pthread_mutex_unlock(&f->filter_mutex);
     return Bp_EC_CONNECTION_OCCUPIED;
   }
 
   f->sinks[sink_idx] = dest_buffer;
+  f->n_sinks++;
+  
+  pthread_mutex_unlock(&f->filter_mutex);
 
   return Bp_EC_OK;
 }
@@ -102,10 +138,19 @@ Bp_EC filt_sink_disconnect(Filter_t *f, size_t sink_idx)
   if (f == NULL) {
     return Bp_EC_NULL_FILTER;
   }
-  if (sink_idx > MAX_SINKS) {
+  if (sink_idx >= MAX_SINKS) {
     return Bp_EC_INVALID_SINK_IDX;
   }
-  f->sinks[sink_idx] = NULL;
+  
+  pthread_mutex_lock(&f->filter_mutex);
+  
+  if (f->sinks[sink_idx] != NULL) {
+    f->sinks[sink_idx] = NULL;
+    f->n_sinks--;
+  }
+  
+  pthread_mutex_unlock(&f->filter_mutex);
+  
   return Bp_EC_OK;
 }
 
@@ -145,7 +190,7 @@ Bp_EC filt_stop(Filter_t *f)
   f->running = false;
 
   // Stop all input buffers to wake up any waiting threads
-  for (int i = 0; i < MAX_INPUTS; i++) {
+  for (int i = 0; i < f->n_input_buffers; i++) {
     if (f->input_buffers[i].data_ring != NULL) {
       bb_stop(&f->input_buffers[i]);
     }
@@ -185,7 +230,7 @@ void *matched_passthroug(void *arg)
       output = bb_get_head(f->sinks[0]);
       output->ec = Bp_EC_COMPLETE;
       err = bb_submit(f->sinks[0], f->timeout_us);
-      BP_WORKER_ASSERT(f, err = Bp_EC_OK, err);
+      BP_WORKER_ASSERT(f, err == Bp_EC_OK, err);
       f->running = false;
       f->worker_err_info.ec = Bp_EC_COMPLETE;
       return NULL;

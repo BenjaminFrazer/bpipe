@@ -79,13 +79,15 @@ Bp_EC map_init(Map_filt_t* f, Map_config_t config)
 
   /* copy Batch Buffer config */
   core_config.buff_config = config.buff_config;
-  f->base.worker = &map_worker;
+  core_config.worker = &map_worker;
 
   /* Map is always a 1->1 filter */
   core_config.n_inputs = 1;
   core_config.max_supported_sinks = 1;
   core_config.filt_type = FILT_T_MAP;
   core_config.size = sizeof(Map_filt_t);
+  core_config.name = "MAP_FILTER";
+  core_config.timeout_us = 10000;
 
   Bp_EC err = filt_init(&f->base, core_config);
 

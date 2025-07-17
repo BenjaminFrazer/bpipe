@@ -19,7 +19,7 @@ Batch_buff_t buff_drop;
 
 char buff[124];
 
-size_t ring_capacity = (1 << RING_CAPACITY_EXPO) -1; // TODO: check this, due to the "always occupied slot
+size_t ring_capacity = (1 << RING_CAPACITY_EXPO) - 1; // One slot always kept empty to distinguish full/empty
 size_t batch_capacity = (1 << BATCH_CAPACITY_EXPO); // 
 
 void setUp(void)

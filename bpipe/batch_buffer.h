@@ -196,7 +196,8 @@ static inline size_t bb_space(const Batch_buff_t *buf)
 {
   size_t head = atomic_load_explicit(&buf->producer.head, memory_order_relaxed);
   size_t tail = atomic_load_explicit(&buf->consumer.tail, memory_order_acquire);
-  return head - tail;
+  size_t capacity = 1u << buf->ring_capacity_expo;
+  return (tail + capacity - head - 1) & (capacity - 1);
 }
 
 /* Wait for buffer to have space available
