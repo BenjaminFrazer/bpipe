@@ -1,37 +1,52 @@
 [
 	{
-		"directory": "/home/benf/repos/bpipe/",
-		"command": "gcc -I./bpipe -I./lib/Unity/src -std=c99 -Wall -Werror -pthread -save-temps=obj -c bpipe/core.c -o build/core.o",
+		"directory": "/home/benf/repos/bpipe2/",
+		"command": "gcc -I./bpipe -I./tests -I./lib/Unity/src -std=c99 -Wall -Werror -pthread -save-temps=obj -g -c bpipe/core.c -o build/core.o",
 		"file": "bpipe/core.c"
 	},
 	{
-		"directory": "/home/benf/repos/bpipe/",
-		"command": "gcc -I./bpipe -I./lib/Unity/src -std=c99 -Wall -Werror -pthread -save-temps=obj -c bpipe/signal_gen.c -o build/signal_gen.o",
-		"file": "bpipe/signal_gen.c"
+		"directory": "/home/benf/repos/bpipe2/",
+		"command": "gcc -I./bpipe -I./tests -I./lib/Unity/src -std=c99 -Wall -Werror -pthread -save-temps=obj -g -c bpipe/batch_buffer.c -o build/batch_buffer.o",
+		"file": "bpipe/batch_buffer.c"
 	},
 	{
-		"directory": "/home/benf/repos/bpipe/",
-		"command": "gcc -I./bpipe -I./lib/Unity/src -std=c99 -Wall -Werror -pthread -save-temps=obj -c bpipe/tee.c -o build/tee.o",
-		"file": "bpipe/tee.c"
+		"directory": "/home/benf/repos/bpipe2/",
+		"command": "gcc -I./bpipe -I./tests -I./lib/Unity/src -std=c99 -Wall -Werror -pthread -save-temps=obj -g -c bpipe/batch_buffer_print.c -o build/batch_buffer_print.o",
+		"file": "bpipe/batch_buffer_print.c"
 	},
 	{
-		"directory": "/home/benf/repos/bpipe/",
-		"command": "gcc -I./bpipe -I./lib/Unity/src -std=c99 -Wall -Werror -pthread -save-temps=obj -c bpipe/resampler.c -o build/resampler.o",
-		"file": "bpipe/resampler.c"
+		"directory": "/home/benf/repos/bpipe2/",
+		"command": "gcc -I./bpipe -I./tests -I./lib/Unity/src -std=c99 -Wall -Werror -pthread -save-temps=obj -g -c bpipe/bperr.c -o build/bperr.o",
+		"file": "bpipe/bperr.c"
 	},
 	{
-		"directory": "/home/benf/repos/bpipe/",
-		"command": "gcc -I./bpipe -I./lib/Unity/src -I/usr/include/python3.10 -std=c99 -Wall -Werror -pthread -save-temps=obj -c bpipe/aggregator.c -o build/aggregator.o",
-		"file": "bpipe/aggregator.c"
+		"directory": "/home/benf/repos/bpipe2/",
+		"command": "gcc -I./bpipe -I./tests -I./lib/Unity/src -std=c99 -Wall -Werror -pthread -save-temps=obj -g -c bpipe/map.c -o build/map.o",
+		"file": "bpipe/map.c"
 	},
 	{
-		"directory": "/home/benf/repos/bpipe/",
-		"command": "gcc -I./bpipe -I./lib/Unity/src -std=c99 -Wall -Werror -pthread -save-temps=obj -c tests/test_core_filter.c -o build/test_core_filter.o",
+		"directory": "/home/benf/repos/bpipe2/",
+		"command": "gcc -I./bpipe -I./tests -I./lib/Unity/src -std=c99 -Wall -Werror -pthread -save-temps=obj -g -c bpipe/map_examples.c -o build/map_examples.o",
+		"file": "bpipe/map_examples.c"
+	},
+	{
+		"directory": "/home/benf/repos/bpipe2/",
+		"command": "gcc -I./bpipe -I./tests -I./lib/Unity/src -std=c99 -Wall -Werror -pthread -save-temps=obj -g -c tests/test_batch_buffer.c -o build/test_batch_buffer.o",
 		"file": "tests/test_batch_buffer.c"
 	},
 	{
-		"directory": "/home/benf/repos/bpipe/",
-		"command": "gcc -I./bpipe -I./lib/Unity/src -std=c99 -Wall -Werror -pthread -save-temps=obj -c lib/Unity/src/unity.c -o build/unity.o",
-		"file": "lib/Unity/src/unity.c"
+		"directory": "/home/benf/repos/bpipe2/",
+		"command": "gcc -I./bpipe -I./tests -I./lib/Unity/src -std=c99 -Wall -Werror -pthread -save-temps=obj -g -c tests/test_core_filt.c -o build/test_core_filt.o",
+		"file": "tests/test_core_filt.c"
 	},
+	{
+		"directory": "/home/benf/repos/bpipe2/",
+		"command": "gcc -I./bpipe -I./tests -I./lib/Unity/src -std=c99 -Wall -Werror -pthread -save-temps=obj -g -c tests/test_map.c -o build/test_map.o",
+		"file": "tests/test_map.c"
+	},
+	{
+		"directory": "/home/benf/repos/bpipe2/",
+		"command": "gcc -I./bpipe -I./tests -I./lib/Unity/src -std=c99 -Wall -Werror -pthread -save-temps=obj -g -c lib/Unity/src/unity.c -o build/unity.o",
+		"file": "lib/Unity/src/unity.c"
+	}
 ]
