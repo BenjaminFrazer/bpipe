@@ -1,5 +1,6 @@
 #define _DEFAULT_SOURCE
 #include <pthread.h>
+#include <stdbool.h>
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
@@ -314,50 +315,154 @@ void test_multi_stage_single_threaded(void)
   CHECK_ERR(bb_deinit(&output_buffer));
 }
 
-/* Test 4: Multi-threaded slow consumer - SIMPLIFIED */
+/* Producer thread context */
+typedef struct {
+  Batch_buff_t* target_buffer;
+  size_t n_batches_to_produce;
+  size_t batch_size;
+  volatile bool* should_stop;
+  pthread_t thread;
+  Bp_EC result;
+} producer_context_t;
+
+/* Producer thread function */
+static void* producer_thread(void* arg)
+{
+  producer_context_t* ctx = (producer_context_t*)arg;
+  uint32_t value = 0;
+  
+  for (size_t i = 0; i < ctx->n_batches_to_produce && !*ctx->should_stop; i++) {
+    Batch_t* batch = bb_get_head(ctx->target_buffer);
+    if (!batch) {
+      // Buffer full, wait a bit
+      struct timespec ts = {.tv_sec = 0, .tv_nsec = 1000000}; // 1ms
+      nanosleep(&ts, NULL);
+      i--; // Retry this batch
+      continue;
+    }
+    
+    // Fill batch with incrementing values
+    for (size_t j = 0; j < ctx->batch_size; j++) {
+      *((float*)batch->data + j) = (float)value++;
+    }
+    batch->head = ctx->batch_size;
+    batch->t_ns = 1000000 * i;
+    batch->period_ns = 1000;
+    
+    Bp_EC err = bb_submit(ctx->target_buffer, 10000);
+    if (err != Bp_EC_OK) {
+      ctx->result = err;
+      return NULL;
+    }
+    
+    // Slow producer - simulates real data source
+    struct timespec ts = {.tv_sec = 0, .tv_nsec = 2000000}; // 2ms
+    nanosleep(&ts, NULL);
+  }
+  
+  ctx->result = Bp_EC_OK;
+  return NULL;
+}
+
+/* Test 4: True multi-threaded producer-consumer with cascaded filters */
 void test_multi_threaded_slow_consumer(void)
 {
-  // This test is simplified to just verify basic threading works
-  Map_filt_t filter;
-  Map_config_t config = {.buff_config = test_config,
-                         .map_fcn = test_identity_map};
-
-  CHECK_ERR(map_init(&filter, config));
-
+  // Use small buffers to test backpressure
+  BatchBuffer_config small_config = {
+    .dtype = DTYPE_FLOAT,
+    .overflow_behaviour = OVERFLOW_BLOCK,
+    .ring_capacity_expo = SMALL_RING_CAPACITY_EXPO,
+    .batch_capacity_expo = SMALL_BATCH_CAPACITY_EXPO,
+  };
+  
+  // Create cascade: producer -> scale filter -> offset filter -> consumer
+  Map_filt_t scale_filter, offset_filter;
+  Map_config_t scale_config = {.buff_config = small_config, .map_fcn = test_scale_map};
+  Map_config_t offset_config = {.buff_config = small_config, .map_fcn = test_offset_map};
+  
+  CHECK_ERR(map_init(&scale_filter, scale_config));
+  CHECK_ERR(map_init(&offset_filter, offset_config));
+  
   Batch_buff_t output_buffer;
-  CHECK_ERR(bb_init(&output_buffer, "test_output", config.buff_config));
-  CHECK_ERR(filt_sink_connect(&filter.base, 0, &output_buffer));
+  CHECK_ERR(bb_init(&output_buffer, "test_output", small_config));
+  
+  // Connect cascade
+  CHECK_ERR(filt_sink_connect(&scale_filter.base, 0, &offset_filter.base.input_buffers[0]));
+  CHECK_ERR(filt_sink_connect(&offset_filter.base, 0, &output_buffer));
+  
+  // Start all components
+  CHECK_ERR(filt_start(&scale_filter.base));
+  CHECK_ERR(filt_start(&offset_filter.base));
   CHECK_ERR(bb_start(&output_buffer));
-  CHECK_ERR(filt_start(&filter.base));
-
-  // Submit one batch
-  Batch_t* input_batch = bb_get_head(&filter.base.input_buffers[0]);
-  TEST_ASSERT_NOT_NULL(input_batch);
-
-  for (int ii = 0; ii < BATCH_CAPACITY; ii++) {
-    *((float*) input_batch->data + ii) = (float) ii;
+  
+  // Setup producer thread
+  volatile bool should_stop = false;
+  producer_context_t producer_ctx = {
+    .target_buffer = &scale_filter.base.input_buffers[0],
+    .n_batches_to_produce = 5,  // Reduced for faster test
+    .batch_size = 1 << SMALL_BATCH_CAPACITY_EXPO,
+    .should_stop = &should_stop,
+    .result = Bp_EC_OK
+  };
+  
+  // Start producer thread
+  TEST_ASSERT_EQUAL(0, pthread_create(&producer_ctx.thread, NULL, producer_thread, &producer_ctx));
+  
+  // Consumer (main thread) - verify data
+  uint32_t expected_value = 0;
+  size_t batches_consumed = 0;
+  const size_t small_batch_size = 1 << SMALL_BATCH_CAPACITY_EXPO;
+  
+  // Consume batches with slow consumer (slower than producer)
+  while (batches_consumed < producer_ctx.n_batches_to_produce) {
+    Bp_EC err;
+    Batch_t* out = bb_get_tail(&output_buffer, 10000, &err);  // 10ms timeout
+    
+    if (err == Bp_EC_TIMEOUT) {
+      // Check if producer had an error
+      if (producer_ctx.result != Bp_EC_OK) {
+        should_stop = true;
+        break;
+      }
+      continue;
+    }
+    
+    CHECK_ERR(err);
+    TEST_ASSERT_NOT_NULL(out);
+    
+    // Verify transformed data: (x * 2) + 100
+    for (size_t i = 0; i < small_batch_size; i++) {
+      float expected = ((float)expected_value * 2.0f) + 100.0f;
+      float actual = *((float*)out->data + i);
+      TEST_ASSERT_EQUAL_FLOAT_MESSAGE(expected, actual, "Data mismatch in multi-threaded test");
+      expected_value++;
+    }
+    
+    CHECK_ERR(bb_del_tail(&output_buffer));
+    batches_consumed++;
+    
+    // Slow consumer - simulate processing time
+    struct timespec ts = {.tv_sec = 0, .tv_nsec = 5000000}; // 5ms (slower than producer)
+    nanosleep(&ts, NULL);
   }
-  input_batch->head = BATCH_CAPACITY;
-
-  CHECK_ERR(bb_submit(&filter.base.input_buffers[0], 10000));
-
-  // Wait and verify it processes
-  nanosleep(&ts_10ms, NULL);
-  CHECK_ERR(filter.base.worker_err_info.ec);
-
-  Bp_EC err;
-  Batch_t* output_batch = bb_get_tail(&output_buffer, 100000, &err);
-  CHECK_ERR(err);
-  TEST_ASSERT_NOT_NULL(output_batch);
-
-  // Basic verification - just check first sample
-  float first_sample = *((float*) output_batch->data);
-  TEST_ASSERT_EQUAL_FLOAT(0.0f, first_sample);
-
-  CHECK_ERR(bb_del_tail(&output_buffer));
-  CHECK_ERR(filt_stop(&filter.base));
+  
+  // Signal producer to stop and wait for it
+  should_stop = true;
+  pthread_join(producer_ctx.thread, NULL);
+  
+  // Verify producer succeeded
+  CHECK_ERR(producer_ctx.result);
+  
+  // Verify we consumed all produced data
+  TEST_ASSERT_EQUAL(producer_ctx.n_batches_to_produce, batches_consumed);
+  TEST_ASSERT_EQUAL(producer_ctx.n_batches_to_produce * small_batch_size, expected_value);
+  
+  // Cleanup
+  CHECK_ERR(filt_stop(&scale_filter.base));
+  CHECK_ERR(filt_stop(&offset_filter.base));
   CHECK_ERR(bb_stop(&output_buffer));
-  CHECK_ERR(filt_deinit(&filter.base));
+  CHECK_ERR(filt_deinit(&scale_filter.base));
+  CHECK_ERR(filt_deinit(&offset_filter.base));
   CHECK_ERR(bb_deinit(&output_buffer));
 }
 
