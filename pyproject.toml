@@ -1,0 +1,26 @@
+[tool.ruff]
+# Exclude files outside the core bpipe subdirectory
+exclude = [
+    "lib/",
+    "build/",
+    "docs/",
+    "scripts/",
+]
+
+# Only lint Python files in the bpipe directory
+include = ["bpipe/**/*.py"]
+
+[tool.ruff.lint]
+# Configure any additional linting rules as needed
+select = ["E", "F", "W"]
+
+[tool.flake8]
+exclude = [
+    "lib/",
+    "build/",
+    "docs/",
+    "scripts/",
+]
+
+[tool.pylint]
+ignore-paths = ["^lib/.*","^build/.*","^docs/.*","^scripts/.*"]
