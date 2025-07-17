@@ -55,6 +55,7 @@ Buffers are self-contained ring buffers that:
 - **Manage overflow** - via configurable block/drop behavior
 - **Operate independently** - all operations work on buffer pointers
 - **Optimize for cache performance** - producer/consumer fields in separate cache lines
+- **Timeouts** - operations which add or removed from the buffer can block and take a timeout. Note that a timeout of 0 actually means infinite. 
 
 ```c
 // Direct buffer operations

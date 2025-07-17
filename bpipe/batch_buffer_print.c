@@ -36,8 +36,10 @@ static const char* overflow_to_string(OverflowBehaviour_t behaviour)
   switch (behaviour) {
     case OVERFLOW_BLOCK:
       return "BLOCK";
-    case OVERFLOW_DROP:
-      return "DROP";
+    case OVERFLOW_DROP_HEAD:
+      return "DROP_HEAD";
+    case OVERFLOW_DROP_TAIL:
+      return "DROP_TAIL";
     default:
       return "UNKNOWN";
   }
