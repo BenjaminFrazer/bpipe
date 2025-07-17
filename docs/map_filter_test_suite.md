@@ -141,6 +141,26 @@ while (batches_consumed < expected):
 3. **Dynamic reconfiguration** - No runtime parameter changes
 4. **Multiple data types** - Only DTYPE_FLOAT tested
 5. **Concurrent producers** - Only single producer tested
+6. **Mixed batch size cascades** - All cascaded filters use identical buffer configurations
+
+#### Why Mixed Batch Size Testing Matters
+
+Testing cascaded filters with different batch sizes is crucial because:
+
+1. **Real-world scenarios** often involve data rate changes:
+   - Decimation filters reducing data rates
+   - Interpolation filters increasing data rates
+   - Feature extraction producing different output sizes
+
+2. **Buffer management complexity** increases significantly:
+   - Partial batch handling when large → small
+   - Batch accumulation when small → large
+   - Synchronization across size boundaries
+
+3. **Performance implications**:
+   - Memory access patterns change
+   - Cache efficiency varies
+   - Backpressure propagation differs
 
 ### Non-Orthogonality Issues
 1. **test_single_threaded_linear_ramp** and **test_multi_stage_single_threaded** both test identity passthrough with similar patterns
@@ -161,6 +181,10 @@ while (batches_consumed < expected):
 4. **Extract common patterns** - Reduce code duplication
 5. **Add negative buffer size tests** - Test system limits
 6. **Test filter lifecycle** - Start/stop/restart sequences
+7. **Add mixed batch size cascade tests** - Test important scenarios:
+   - Large → Small batches (data aggregation/decimation)
+   - Small → Large batches (data expansion/interpolation)
+   - Mismatched ring buffer sizes (backpressure handling)
 
 ## Usage
 
