@@ -7,10 +7,14 @@
 #include "map.h"
 #include "unity.h"
 
-#define BATCH_CAPACITY_EXPO 4  // 16 samples per batch
-#define RING_CAPACITY_EXPO 4   // 15 batches in ring
+#define BATCH_CAPACITY_EXPO 8  // 256 samples per batch
+#define RING_CAPACITY_EXPO 6   // 63 batches in ring
 #define RING_CAPACITY ((1 << RING_CAPACITY_EXPO) - 1)
 #define BATCH_CAPACITY (1 << BATCH_CAPACITY_EXPO)
+
+// Additional test configurations
+#define SMALL_BATCH_CAPACITY_EXPO 4  // 16 samples per batch for edge case testing
+#define SMALL_RING_CAPACITY_EXPO 3   // 7 batches in ring for wraparound testing
 
 static const BatchBuffer_config test_config = {
     .dtype = DTYPE_FLOAT,
@@ -43,6 +47,36 @@ static Bp_EC test_identity_map(const void* in, void* out, size_t n_samples)
     output[i] = input[i];
   }
 
+  return Bp_EC_OK;
+}
+
+/* Test map function - scale by 2.0 */
+static Bp_EC test_scale_map(const void* in, void* out, size_t n_samples)
+{
+  if (!in || !out) return Bp_EC_NULL_POINTER;
+  
+  const float* input = (const float*)in;
+  float* output = (float*)out;
+  
+  for (size_t i = 0; i < n_samples; i++) {
+    output[i] = input[i] * 2.0f;
+  }
+  
+  return Bp_EC_OK;
+}
+
+/* Test map function - add offset */
+static Bp_EC test_offset_map(const void* in, void* out, size_t n_samples)
+{
+  if (!in || !out) return Bp_EC_NULL_POINTER;
+  
+  const float* input = (const float*)in;
+  float* output = (float*)out;
+  
+  for (size_t i = 0; i < n_samples; i++) {
+    output[i] = input[i] + 100.0f;
+  }
+  
   return Bp_EC_OK;
 }
 
@@ -372,17 +406,194 @@ void test_map_error_handling(void)
   CHECK_ERR(bb_deinit(&output_buffer));
 }
 
+/* Test: Scale transform */
+void test_scale_transform(void)
+{
+  Map_filt_t filter;
+  Map_config_t config = {.buff_config = test_config, .map_fcn = test_scale_map};
+  
+  CHECK_ERR(map_init(&filter, config));
+  
+  Batch_buff_t output_buffer;
+  CHECK_ERR(bb_init(&output_buffer, "test_output", config.buff_config));
+  CHECK_ERR(filt_sink_connect(&filter.base, 0, &output_buffer));
+  CHECK_ERR(bb_start(&output_buffer));
+  CHECK_ERR(filt_start(&filter.base));
+  
+  // Submit test data
+  Batch_t* input_batch = bb_get_head(&filter.base.input_buffers[0]);
+  TEST_ASSERT_NOT_NULL(input_batch);
+  
+  // Fill with test values
+  for (int i = 0; i < BATCH_CAPACITY; i++) {
+    *((float*) input_batch->data + i) = (float) i;
+  }
+  input_batch->head = BATCH_CAPACITY;
+  
+  CHECK_ERR(bb_submit(&filter.base.input_buffers[0], 10000));
+  nanosleep(&ts_10ms, NULL);
+  
+  // Get output
+  Bp_EC err;
+  Batch_t* output_batch = bb_get_tail(&output_buffer, 10000, &err);
+  CHECK_ERR(err);
+  TEST_ASSERT_NOT_NULL(output_batch);
+  
+  // Verify scaling
+  for (int i = 0; i < BATCH_CAPACITY; i++) {
+    float expected = (float) i * 2.0f;
+    float actual = *((float*) output_batch->data + i);
+    TEST_ASSERT_EQUAL_FLOAT(expected, actual);
+  }
+  
+  CHECK_ERR(bb_del_tail(&output_buffer));
+  CHECK_ERR(filt_stop(&filter.base));
+  CHECK_ERR(bb_stop(&output_buffer));
+  CHECK_ERR(filt_deinit(&filter.base));
+  CHECK_ERR(bb_deinit(&output_buffer));
+}
+
+/* Test: Chained transforms (scale then offset) */
+void test_chained_transforms(void)
+{
+  Map_filt_t scale_filter, offset_filter;
+  Map_config_t scale_config = {.buff_config = test_config, .map_fcn = test_scale_map};
+  Map_config_t offset_config = {.buff_config = test_config, .map_fcn = test_offset_map};
+  
+  CHECK_ERR(map_init(&scale_filter, scale_config));
+  CHECK_ERR(map_init(&offset_filter, offset_config));
+  
+  Batch_buff_t output_buffer;
+  CHECK_ERR(bb_init(&output_buffer, "test_output", test_config));
+  
+  // Connect: scale -> offset -> output
+  CHECK_ERR(filt_sink_connect(&scale_filter.base, 0, &offset_filter.base.input_buffers[0]));
+  CHECK_ERR(filt_sink_connect(&offset_filter.base, 0, &output_buffer));
+  
+  CHECK_ERR(filt_start(&scale_filter.base));
+  CHECK_ERR(filt_start(&offset_filter.base));
+  CHECK_ERR(bb_start(&output_buffer));
+  
+  // Submit test data
+  Batch_t* input_batch = bb_get_head(&scale_filter.base.input_buffers[0]);
+  TEST_ASSERT_NOT_NULL(input_batch);
+  
+  for (int i = 0; i < BATCH_CAPACITY; i++) {
+    *((float*) input_batch->data + i) = (float) i;
+  }
+  input_batch->head = BATCH_CAPACITY;
+  
+  CHECK_ERR(bb_submit(&scale_filter.base.input_buffers[0], 10000));
+  nanosleep(&ts_10ms, NULL);
+  
+  // Get output
+  Bp_EC err;
+  Batch_t* output_batch = bb_get_tail(&output_buffer, 10000, &err);
+  CHECK_ERR(err);
+  TEST_ASSERT_NOT_NULL(output_batch);
+  
+  // Verify chained transform: (x * 2) + 100
+  for (int i = 0; i < BATCH_CAPACITY; i++) {
+    float expected = ((float) i * 2.0f) + 100.0f;
+    float actual = *((float*) output_batch->data + i);
+    TEST_ASSERT_EQUAL_FLOAT(expected, actual);
+  }
+  
+  CHECK_ERR(bb_del_tail(&output_buffer));
+  CHECK_ERR(filt_stop(&scale_filter.base));
+  CHECK_ERR(filt_stop(&offset_filter.base));
+  CHECK_ERR(bb_stop(&output_buffer));
+  CHECK_ERR(filt_deinit(&scale_filter.base));
+  CHECK_ERR(filt_deinit(&offset_filter.base));
+  CHECK_ERR(bb_deinit(&output_buffer));
+}
+
+/* Test: Buffer wraparound with small buffers */
+void test_buffer_wraparound(void)
+{
+  BatchBuffer_config small_config = {
+    .dtype = DTYPE_FLOAT,
+    .overflow_behaviour = OVERFLOW_BLOCK,
+    .ring_capacity_expo = SMALL_RING_CAPACITY_EXPO,
+    .batch_capacity_expo = SMALL_BATCH_CAPACITY_EXPO,
+  };
+  
+  Map_filt_t filter;
+  Map_config_t config = {.buff_config = small_config, .map_fcn = test_identity_map};
+  
+  CHECK_ERR(map_init(&filter, config));
+  
+  Batch_buff_t output_buffer;
+  CHECK_ERR(bb_init(&output_buffer, "test_output", small_config));
+  CHECK_ERR(filt_sink_connect(&filter.base, 0, &output_buffer));
+  CHECK_ERR(bb_start(&output_buffer));
+  CHECK_ERR(filt_start(&filter.base));
+  
+  const size_t small_batch_size = 1 << SMALL_BATCH_CAPACITY_EXPO;
+  const size_t small_ring_size = (1 << SMALL_RING_CAPACITY_EXPO) - 1;
+  
+  // Submit exactly enough batches to wrap the ring buffer once
+  for (size_t batch = 0; batch < small_ring_size + 2; batch++) {
+    Batch_t* input_batch = bb_get_head(&filter.base.input_buffers[0]);
+    TEST_ASSERT_NOT_NULL(input_batch);
+    
+    // Fill with known pattern
+    for (size_t i = 0; i < small_batch_size; i++) {
+      *((float*) input_batch->data + i) = (float) (batch * 1000 + i);
+    }
+    input_batch->head = small_batch_size;
+    
+    CHECK_ERR(bb_submit(&filter.base.input_buffers[0], 10000));
+    
+    // Give filter time to process
+    nanosleep(&ts_10ms, NULL);
+  }
+  
+  // Verify output in order
+  uint32_t verified_batches = 0;
+  Bp_EC err;
+  Batch_t* out;
+  while ((out = bb_get_tail(&output_buffer, 10000, &err)) != NULL && err == Bp_EC_OK) {
+    // Verify batch pattern
+    for (size_t i = 0; i < small_batch_size; i++) {
+      float expected = (float) (verified_batches * 1000 + i);
+      float actual = *((float*) out->data + i);
+      TEST_ASSERT_EQUAL_FLOAT(expected, actual);
+    }
+    CHECK_ERR(bb_del_tail(&output_buffer));
+    verified_batches++;
+  }
+  
+  // Should have processed at least small_ring_size batches (buffer may drop some due to overflow)
+  TEST_ASSERT_GREATER_OR_EQUAL(small_ring_size, verified_batches);
+  
+  CHECK_ERR(filt_stop(&filter.base));
+  CHECK_ERR(bb_stop(&output_buffer));
+  CHECK_ERR(filt_deinit(&filter.base));
+  CHECK_ERR(bb_deinit(&output_buffer));
+}
+
 /* Main test runner */
 int main(void)
 {
   UNITY_BEGIN();
 
+  // Basic configuration tests
   RUN_TEST(test_map_init_valid_config);
   RUN_TEST(test_map_init_null_filter);
   RUN_TEST(test_map_init_null_function);
+  
+  // Functional tests
   RUN_TEST(test_single_threaded_linear_ramp);
+  RUN_TEST(test_scale_transform);
+  RUN_TEST(test_chained_transforms);
+  RUN_TEST(test_buffer_wraparound);
+  
+  // Multi-threaded tests
   RUN_TEST(test_multi_stage_single_threaded);
   RUN_TEST(test_multi_threaded_slow_consumer);
+  
+  // Error handling
   RUN_TEST(test_map_error_handling);
 
   return UNITY_END();
