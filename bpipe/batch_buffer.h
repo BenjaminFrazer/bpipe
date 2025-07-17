@@ -25,7 +25,7 @@ typedef enum _SampleType {
 } SampleDtype_t;
 
 typedef enum _OverflowBehaviour {
-  OVERFLOW_BLOCK = 0,      // Block when buffer is full (default/current behavior)
+  OVERFLOW_BLOCK = 0,  // Block when buffer is full (default/current behavior)
   OVERFLOW_DROP_HEAD = 1,  // Drop new samples when buffer is full
   OVERFLOW_DROP_TAIL = 2,  // Drop oldest batch when buffer is full
   OVERFLOW_MAX
@@ -112,8 +112,9 @@ typedef struct _Bp_BatchBuffer {
 
   /* Consumer-only fields - modified only by consumer thread */
   struct {
-    _Atomic size_t tail;                /* Next slot to read */
-    _Atomic uint64_t dropped_by_producer; /* Batches dropped by producer in DROP_TAIL mode */
+    _Atomic size_t tail; /* Next slot to read */
+    _Atomic uint64_t
+        dropped_by_producer; /* Batches dropped by producer in DROP_TAIL mode */
   } consumer __attribute__((aligned(64)));
 
   /* Shared fields - accessed by both threads but only on slow path */
