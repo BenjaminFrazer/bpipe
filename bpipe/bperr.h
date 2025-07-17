@@ -35,6 +35,7 @@ typedef enum _Bp_EC {
   Bp_EC_CONFIG_REQUIRED,            /* Configuration missing required fields */
   Bp_EC_MALLOC_FAIL,                /* Memory allocation failure */
   Bp_EC_MEMCPY_FAIL,                /* Memory allocation failure */
+  Bp_EC_MEMSET_FAIL,                /* Memory allocation failure */
   Bp_EC_THREAD_CREATE_NAME_FAIL,    /* Failed to name thread */
   Bp_EC_BUFFER_EMPTY,
   Bp_EC_CONNECTION_OCCUPIED,

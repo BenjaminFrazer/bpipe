@@ -1,4 +1,5 @@
 #include "core.h"
+#include <stdbool.h>
 #include <string.h>
 #include "batch_buffer.h"
 #include "bperr.h"
@@ -10,6 +11,10 @@ Bp_EC filt_init(Filter_t *f, Core_filt_config_t config)
 {
   if (f == NULL) {
     return Bp_EC_NULL_FILTER;
+  }
+
+  if (memset(f, 0, sizeof(Filter_t)) == NULL) {
+    return Bp_EC_MEMSET_FAIL;
   }
 
   if (config.timeout_us < 0) {
@@ -170,12 +175,21 @@ void *matched_passthroug(void *arg)
   BP_WORKER_ASSERT(f, f->sinks[0]->dtype < DTYPE_MAX, Bp_EC_DTYPE_INVALID);
 
   size_t copy_size =
-      f->sinks[0]->batch_capacity_expo * _data_size_lut[f->sinks[0]->dtype];
+      bb_batch_size(f->sinks[0]) * _data_size_lut[f->sinks[0]->dtype];
 
   while (f->running) {
-    printf("start_batch");
     input = bb_get_tail(&f->input_buffers[0], f->timeout_us, &err);
     BP_WORKER_ASSERT(f, input != NULL, err);
+
+    if (input->ec == Bp_EC_COMPLETE) {
+      output = bb_get_head(f->sinks[0]);
+      output->ec = Bp_EC_COMPLETE;
+      err = bb_submit(f->sinks[0], f->timeout_us);
+      BP_WORKER_ASSERT(f, err = Bp_EC_OK, err);
+      f->running = false;
+      f->worker_err_info.ec = Bp_EC_COMPLETE;
+      return NULL;
+    }
 
     output = bb_get_head(f->sinks[0]);
     BP_WORKER_ASSERT(f, output != NULL, Bp_EC_GET_HEAD_NULL);
@@ -191,7 +205,6 @@ void *matched_passthroug(void *arg)
 
     f->metrics.n_batches++;
     input = bb_get_tail(&f->input_buffers[0], f->timeout_us, &err);
-    printf("end batch");
   }
   return NULL;
 }
