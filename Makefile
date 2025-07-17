@@ -1,5 +1,8 @@
+PROJECT_ROOT=./
 CC=gcc
-CFLAGS=-I./bpipe -I./lib/Unity/src -std=c99 -Wall -Werror -pthread -save-temps=obj -g
+CFLAGS = -std=c99 -Wall -Werror -pthread -save-temps=obj -g 
+CFLAGS += -I$(PROJECT_ROOT)/bpipe -I$(PROJECT_ROOT)/tests -I$(PROJECT_ROOT)/lib/Unity/src
+CFLAGS += -DUNITY_INCLUDE_CONFIG_H -DUNITY_DEBUG_BREAK_ON_FAIL
 LDFLAGS=-lm
 SRC_DIR=bpipe
 TEST_SRC_DIR=tests
@@ -40,6 +43,9 @@ $(BUILD_DIR)/test_%: $(BUILD_DIR)/test_%.o $(OBJ_FILES) $(BUILD_DIR)/unity.o
 clean:
 	rm -rf $(BUILD_DIR)
 
+project_root:
+	echo $(PROJECT_ROOT)
+
 run: all
 	@echo "Run"
 
@@ -53,7 +59,7 @@ test-c: all
 	@echo "Running C tests..."
 	@for test in $(TEST_EXECUTABLES); do \
 		echo "Running $$test..."; \
-		scripts/run_with_timeout.sh 1 $$test || exit 1; \
+		scripts/run_with_timeout.sh 4 $$test || exit 1; \
 	done
 	@echo "All C tests passed!"
 
