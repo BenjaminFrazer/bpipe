@@ -10,7 +10,7 @@
 
 /* Branch prediction hints */
 #ifndef likely
-#define likely(x)   __builtin_expect(!!(x), 1)
+#define likely(x) __builtin_expect(!!(x), 1)
 #endif
 #ifndef unlikely
 #define unlikely(x) __builtin_expect(!!(x), 0)
@@ -197,22 +197,23 @@ Bp_EC bb_submit(Batch_buff_t *buff, unsigned long timeout_us)
       atomic_fetch_add(&buff->producer.dropped_batches, 1);
       return Bp_EC_OK;
     }
-    
+
     if (unlikely(buff->overflow_behaviour == OVERFLOW_DROP_TAIL)) {
       /* Drop oldest batch - need mutex for safety */
       pthread_mutex_lock(&buff->mutex);
-      
+
       /* Re-check under lock */
       if (bb_isfull(buff)) {
         /* Force tail advance */
-        size_t new_tail = (atomic_load(&buff->consumer.tail) + 1) & bb_modulo_mask(buff);
+        size_t new_tail =
+            (atomic_load(&buff->consumer.tail) + 1) & bb_modulo_mask(buff);
         atomic_store(&buff->consumer.tail, new_tail);
         atomic_fetch_add(&buff->consumer.dropped_by_producer, 1);
-        
+
         /* Wake consumer if blocked */
         pthread_cond_signal(&buff->not_empty);
       }
-      
+
       pthread_mutex_unlock(&buff->mutex);
     } else {
       /* OVERFLOW_BLOCK - wait for space */
