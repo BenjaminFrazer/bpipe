@@ -41,6 +41,7 @@ This is a **modular real-time telemetry data processing framework** built in C w
 ### Key Files
 - `bpipe/core.h`: Core data structures and inline functions
 - `bpipe/core.c`: Main filter initialization and worker thread logic
+- `bpipe/batch_buffer.c`: Data buffer implementation.
 - `tests/`: Unity-based test suite
 
 ### MISC
