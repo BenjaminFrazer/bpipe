@@ -6,6 +6,137 @@
 #define _GNU_SOURCE /* See feature_test_macros(7) */
 #include <pthread.h>
 
+/* Forward declarations */
+static Bp_EC default_start(Filter_t* self);
+static Bp_EC default_stop(Filter_t* self);
+static Bp_EC default_deinit(Filter_t* self);
+static Bp_EC default_flush(Filter_t* self);
+static Bp_EC default_drain(Filter_t* self);
+static Bp_EC default_reset(Filter_t* self);
+static Bp_EC default_get_stats(Filter_t* self, void* stats_out);
+static FilterHealth_t default_get_health(Filter_t* self);
+static size_t default_get_backlog(Filter_t* self);
+static Bp_EC default_reconfigure(Filter_t* self, void* config);
+static Bp_EC default_validate_connection(Filter_t* self, size_t sink_idx);
+static Bp_EC default_describe(Filter_t* self, char* buffer, size_t buffer_size);
+static Bp_EC default_dump_state(Filter_t* self, char* buffer, size_t buffer_size);
+static Bp_EC default_handle_error(Filter_t* self, Bp_EC error);
+static Bp_EC default_recover(Filter_t* self);
+
+/* Default filter operations implementations */
+static Bp_EC default_start(Filter_t* self) {
+  return filt_start(self);
+}
+
+static Bp_EC default_stop(Filter_t* self) {
+  return filt_stop(self);
+}
+
+static Bp_EC default_deinit(Filter_t* self) {
+  return filt_deinit(self);
+}
+
+static Bp_EC default_flush(Filter_t* self) {
+  return Bp_EC_OK;
+}
+
+static Bp_EC default_drain(Filter_t* self) {
+  return Bp_EC_OK;
+}
+
+static Bp_EC default_reset(Filter_t* self) {
+  return Bp_EC_OK;
+}
+
+static Bp_EC default_get_stats(Filter_t* self, void* stats_out) {
+  if (stats_out == NULL) {
+    return Bp_EC_NULL_POINTER;
+  }
+  memcpy(stats_out, &self->metrics, sizeof(Filt_metrics));
+  return Bp_EC_OK;
+}
+
+static FilterHealth_t default_get_health(Filter_t* self) {
+  if (self->worker_err_info.ec != Bp_EC_OK) {
+    return FILTER_HEALTH_FAILED;
+  }
+  return FILTER_HEALTH_HEALTHY;
+}
+
+static size_t default_get_backlog(Filter_t* self) {
+  size_t total_backlog = 0;
+  for (int i = 0; i < self->n_input_buffers; i++) {
+    total_backlog += bb_occupancy(&self->input_buffers[i]);
+  }
+  return total_backlog;
+}
+
+static Bp_EC default_reconfigure(Filter_t* self, void* config) {
+  return Bp_EC_NOT_IMPLEMENTED;
+}
+
+static Bp_EC default_validate_connection(Filter_t* self, size_t sink_idx) {
+  if (sink_idx >= self->max_suppported_sinks) {
+    return Bp_EC_INVALID_SINK_IDX;
+  }
+  return Bp_EC_OK;
+}
+
+static Bp_EC default_describe(Filter_t* self, char* buffer, size_t buffer_size) {
+  if (buffer == NULL) {
+    return Bp_EC_NULL_POINTER;
+  }
+  snprintf(buffer, buffer_size, "Filter: %s, Type: %d, Running: %s", 
+           self->name, self->filt_type, self->running ? "true" : "false");
+  return Bp_EC_OK;
+}
+
+static Bp_EC default_dump_state(Filter_t* self, char* buffer, size_t buffer_size) {
+  if (buffer == NULL) {
+    return Bp_EC_NULL_POINTER;
+  }
+  snprintf(buffer, buffer_size, "Filter State: %s\n"
+           "  Running: %s\n"
+           "  Batches processed: %zu\n"
+           "  Input buffers: %d\n"
+           "  Sinks: %d\n",
+           self->name,
+           self->running ? "true" : "false",
+           self->metrics.n_batches,
+           self->n_input_buffers,
+           self->n_sinks);
+  return Bp_EC_OK;
+}
+
+static Bp_EC default_handle_error(Filter_t* self, Bp_EC error) {
+  self->worker_err_info.ec = error;
+  return Bp_EC_OK;
+}
+
+static Bp_EC default_recover(Filter_t* self) {
+  self->worker_err_info.ec = Bp_EC_OK;
+  return Bp_EC_OK;
+}
+
+/* Default ops instance */
+static const FilterOps default_ops = {
+  .start = default_start,
+  .stop = default_stop,
+  .deinit = default_deinit,
+  .flush = default_flush,
+  .drain = default_drain,
+  .reset = default_reset,
+  .get_stats = default_get_stats,
+  .get_health = default_get_health,
+  .get_backlog = default_get_backlog,
+  .reconfigure = default_reconfigure,
+  .validate_connection = default_validate_connection,
+  .describe = default_describe,
+  .dump_state = default_dump_state,
+  .handle_error = default_handle_error,
+  .recover = default_recover
+};
+
 /* Configuration-based initialization API */
 Bp_EC filt_init(Filter_t *f, Core_filt_config_t config)
 {
@@ -81,6 +212,9 @@ Bp_EC filt_init(Filter_t *f, Core_filt_config_t config)
   
   // Initialize metrics
   f->metrics.n_batches = 0;
+  
+  // Initialize operations interface with defaults
+  f->ops = default_ops;
 
   return Bp_EC_OK;
 }
@@ -252,4 +386,89 @@ void *matched_passthroug(void *arg)
     input = bb_get_tail(&f->input_buffers[0], f->timeout_us, &err);
   }
   return NULL;
+}
+
+/* Public wrapper functions for filter operations */
+Bp_EC filt_flush(Filter_t *filter) {
+  if (filter == NULL) {
+    return Bp_EC_NULL_FILTER;
+  }
+  return filter->ops.flush(filter);
+}
+
+Bp_EC filt_drain(Filter_t *filter) {
+  if (filter == NULL) {
+    return Bp_EC_NULL_FILTER;
+  }
+  return filter->ops.drain(filter);
+}
+
+Bp_EC filt_reset(Filter_t *filter) {
+  if (filter == NULL) {
+    return Bp_EC_NULL_FILTER;
+  }
+  return filter->ops.reset(filter);
+}
+
+Bp_EC filt_get_stats(Filter_t *filter, void* stats_out) {
+  if (filter == NULL) {
+    return Bp_EC_NULL_FILTER;
+  }
+  return filter->ops.get_stats(filter, stats_out);
+}
+
+FilterHealth_t filt_get_health(Filter_t *filter) {
+  if (filter == NULL) {
+    return FILTER_HEALTH_UNKNOWN;
+  }
+  return filter->ops.get_health(filter);
+}
+
+size_t filt_get_backlog(Filter_t *filter) {
+  if (filter == NULL) {
+    return 0;
+  }
+  return filter->ops.get_backlog(filter);
+}
+
+Bp_EC filt_reconfigure(Filter_t *filter, void* config) {
+  if (filter == NULL) {
+    return Bp_EC_NULL_FILTER;
+  }
+  return filter->ops.reconfigure(filter, config);
+}
+
+Bp_EC filt_validate_connection(Filter_t *filter, size_t sink_idx) {
+  if (filter == NULL) {
+    return Bp_EC_NULL_FILTER;
+  }
+  return filter->ops.validate_connection(filter, sink_idx);
+}
+
+Bp_EC filt_describe(Filter_t *filter, char* buffer, size_t buffer_size) {
+  if (filter == NULL) {
+    return Bp_EC_NULL_FILTER;
+  }
+  return filter->ops.describe(filter, buffer, buffer_size);
+}
+
+Bp_EC filt_dump_state(Filter_t *filter, char* buffer, size_t buffer_size) {
+  if (filter == NULL) {
+    return Bp_EC_NULL_FILTER;
+  }
+  return filter->ops.dump_state(filter, buffer, buffer_size);
+}
+
+Bp_EC filt_handle_error(Filter_t *filter, Bp_EC error) {
+  if (filter == NULL) {
+    return Bp_EC_NULL_FILTER;
+  }
+  return filter->ops.handle_error(filter, error);
+}
+
+Bp_EC filt_recover(Filter_t *filter) {
+  if (filter == NULL) {
+    return Bp_EC_NULL_FILTER;
+  }
+  return filter->ops.recover(filter);
 }

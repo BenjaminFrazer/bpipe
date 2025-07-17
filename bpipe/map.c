@@ -53,12 +53,21 @@ void* map_worker(void* arg)
     // Process available data
     size_t n = MIN(input->head - input->tail, batch_size - output->head);
     if (n > 0) {
-      err = f->map_fcn(output->data + output->head * data_width,
-                       input->data + input->tail * data_width, n);
+      err = f->map_fcn(input->data + input->tail * data_width,
+                       output->data + output->head * data_width, n);
       if (err != Bp_EC_OK) break;
 
       input->tail += n;
       output->head += n;
+      
+      // Update samples processed metric
+      atomic_fetch_add((atomic_size_t*)&f->base.metrics.samples_processed, n);
+      
+      // Preserve timing information
+      if (output->head == n) {  // First samples in this batch
+        output->t_ns = input->t_ns;
+        output->period_ns = input->period_ns;
+      }
     }
   }
 
@@ -68,6 +77,83 @@ void* map_worker(void* arg)
   if (output && output->head > 0) bb_submit(f->base.sinks[0], 0);
 
   return NULL;
+}
+
+/* Map-specific operations */
+static Bp_EC map_flush(Filter_t* self) {
+  // Submit any pending output batches
+  if (self->sinks[0] != NULL) {
+    Batch_t* current_batch = bb_get_head(self->sinks[0]);
+    if (current_batch && current_batch->head > 0) {
+      return bb_submit(self->sinks[0], 0);
+    }
+  }
+  
+  return Bp_EC_OK;
+}
+
+static Bp_EC map_describe(Filter_t* self, char* buffer, size_t buffer_size) {
+  Map_filt_t* map = (Map_filt_t*)self;
+  
+  if (buffer == NULL) {
+    return Bp_EC_NULL_POINTER;
+  }
+  
+  snprintf(buffer, buffer_size, 
+           "Map Filter: %s\n"
+           "  Input dtype: %d\n"
+           "  Map function: %p\n"
+           "  Running: %s\n"
+           "  Batches processed: %zu",
+           self->name,
+           self->input_buffers[0].dtype,
+           (void*)map->map_fcn,
+           self->running ? "true" : "false",
+           self->metrics.n_batches);
+  
+  return Bp_EC_OK;
+}
+
+static Bp_EC map_get_stats(Filter_t* self, void* stats_out) {
+  Filt_metrics* stats = (Filt_metrics*)stats_out;
+  
+  if (stats_out == NULL) {
+    return Bp_EC_NULL_POINTER;
+  }
+  
+  *stats = self->metrics;
+  
+  return Bp_EC_OK;
+}
+
+static Bp_EC map_dump_state(Filter_t* self, char* buffer, size_t buffer_size) {
+  Map_filt_t* map = (Map_filt_t*)self;
+  
+  if (buffer == NULL) {
+    return Bp_EC_NULL_POINTER;
+  }
+  
+  snprintf(buffer, buffer_size,
+           "Map Filter State: %s\n"
+           "  Filter type: %d\n"
+           "  Running: %s\n"
+           "  Batches processed: %zu\n"
+           "  Input buffer occupancy: %zu\n"
+           "  Output buffer occupancy: %zu\n"
+           "  Map function: %p\n"
+           "  Data width: %zu bytes\n"
+           "  Timeout: %lu us",
+           self->name,
+           self->filt_type,
+           self->running ? "true" : "false",
+           self->metrics.n_batches,
+           bb_occupancy(&self->input_buffers[0]),
+           self->sinks[0] ? bb_occupancy(self->sinks[0]) : 0,
+           (void*)map->map_fcn,
+           self->data_width,
+           self->timeout_us);
+  
+  return Bp_EC_OK;
 }
 
 Bp_EC map_init(Map_filt_t* f, Map_config_t config)
@@ -98,6 +184,12 @@ Bp_EC map_init(Map_filt_t* f, Map_config_t config)
     return Bp_EC_INVALID_CONFIG;
   }
   f->map_fcn = config.map_fcn;
+  
+  // Override specific operations with map-specific implementations
+  f->base.ops.flush = map_flush;
+  f->base.ops.describe = map_describe;
+  f->base.ops.get_stats = map_get_stats;
+  f->base.ops.dump_state = map_dump_state;
 
   return Bp_EC_OK;
 };

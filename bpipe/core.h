@@ -62,6 +62,44 @@ typedef enum _CORE_FILT_T {
 /* Forward declaration */
 struct _Filter_t;
 
+/* Filter health states */
+typedef enum _FilterHealth_t {
+  FILTER_HEALTH_HEALTHY = 0,
+  FILTER_HEALTH_DEGRADED,
+  FILTER_HEALTH_FAILED,
+  FILTER_HEALTH_UNKNOWN
+} FilterHealth_t;
+
+/* Filter operations interface */
+typedef struct _FilterOps {
+  /* Lifecycle operations */
+  Bp_EC (*start)(struct _Filter_t* self);
+  Bp_EC (*stop)(struct _Filter_t* self);
+  Bp_EC (*deinit)(struct _Filter_t* self);
+  
+  /* Data flow operations */
+  Bp_EC (*flush)(struct _Filter_t* self);
+  Bp_EC (*drain)(struct _Filter_t* self);
+  Bp_EC (*reset)(struct _Filter_t* self);
+  
+  /* Diagnostics operations */
+  Bp_EC (*get_stats)(struct _Filter_t* self, void* stats_out);
+  FilterHealth_t (*get_health)(struct _Filter_t* self);
+  size_t (*get_backlog)(struct _Filter_t* self);
+  
+  /* Configuration operations */
+  Bp_EC (*reconfigure)(struct _Filter_t* self, void* config);
+  Bp_EC (*validate_connection)(struct _Filter_t* self, size_t sink_idx);
+  
+  /* Debugging operations */
+  Bp_EC (*describe)(struct _Filter_t* self, char* buffer, size_t buffer_size);
+  Bp_EC (*dump_state)(struct _Filter_t* self, char* buffer, size_t buffer_size);
+  
+  /* Error handling */
+  Bp_EC (*handle_error)(struct _Filter_t* self, Bp_EC error);
+  Bp_EC (*recover)(struct _Filter_t* self);
+} FilterOps;
+
 /* Transform function signature
  * Note: Transforms should only write to output_batches[0]. The framework
  * automatically distributes data to additional outputs when n_outputs > 1.
@@ -83,6 +121,7 @@ typedef struct _Core_filt_config_t {
 
 typedef struct _Filt_metrics {
   size_t n_batches;
+  size_t samples_processed;
 } Filt_metrics;
 
 typedef struct _Filter_t {
@@ -103,6 +142,7 @@ typedef struct _Filter_t {
   pthread_mutex_t filter_mutex;  // Protects sinks arrays
   Batch_buff_t input_buffers[MAX_INPUTS];
   Batch_buff_t *sinks[MAX_SINKS];
+  FilterOps ops;  // Embedded operations interface
 } Filter_t;
 
 Worker_t matched_passthroug;
@@ -121,5 +161,19 @@ Bp_EC filt_sink_disconnect(Filter_t *f, size_t sink_idx);
 /* Filter lifecycle functions */
 Bp_EC filt_start(Filter_t *filter);
 Bp_EC filt_stop(Filter_t *filter);
+
+/* Filter operations API */
+Bp_EC filt_flush(Filter_t *filter);
+Bp_EC filt_drain(Filter_t *filter);
+Bp_EC filt_reset(Filter_t *filter);
+Bp_EC filt_get_stats(Filter_t *filter, void* stats_out);
+FilterHealth_t filt_get_health(Filter_t *filter);
+size_t filt_get_backlog(Filter_t *filter);
+Bp_EC filt_reconfigure(Filter_t *filter, void* config);
+Bp_EC filt_validate_connection(Filter_t *filter, size_t sink_idx);
+Bp_EC filt_describe(Filter_t *filter, char* buffer, size_t buffer_size);
+Bp_EC filt_dump_state(Filter_t *filter, char* buffer, size_t buffer_size);
+Bp_EC filt_handle_error(Filter_t *filter, Bp_EC error);
+Bp_EC filt_recover(Filter_t *filter);
 
 #endif /* BPIPE_CORE_H */
