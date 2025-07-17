@@ -8,6 +8,7 @@ SRC_DIR=bpipe
 TEST_SRC_DIR=tests
 BUILD_DIR=build
 UNITY_SRC=lib/Unity/src/unity.c
+DEP_FLAGS = -MMD -MP
 
 # Find all test source files
 TEST_SOURCES=$(wildcard $(TEST_SRC_DIR)/test_*.c)
@@ -27,13 +28,13 @@ $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
 
 $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c | $(BUILD_DIR)
-	$(CC) $(CFLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) $(DEP_FLAGS) -c -o $@ $<
 
 $(BUILD_DIR)/%.o: $(TEST_SRC_DIR)/%.c | $(BUILD_DIR)
-	$(CC) $(CFLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) $(DEP_FLAGS) -c -o $@ $<
 
 $(BUILD_DIR)/unity.o: $(UNITY_SRC) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) -c -o $@ $<
+	$(CC) $(CFLAGS) $(DEP_FLAGS) -c -o $@ $<
 
 # Generic rule for building test executables
 # Each test depends on all object files from src dir, unity, and its own object file
@@ -120,3 +121,6 @@ hello:
 
 gdb:
 	gdb --args python3-dbg demo_signal_to_plot.py
+
+# Include dependency files
+-include $(BUILD_DIR)/*.d
