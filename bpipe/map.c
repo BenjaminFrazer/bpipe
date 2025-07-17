@@ -34,7 +34,7 @@ void* map_worker(void* arg){
 	while (atomic_load(&f->base.running)) {
 		// Get new input batch if needed
 		if (NEEDS_NEW_BATCH(input)) {
-			if (input && (err = bb_del(&f->base.input_buffers[0])) != Bp_EC_OK)
+			if (input && (err = bb_del_tail(&f->base.input_buffers[0])) != Bp_EC_OK)
 				break;
 			if (!(input = bb_get_tail(&f->base.input_buffers[0], f->base.timeout_us, &err)))
 				break;

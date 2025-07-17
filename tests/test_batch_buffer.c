@@ -93,7 +93,7 @@ void test_fill_and_empty(void)
 			count++;
 		}
 		// Delete the batch to advance tail
-		Bp_EC rc = bb_del(&buff_block);
+		Bp_EC rc = bb_del_tail(&buff_block);
 		TEST_ASSERT_EQUAL_INT_MESSAGE(Bp_EC_OK, rc, "Failed to delete batch");
 	}
 	
