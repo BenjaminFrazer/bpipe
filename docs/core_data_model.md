@@ -6,49 +6,72 @@ Bpipe is a real-time telemetry data processing framework built around a simple y
 
 ## Core Concepts
 
+### Filter Types
+
+The framework supports various filter types defined in `CORE_FILT_T`:
+- **FILT_T_MAP** - Maps a function across all input samples to output samples
+- **FILT_T_MATCHED_PASSTHROUGH** - Passes data through unchanged
+- **FILT_T_CAST** - Converts between data types
+- **FILT_T_MAP_STATE** - Map with state scratchpad
+- **FILT_T_MAP_MP** - Parallel batch processing
+- **FILT_T_SIMO_TEE** - Single input to multiple outputs
+- **FILT_T_MIMO_SYNCRONISER** - Aligns batches to same sample times
+- **FILT_T_MISO_ELEMENTWISE** - Multiple inputs to single output
+- **FILT_T_OVERLAP_BATCHES** - Creates overlapping regions for convolution
+
 ### 1. Filters (`Filter_t`)
 
 Filters are the primary processing units in bpipe. Each filter:
 - **Owns its input buffers** - ensuring clear lifecycle management
 - **Runs in its own thread** - enabling parallel processing
-- **Transforms data** - via a user-defined transform function
+- **Transforms data** - via a user-defined worker function
 - **Pushes to sink buffers** - maintaining a push-based data flow
 
 ```c
 // Filter initialization with configuration
-BpFilterConfig config = {
-    .transform = MyTransformFunction,
-    .dtype = DTYPE_FLOAT,
-    .buffer_size = 128,
-    .batch_size = 64,
-    .number_of_batches_exponent = 6,
-    .number_of_input_buffers = 1
+Core_filt_config_t config = {
+    .name = "my_filter",
+    .filt_type = FILT_T_MAP,
+    .size = sizeof(Filter_t),
+    .n_inputs = 1,
+    .max_supported_sinks = MAX_SINKS,
+    .buff_config = {
+        .dtype = DTYPE_FLOAT,
+        .batch_capacity_expo = 6,    // 64 samples per batch
+        .ring_capacity_expo = 8,     // 256 batches in ring
+        .overflow_behaviour = OVERFLOW_BLOCK
+    },
+    .timeout_us = 1000000,  // 1 second timeout
+    .worker = MyWorkerFunction
 };
-BpFilter_Init(&filter, &config);
+filt_init(&filter, config);
 ```
 
-### 2. Batch Buffers (`Bp_BatchBuffer_t`)
+### 2. Batch Buffers (`Batch_buff_t`)
 
 Buffers are self-contained ring buffers that:
 - **Store batches of data** - not individual samples
 - **Handle synchronization** - with built-in mutex and condition variables
 - **Manage overflow** - via configurable block/drop behavior
 - **Operate independently** - all operations work on buffer pointers
+- **Optimize for cache performance** - producer/consumer fields in separate cache lines
 
 ```c
-// Direct buffer operations (proposed enhancement)
-Bp_Batch_t batch = BpBatchBuffer_Allocate(&filter.input_buffers[0]);
+// Direct buffer operations
+Batch_t *batch = bb_get_head(&filter.input_buffers[0]);
 // Process batch...
-BpBatchBuffer_Submit(&filter.input_buffers[0], &batch);
+bb_submit(&filter.input_buffers[0], timeout_us);
 ```
 
-### 3. Batches (`Bp_Batch_t`)
+### 3. Batches (`Batch_t`)
 
 Batches are the unit of data transfer containing:
 - **Data pointer** - to the actual samples
-- **Metadata** - timestamps, sequence numbers, data type
+- **Metadata** - timestamps (t_ns), period between samples (period_ns)
 - **Head/tail indices** - for partial batch processing
 - **Error codes** - including completion signals
+- **Batch ID** - for tracking and debugging
+- **Optional metadata pointer** - for additional context
 
 #### Fixed-Rate Batch Design
 
@@ -108,12 +131,11 @@ A key architectural decision in bpipe is the **unidirectional reference model** 
 **Rationale:**
 ```c
 // Simple connection model
-Bp_add_sink(&source, &sink);        // Source stores reference to sink
-Bp_add_source(&sink, &source);      // Sink only increments n_input_buffers count
+filt_sink_connect(&source, 0, &sink.input_buffers[0]);  // Source stores reference to sink's input buffer
 
 // Worker thread only needs buffer count, not source references
 for (int i = 0; i < filter->n_input_buffers; i++) {
-    input_batches[i] = Bp_head(filter, &filter->input_buffers[i]);
+    input_batches[i] = bb_get_tail(&filter->input_buffers[i], timeout_us, &err);
 }
 ```
 
@@ -140,18 +162,18 @@ Key principles:
 
 ```c
 // Create pipeline: source -> transform -> sink
-BpFilter_Init(&source, &source_config);
-BpFilter_Init(&transform, &transform_config);  
-BpFilter_Init(&sink, &sink_config);
+filt_init(&source, source_config);
+filt_init(&transform, transform_config);  
+filt_init(&sink, sink_config);
 
 // Connect: sources get references to sink input buffers
-Bp_add_sink(&source, &transform);      // source pushes to transform.input_buffers[0]
-Bp_add_sink(&transform, &sink);        // transform pushes to sink.input_buffers[0]
+filt_sink_connect(&source, 0, &transform.input_buffers[0]);      // source pushes to transform.input_buffers[0]
+filt_sink_connect(&transform, 0, &sink.input_buffers[0]);        // transform pushes to sink.input_buffers[0]
 
 // Start processing
-BpFilter_Start(&source);
-BpFilter_Start(&transform);
-BpFilter_Start(&sink);
+filt_start(&source);
+filt_start(&transform);
+filt_start(&sink);
 ```
 
 ## Buffer Management
@@ -191,9 +213,10 @@ Thread safety is ensured by:
 ## Type System
 
 Strong typing throughout:
-- **Data types** - DTYPE_FLOAT, DTYPE_INT, DTYPE_UNSIGNED
+- **Data types** - DTYPE_FLOAT, DTYPE_I32, DTYPE_U32
 - **Type checking** - at connection time with detailed errors
-- **Consistent sizing** - data_width derived from type
+- **Consistent sizing** - data_width derived from type via bb_getdatawidth()
+- **Clear type enumeration** - with DTYPE_NDEF for uninitialized and DTYPE_MAX for bounds checking
 
 ## Performance Considerations
 
@@ -202,7 +225,9 @@ The architecture optimizes for:
 - **Batch processing** - amortizes synchronization costs
 - **Zero-copy potential** - batches reference buffer memory directly
 - **Inline operations** - critical path functions are header-inlined
-- **Lock-free reads** - where possible in hot paths
+- **Lock-free operations** - fast path checks (bb_isempy_lockfree, bb_isfull_lockfree)
+- **False sharing prevention** - producer/consumer fields in separate cache lines (64-byte aligned)
+- **Atomic operations** - for head/tail indices with appropriate memory ordering
 
 ## Usage Patterns
 
@@ -240,6 +265,8 @@ source2 -> filter2 -> filter3
 5. **Configuration structs** - Extensible initialization without API breaks
 6. **Fixed-rate batches** - Optimizes for regular data, handles irregular data correctly
 7. **Unidirectional connections** - Sources track sinks, sinks track input count only
+8. **Worker-based architecture** - Each filter runs a Worker_t function in its own thread
+9. **Exponential sizing** - Buffer capacities use power-of-2 sizes for efficient modulo operations
 
 ### Impact on Filter Design
 
