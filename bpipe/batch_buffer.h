@@ -206,7 +206,7 @@ Batch_t* bb_get_tail(Batch_buff_t *buff, unsigned long timeout_us, Bp_EC* err);
 
 /* Delete oldest batch and increment the tail pointer marking the slot as
  * populateable.*/
-Bp_EC bb_del(Batch_buff_t *buff);
+Bp_EC bb_del_tail(Batch_buff_t *buff);
 
 /* logically bb_submit increments the active slot effectively marking the
  * current slot as consumable. Dropping behaviour: IF the buffer is full and

@@ -1,12 +1,12 @@
 #include "batch_buffer.h"
-#include "bperr.h"
-#include <stdint.h>
-#include <string.h>
 #include <errno.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
 #include <unistd.h>
+#include "bperr.h"
 
 size_t _data_size_lut[] = {
     [DTYPE_NDEF] = 0,
@@ -21,7 +21,8 @@ size_t _data_size_lut[] = {
  * @return Bp_EC_OK if space available, Bp_EC_TIMEOUT on timeout, Bp_EC_STOPPED
  * if buffer stopped
  */
-Bp_EC bb_await_notfull(Batch_buff_t *buff, long long timeout_us) {
+Bp_EC bb_await_notfull(Batch_buff_t *buff, long long timeout_us)
+{
   Bp_EC ec = Bp_EC_OK;
   pthread_mutex_lock(&buff->mutex);
 
@@ -32,8 +33,8 @@ Bp_EC bb_await_notfull(Batch_buff_t *buff, long long timeout_us) {
     /* DEBUG: Uncomment to debug timeout issues
     long long now = now_ns(CLOCK_REALTIME);
     long long abs_ns = abs_timeout.tv_sec * 1000000000LL + abs_timeout.tv_nsec;
-    fprintf(stderr, "bb_await_notfull: timeout_us=%lld, wait_ns=%lld, current_time=%lld, abs_time=%lld\n", 
-            timeout_us, abs_ns - now, now, abs_ns);
+    fprintf(stderr, "bb_await_notfull: timeout_us=%lld, wait_ns=%lld,
+    current_time=%lld, abs_time=%lld\n", timeout_us, abs_ns - now, now, abs_ns);
     */
   }
 
@@ -42,7 +43,8 @@ Bp_EC bb_await_notfull(Batch_buff_t *buff, long long timeout_us) {
       // Wait indefinitely
       pthread_cond_wait(&buff->not_full, &buff->mutex);
     } else {
-      int ret = pthread_cond_timedwait(&buff->not_full, &buff->mutex, &abs_timeout);
+      int ret =
+          pthread_cond_timedwait(&buff->not_full, &buff->mutex, &abs_timeout);
       if (ret == ETIMEDOUT) {
         ec = Bp_EC_TIMEOUT;
         break;
@@ -51,20 +53,22 @@ Bp_EC bb_await_notfull(Batch_buff_t *buff, long long timeout_us) {
         ec = Bp_EC_TIMEOUT;
         break;
       }
-      /* Continue looping on spurious wakeup (ret == 0 but condition still true) */
+      /* Continue looping on spurious wakeup (ret == 0 but condition still true)
+       */
     }
   }
-  
+
   /* Check why we exited the loop */
   if (ec == Bp_EC_OK && !atomic_load(&buff->running)) {
     ec = Bp_EC_STOPPED;
   }
-  
+
   pthread_mutex_unlock(&buff->mutex);
   return ec;
 }
 
-Bp_EC bb_await_notempty(Batch_buff_t *buff, long long timeout_us) {
+Bp_EC bb_await_notempty(Batch_buff_t *buff, long long timeout_us)
+{
   Bp_EC ec = Bp_EC_OK;
   pthread_mutex_lock(&buff->mutex);
 
@@ -75,51 +79,56 @@ Bp_EC bb_await_notempty(Batch_buff_t *buff, long long timeout_us) {
   }
 
   while (bb_isempy(buff) && atomic_load(&buff->running)) {
+    int ret = 0;
     if (timeout_us == 0) {
       // Wait indefinitely
-      pthread_cond_wait(&buff->not_empty, &buff->mutex);
+      ret = pthread_cond_wait(&buff->not_empty, &buff->mutex);
     } else {
-      int ret = pthread_cond_timedwait(&buff->not_empty, &buff->mutex, &abs_timeout);
-      if (ret == ETIMEDOUT) {
-        ec = Bp_EC_TIMEOUT;
-        break;
-      } else if (ret != 0) {
-        /* Some other error occurred - treat as timeout for safety */
-        ec = Bp_EC_TIMEOUT;
-        break;
-      }
-      /* Continue looping on spurious wakeup (ret == 0 but condition still true) */
+      ret =
+          pthread_cond_timedwait(&buff->not_empty, &buff->mutex, &abs_timeout);
     }
+    if (ret == ETIMEDOUT) {
+      ec = Bp_EC_TIMEOUT;
+      break;
+    } else if (ret != 0) {
+      /* Some other error occurred - treat as timeout for safety */
+      ec = Bp_EC_PTHREAD_UNKOWN;
+      break;
+    }
+    /* Continue looping on spurious wakeup (ret == 0 but condition still true)
+     */
   }
-  
+
   /* Check why we exited the loop */
   if (ec == Bp_EC_OK && !atomic_load(&buff->running)) {
     ec = Bp_EC_STOPPED;
   }
-  
+
   pthread_mutex_unlock(&buff->mutex);
   return ec;
 }
 
-/* Get the oldest consumable data batch. Doesn't change head or tail idx. Returns NULL on timeout. */
-Batch_t* bb_get_tail(Batch_buff_t *buff, unsigned long timeout_us, Bp_EC* err) {
+/* Get the oldest consumable data batch. Doesn't change head or tail idx.
+ * Returns NULL on timeout. */
+Batch_t *bb_get_tail(Batch_buff_t *buff, unsigned long timeout_us, Bp_EC *err)
+{
   /* Fast path - check if data available without locks */
   if (!bb_isempy_lockfree(buff)) {
     size_t idx = bb_get_tail_idx(buff);
     /* Memory fence ensures we see the batch data written by producer */
     atomic_thread_fence(memory_order_acquire);
-		*err = Bp_EC_OK;
+    *err = Bp_EC_OK;
     return &buff->batch_ring[idx];
   }
 
   /* Slow path - wait for data */
   Bp_EC rc = bb_await_notempty(buff, timeout_us);
-	if (err != NULL) {
-		*err = rc;
-	}
+  if (err != NULL) {
+    *err = rc;
+  }
   /* Return NULL on error.*/
   if (rc != Bp_EC_OK) {
-		return NULL;
+    return NULL;
   }
   size_t idx = bb_get_tail_idx(buff);
   return &buff->batch_ring[idx];
@@ -128,7 +137,8 @@ Batch_t* bb_get_tail(Batch_buff_t *buff, unsigned long timeout_us, Bp_EC* err) {
 /* Delete oldest batch and increment the tail pointer marking the slot as
  * populateable. Fails if run on an empty buffer.
  */
-Bp_EC bb_del(Batch_buff_t *buff) {
+Bp_EC bb_del_tail(Batch_buff_t *buff)
+{
   /* Fast path - check without locks */
   size_t current_head =
       atomic_load_explicit(&buff->producer.head, memory_order_acquire);
@@ -137,15 +147,16 @@ Bp_EC bb_del(Batch_buff_t *buff) {
 
   if (current_tail == current_head) {
     /* Buffer is empty - deletion isn't possible. */
-      return Bp_EC_BUFFER_EMPTY;
-    }
+    return Bp_EC_BUFFER_EMPTY;
+  }
 
   /* Not empty, increment tail */
   size_t new_tail = (current_tail + 1) & bb_modulo_mask(buff);
   atomic_store_explicit(&buff->consumer.tail, new_tail, memory_order_release);
 
-  /* Signal producer that buffer isn't full. Mutex does not need to be aquired for this step given SPSC*/
-	pthread_cond_signal(&buff->not_full);
+  /* Signal producer that buffer isn't full. Mutex does not need to be aquired
+   * for this step given SPSC*/
+  pthread_cond_signal(&buff->not_full);
 
   return Bp_EC_OK;
 }
@@ -161,7 +172,8 @@ Bp_EC bb_del(Batch_buff_t *buff) {
  *   If the buffer is full and overflow behaviour == OVERFLOW_BLOCK, this
  * operation will block until space is available.
  */
-Bp_EC bb_submit(Batch_buff_t *buff, unsigned long timeout_us) {
+Bp_EC bb_submit(Batch_buff_t *buff, unsigned long timeout_us)
+{
   /* Fast path - check if full without locks */
   size_t current_head =
       atomic_load_explicit(&buff->producer.head, memory_order_relaxed);
@@ -193,7 +205,7 @@ Bp_EC bb_submit(Batch_buff_t *buff, unsigned long timeout_us) {
   atomic_store_explicit(&buff->producer.head, next_head, memory_order_release);
   atomic_fetch_add(&buff->producer.total_batches, 1);
 
-	pthread_cond_signal(&buff->not_empty);
+  pthread_cond_signal(&buff->not_empty);
 
   return Bp_EC_OK;
 }
@@ -202,74 +214,76 @@ Bp_EC bb_submit(Batch_buff_t *buff, unsigned long timeout_us) {
  * @param buff Buffer to initialize
  * @param name Buffer name (e.g., "filter1.input[0]")
  * @param dtype Data type for buffer elements
- * @param ring_capacity_expo Ring buffer capacity as power of 2 (e.g., 10 = 1024 slots)
- * @param batch_capacity_expo Batch size as power of 2 (e.g., 8 = 256 elements per batch)
+ * @param ring_capacity_expo Ring buffer capacity as power of 2 (e.g., 10 = 1024
+ * slots)
+ * @param batch_capacity_expo Batch size as power of 2 (e.g., 8 = 256 elements
+ * per batch)
  * @param overflow_behaviour How to handle buffer overflow (BLOCK or DROP)
  * @param timeout_us Default timeout in microseconds for blocking operations
  * @return Bp_EC_OK on success, error code on failure
  */
-Bp_EC bb_init(Batch_buff_t *buff, const char *name, BatchBuffer_config config) {
-  
+Bp_EC bb_init(Batch_buff_t *buff, const char *name, BatchBuffer_config config)
+{
   if (!buff) {
     return Bp_EC_NULL_FILTER;
   }
-  
+
   if (config.dtype >= DTYPE_MAX || config.dtype == DTYPE_NDEF) {
     return Bp_EC_INVALID_DTYPE;
   }
-  
+
   if (config.ring_capacity_expo > 30 || config.batch_capacity_expo > 20) {
     return Bp_EC_INVALID_CONFIG;
   }
-  
-	if (config.overflow_behaviour> OVERFLOW_MAX){
-		return Bp_EC_INVALID_CONFIG;
-	}
+
+  if (config.overflow_behaviour > OVERFLOW_MAX) {
+    return Bp_EC_INVALID_CONFIG;
+  }
   /* Clear the structure */
   memset(buff, 0, sizeof(Batch_buff_t));
-  
+
   /* Copy name */
   strncpy(buff->name, name ? name : "unnamed", sizeof(buff->name) - 1);
   buff->name[sizeof(buff->name) - 1] = '\0';
-  
+
   /* Set configuration */
   buff->dtype = config.dtype;
   buff->ring_capacity_expo = config.ring_capacity_expo;
   buff->batch_capacity_expo = config.batch_capacity_expo;
   buff->overflow_behaviour = config.overflow_behaviour;
-  
+
   /* Calculate sizes */
   size_t ring_capacity = 1UL << config.ring_capacity_expo;
   size_t batch_capacity = 1UL << config.batch_capacity_expo;
   size_t data_width = bb_getdatawidth(config.dtype);
-  
+
   /* Allocate ring buffers */
   buff->batch_ring = calloc(ring_capacity, sizeof(Batch_t));
   if (!buff->batch_ring) {
     return Bp_EC_MALLOC_FAIL;
   }
-  
+
   buff->data_ring = calloc(ring_capacity * batch_capacity, data_width);
   if (!buff->data_ring) {
     free(buff->batch_ring);
     buff->batch_ring = NULL;
     return Bp_EC_MALLOC_FAIL;
   }
-  
+
   /* Initialize synchronization primitives */
   if (pthread_mutex_init(&buff->mutex, NULL) != 0) {
     free(buff->data_ring);
     free(buff->batch_ring);
     return Bp_EC_MUTEX_INIT_FAIL;
   }
-  
+
   if (pthread_cond_init(&buff->not_empty, NULL) != 0) {
     pthread_mutex_destroy(&buff->mutex);
     free(buff->data_ring);
     free(buff->batch_ring);
     return Bp_EC_COND_INIT_FAIL;
   }
-  
+
   if (pthread_cond_init(&buff->not_full, NULL) != 0) {
     pthread_cond_destroy(&buff->not_empty);
     pthread_mutex_destroy(&buff->mutex);
@@ -277,7 +291,7 @@ Bp_EC bb_init(Batch_buff_t *buff, const char *name, BatchBuffer_config config) {
     free(buff->batch_ring);
     return Bp_EC_COND_INIT_FAIL;
   }
-  
+
   /* Initialize atomic variables */
   atomic_store(&buff->producer.head, 0);
   atomic_store(&buff->consumer.tail, 0);
@@ -285,14 +299,15 @@ Bp_EC bb_init(Batch_buff_t *buff, const char *name, BatchBuffer_config config) {
   atomic_store(&buff->producer.dropped_batches, 0);
   atomic_store(&buff->running, true);
 
-	/* Populate key batch data*/
-	for (int i = 0; i< bb_n_batches(buff); i++) {
-		buff->batch_ring[i].tail=0;
-		buff->batch_ring[i].head=0;
-		buff->batch_ring[i].t_ns=-1;
-		buff->batch_ring[i].data = (char*)buff->data_ring + (bb_batch_size(buff) * data_width * i);
-	}
-  
+  /* Populate key batch data*/
+  for (int i = 0; i < bb_n_batches(buff); i++) {
+    buff->batch_ring[i].tail = 0;
+    buff->batch_ring[i].head = 0;
+    buff->batch_ring[i].t_ns = -1;
+    buff->batch_ring[i].data =
+        (char *) buff->data_ring + (bb_batch_size(buff) * data_width * i);
+  }
+
   return Bp_EC_OK;
 }
 
@@ -300,46 +315,47 @@ Bp_EC bb_init(Batch_buff_t *buff, const char *name, BatchBuffer_config config) {
  * @param buff Buffer to deinitialize
  * @return Bp_EC_OK on success, error code on failure
  */
-Bp_EC bb_deinit(Batch_buff_t *buff) {
+Bp_EC bb_deinit(Batch_buff_t *buff)
+{
   if (!buff) {
     return Bp_EC_NULL_FILTER;
   }
-  
+
   /* Stop the buffer to wake any waiting threads */
   atomic_store(&buff->running, false);
-  
+
   /* Wake up any threads blocked on conditions */
   pthread_mutex_lock(&buff->mutex);
   pthread_cond_broadcast(&buff->not_empty);
   pthread_cond_broadcast(&buff->not_full);
   pthread_mutex_unlock(&buff->mutex);
-  
+
   /* Give threads a moment to exit their wait states */
   struct timespec delay = {
-    .tv_sec = 0,
-    .tv_nsec = 1000000  /* 1 millisecond = 1,000,000 nanoseconds */
+      .tv_sec = 0,
+      .tv_nsec = 1000000 /* 1 millisecond = 1,000,000 nanoseconds */
   };
   nanosleep(&delay, NULL);
-  
+
   /* Destroy synchronization primitives */
   pthread_cond_destroy(&buff->not_full);
   pthread_cond_destroy(&buff->not_empty);
   pthread_mutex_destroy(&buff->mutex);
-  
+
   /* Free memory */
   if (buff->data_ring) {
     free(buff->data_ring);
     buff->data_ring = NULL;
   }
-  
+
   if (buff->batch_ring) {
     free(buff->batch_ring);
     buff->batch_ring = NULL;
   }
-  
+
   /* Clear the structure */
   memset(buff, 0, sizeof(Batch_buff_t));
-  
+
   return Bp_EC_OK;
 }
 
@@ -347,11 +363,12 @@ Bp_EC bb_deinit(Batch_buff_t *buff) {
  * @param buff Buffer to start
  * @return Bp_EC_OK on success
  */
-Bp_EC bb_start(Batch_buff_t *buff) {
+Bp_EC bb_start(Batch_buff_t *buff)
+{
   if (!buff) {
     return Bp_EC_NULL_FILTER;
   }
-  
+
   atomic_store(&buff->running, true);
   return Bp_EC_OK;
 }
@@ -360,18 +377,19 @@ Bp_EC bb_start(Batch_buff_t *buff) {
  * @param buff Buffer to stop
  * @return Bp_EC_OK on success
  */
-Bp_EC bb_stop(Batch_buff_t *buff) {
+Bp_EC bb_stop(Batch_buff_t *buff)
+{
   if (!buff) {
     return Bp_EC_NULL_FILTER;
   }
-  
+
   atomic_store(&buff->running, false);
-  
+
   /* Wake up any waiting threads */
   pthread_mutex_lock(&buff->mutex);
   pthread_cond_broadcast(&buff->not_empty);
   pthread_cond_broadcast(&buff->not_full);
   pthread_mutex_unlock(&buff->mutex);
-  
+
   return Bp_EC_OK;
 }
