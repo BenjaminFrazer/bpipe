@@ -18,6 +18,10 @@ typedef struct _Tee_filt_t {
     bool copy_data;
     size_t n_outputs;
     size_t successful_writes[MAX_SINKS];       // Track successful writes per output
+    
+    // State for handling variable batch sizes
+    Batch_t* output_batches[MAX_SINKS];        // Current output batch for each sink
+    size_t input_position;                     // Current position in input batch
 } Tee_filt_t;
 
 Bp_EC tee_init(Tee_filt_t* tee, Tee_config_t config);

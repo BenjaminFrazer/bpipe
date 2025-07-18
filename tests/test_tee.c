@@ -12,10 +12,9 @@ struct timespec ts_1ms = {.tv_nsec = 1000000};      //
 struct timespec ts_10ms = {.tv_nsec = 10000000};    //
 struct timespec ts_100ms = {.tv_nsec = 100000000};  //
 
-Bp_EC _ec;
 #define CHECK_ERR(ERR)                                          \
   do {                                                          \
-    _ec = ERR;                                                  \
+    Bp_EC _ec = ERR;                                            \
     TEST_ASSERT_EQUAL_INT_MESSAGE(Bp_EC_OK, _ec, err_lut[_ec]); \
   } while (false);
 
@@ -28,7 +27,7 @@ static void verify_sequence(Batch_buff_t* buffer, uint32_t start_value,
   Bp_EC err;
 
   while (total_samples < expected_samples) {
-    Batch_t* batch = bb_get_tail(buffer, 1000000, &err);  // Non-blocking check
+    Batch_t* batch = bb_get_tail(buffer, 10000, &err);  // Non-blocking check
     // bb_print(buffer);
     CHECK_ERR(err);
     if (!batch) {
@@ -53,6 +52,92 @@ static void verify_sequence(Batch_buff_t* buffer, uint32_t start_value,
   if (expected_samples > 0 && start_value == 0) {
     TEST_ASSERT_EQUAL(expected_samples - 1, current - 1);
   }
+}
+
+// Helper function to verify truncated data from variable batch sizes
+static void verify_truncated_sequence(Batch_buff_t* buffer,
+                                     size_t expected_batches,
+                                     size_t expected_batch_size,
+                                     size_t input_batch_size)
+{
+  size_t batch_count = 0;
+  Bp_EC err;
+  
+  for (size_t b = 0; b < expected_batches; b++) {
+    Batch_t* batch = bb_get_tail(buffer, 1000000, &err);
+    CHECK_ERR(err);
+    TEST_ASSERT_NOT_NULL(batch);
+    
+    // Each output batch should have expected_batch_size samples
+    TEST_ASSERT_EQUAL(expected_batch_size, batch->head);
+    
+    // Data should be the first expected_batch_size samples from each input batch
+    float* data = (float*) batch->data;
+    uint32_t expected_start = b * input_batch_size;
+    
+    for (size_t i = 0; i < batch->head; i++) {
+      uint32_t expected = expected_start + i;
+      TEST_ASSERT_EQUAL_FLOAT((float) expected, data[i]);
+    }
+    
+    batch_count++;
+    bb_del_tail(buffer);
+  }
+  
+  // Should have consumed all batches
+  TEST_ASSERT_EQUAL(expected_batches, batch_count);
+}
+
+// Helper function to verify sequence with expected batch sizes
+static void verify_sequence_with_batch_size(Batch_buff_t* buffer,
+                                            uint32_t start_value,
+                                            size_t expected_samples,
+                                            size_t expected_batch_size)
+{
+  uint32_t current = start_value;
+  size_t total_samples = 0;
+  size_t batch_count = 0;
+  Bp_EC err;
+
+  while (total_samples < expected_samples) {
+    Batch_t* batch = bb_get_tail(buffer, 1000000, &err);
+    CHECK_ERR(err);
+    if (!batch) {
+      printf("  No batch available, total_samples=%zu, expected=%zu\n",
+             total_samples, expected_samples);
+      break;
+    }
+
+    // Check batch size (except possibly the last batch)
+    if (total_samples + batch->head < expected_samples) {
+      // Not the last batch - should be full size
+      if (batch->head != expected_batch_size) {
+        printf("  Batch %zu has %zu samples, expected %zu\n", batch_count,
+               batch->head, expected_batch_size);
+      }
+      TEST_ASSERT_EQUAL(expected_batch_size, batch->head);
+    } else {
+      // Last batch - might be partial
+      size_t expected_last = expected_samples - total_samples;
+      if (batch->head != expected_last) {
+        printf("  Last batch has %zu samples, expected %zu\n", batch->head,
+               expected_last);
+      }
+      TEST_ASSERT_EQUAL(expected_last, batch->head);
+    }
+
+    float* data = (float*) batch->data;
+    for (size_t i = 0; i < batch->head; i++) {
+      TEST_ASSERT_EQUAL_FLOAT((float) current, data[i]);
+      current++;
+      total_samples++;
+    }
+
+    batch_count++;
+    bb_del_tail(buffer);
+  }
+
+  TEST_ASSERT_EQUAL(expected_samples, total_samples);
 }
 
 // Helper function to fill buffer with sequential data
@@ -182,14 +267,11 @@ void test_tee_dual_output(void)
   fflush(stdout);
 
   // Check metrics - we submitted 5 batches
-  printf("Checking metrics...\n");
-  fflush(stdout);
-  printf("  Output0 writes: %zu\n", tee.successful_writes[0]);
-  printf("  Output1 writes: %zu\n", tee.successful_writes[1]);
   TEST_ASSERT_EQUAL(5, tee.successful_writes[0]);
   TEST_ASSERT_EQUAL(5, tee.successful_writes[1]);
 
   // Cleanup
+  CHECK_ERR(bb_stop(&tee.base.input_buffers[0]));
   CHECK_ERR(filt_stop(&tee.base));
   CHECK_ERR(bb_stop(&output1));
   CHECK_ERR(bb_stop(&output2));
@@ -252,6 +334,7 @@ void test_tee_max_outputs(void)
   }
 
   // Cleanup
+  CHECK_ERR(bb_stop(&tee.base.input_buffers[0]));
   CHECK_ERR(filt_stop(&tee.base));
   for (size_t i = 0; i < MAX_SINKS; i++) {
     CHECK_ERR(bb_stop(&outputs[i]));
@@ -359,6 +442,7 @@ void test_tee_mixed_overflow_behavior(void)
   printf("Output 1 (dropping) writes: %zu\n", tee.successful_writes[1]);
 
   // Cleanup
+  CHECK_ERR(bb_stop(&tee.base.input_buffers[0]));
   CHECK_ERR(filt_stop(&tee.base));
   CHECK_ERR(bb_stop(&output1));
   CHECK_ERR(bb_stop(&output2));
@@ -431,6 +515,7 @@ void test_tee_priority_output_latency(void)
       15, tee.successful_writes[0]);  // Should get most data
 
   // Cleanup
+  CHECK_ERR(bb_stop(&tee.base.input_buffers[0]));
   CHECK_ERR(filt_stop(&tee.base));
   for (size_t i = 0; i < 3; i++) {
     CHECK_ERR(bb_stop(&outputs[i]));
@@ -567,7 +652,120 @@ void test_tee_invalid_config(void)
   printf("Invalid configuration test passed!\n");
 }
 
-// Test 8: Pipeline integration
+// Test 8: Variable batch sizes
+void test_tee_variable_batch_sizes(void)
+{
+  printf("\n=== Testing Variable Batch Sizes ===\n");
+  printf(
+      "NOTE: Current implementation truncates data when output buffer is "
+      "smaller\n");
+  printf(
+      "      Full variable batch size support requires maintaining partial "
+      "batch state\n");
+
+  // Configure outputs with different batch sizes
+  BatchBuffer_config out_configs[3] = {
+      {.dtype = DTYPE_FLOAT,
+       .batch_capacity_expo = 6,  // 64 samples per batch
+       .ring_capacity_expo = 5,   // 31 batches
+       .overflow_behaviour = OVERFLOW_BLOCK},
+      {.dtype = DTYPE_FLOAT,
+       .batch_capacity_expo = 8,  // 256 samples per batch
+       .ring_capacity_expo = 4,   // 15 batches
+       .overflow_behaviour = OVERFLOW_BLOCK},
+      {.dtype = DTYPE_FLOAT,
+       .batch_capacity_expo = 5,  // 32 samples per batch
+       .ring_capacity_expo = 6,   // 63 batches
+       .overflow_behaviour = OVERFLOW_BLOCK}};
+
+  // Input buffer with 128 samples per batch
+  BatchBuffer_config input_config = {.dtype = DTYPE_FLOAT,
+                                     .batch_capacity_expo = 7,  // 128 samples
+                                     .ring_capacity_expo = 4,   // 15 batches
+                                     .overflow_behaviour = OVERFLOW_BLOCK};
+
+  Tee_config_t config = {.name = "variable_size_tee",
+                         .buff_config = input_config,
+                         .n_outputs = 3,
+                         .output_configs = out_configs,
+                         .timeout_us = 1000,
+                         .copy_data = true};
+
+  // Initialize tee
+  Tee_filt_t tee;
+  CHECK_ERR(tee_init(&tee, config));
+
+  // Create output buffers
+  Batch_buff_t output_64, output_256, output_32;
+  CHECK_ERR(bb_init(&output_64, "output_64", out_configs[0]));
+  CHECK_ERR(bb_init(&output_256, "output_256", out_configs[1]));
+  CHECK_ERR(bb_init(&output_32, "output_32", out_configs[2]));
+
+  // Connect outputs
+  CHECK_ERR(filt_sink_connect(&tee.base, 0, &output_64));
+  CHECK_ERR(filt_sink_connect(&tee.base, 1, &output_256));
+  CHECK_ERR(filt_sink_connect(&tee.base, 2, &output_32));
+
+  // Start processing
+  CHECK_ERR(filt_start(&tee.base));
+  CHECK_ERR(bb_start(&tee.base.input_buffers[0]));
+  CHECK_ERR(bb_start(&output_64));
+  CHECK_ERR(bb_start(&output_256));
+  CHECK_ERR(bb_start(&output_32));
+
+  // Submit test data: 5 batches of 128 samples each = 640 total samples
+  uint32_t counter = 0;
+  fill_sequential_data(&tee.base.input_buffers[0], &counter, 5);
+
+  // Wait for processing
+  nanosleep(&ts_100ms, NULL);
+
+  // Verify each output received truncated data
+  // With simple implementation, we truncate to output buffer size
+  printf("Verifying output_64 (64 samples/batch)...\n");
+  printf("  Expected: 5 batches of 64 samples each\n");
+  printf("  Note: With truncation, only first 64 samples from each 128-sample input\n");
+  verify_truncated_sequence(&output_64, 5, 64, 128);
+
+  printf("Verifying output_256 (256 samples/batch)...\n");
+  printf("  Expected: 5 batches of 128 samples each (full input)\n");
+  verify_sequence_with_batch_size(&output_256, 0, 640,
+                                  128);  // Full 128 samples
+
+  printf("Verifying output_32 (32 samples/batch)...\n");
+  printf("  Expected: 5 batches of 32 samples each\n");
+  printf("  Note: With truncation, only first 32 samples from each 128-sample input\n");
+  verify_truncated_sequence(&output_32, 5, 32, 128);
+
+  // Check metrics
+  printf("Tee statistics:\n");
+  printf("  - Output 0 (64/batch) writes: %zu\n", tee.successful_writes[0]);
+  printf("  - Output 1 (256/batch) writes: %zu\n", tee.successful_writes[1]);
+  printf("  - Output 2 (32/batch) writes: %zu\n", tee.successful_writes[2]);
+
+  // With current simple implementation, each input batch creates one output
+  // batch Input: 5 batches of 128 samples each Output 0 (64): Gets 64 samples
+  // per batch (truncated) Output 1 (256): Gets 128 samples per batch (full
+  // input) Output 2 (32): Gets 32 samples per batch (truncated)
+  TEST_ASSERT_EQUAL(5, tee.successful_writes[0]);  // 5 input batches
+  TEST_ASSERT_EQUAL(5, tee.successful_writes[1]);  // 5 input batches
+  TEST_ASSERT_EQUAL(5, tee.successful_writes[2]);  // 5 input batches
+
+  // Cleanup - stop input buffer first to unblock worker thread
+  CHECK_ERR(bb_stop(&tee.base.input_buffers[0]));
+  CHECK_ERR(filt_stop(&tee.base));
+  CHECK_ERR(bb_stop(&output_64));
+  CHECK_ERR(bb_stop(&output_256));
+  CHECK_ERR(bb_stop(&output_32));
+  CHECK_ERR(filt_deinit(&tee.base));
+  CHECK_ERR(bb_deinit(&output_64));
+  CHECK_ERR(bb_deinit(&output_256));
+  CHECK_ERR(bb_deinit(&output_32));
+
+  printf("Variable batch sizes test passed!\n");
+}
+
+// Test 9: Pipeline integration
 void test_tee_pipeline_integration(void)
 {
   printf("\n=== Testing Pipeline Integration ===\n");
@@ -635,6 +833,7 @@ void test_tee_pipeline_integration(void)
 
   // Submit data
   uint32_t counter = 0;
+  TEST_MESSAGE("Filling input");
   fill_sequential_data(&tee.base.input_buffers[0], &counter, 5);
 
   // Wait for processing
@@ -658,15 +857,21 @@ void test_tee_pipeline_integration(void)
   TEST_ASSERT_EQUAL_INT_MESSAGE(5, bb_occupancy(&final2),
                                 "should be passed 5 batches");
   // Verify data reached final outputs
+  //
+  TEST_MESSAGE("Verifying final1");
   verify_sequence(&final1, 0, 320);
+  TEST_MESSAGE("Verifying final2");
   verify_sequence(&final2, 0, 320);
 
   // Cleanup
+  TEST_MESSAGE("Stopping filters");
   CHECK_ERR(filt_stop(&tee.base));
   CHECK_ERR(filt_stop(&downstream1));
   CHECK_ERR(filt_stop(&downstream2));
+  TEST_MESSAGE("Stopping final batches");
   CHECK_ERR(bb_stop(&final1));
   CHECK_ERR(bb_stop(&final2));
+  TEST_MESSAGE("De-init");
   CHECK_ERR(filt_deinit(&tee.base));
   CHECK_ERR(filt_deinit(&downstream1));
   CHECK_ERR(filt_deinit(&downstream2));
@@ -687,9 +892,7 @@ int main(void)
   RUN_TEST(test_tee_priority_output_latency);
   RUN_TEST(test_tee_graceful_shutdown);
   RUN_TEST(test_tee_invalid_config);
-  // TODO: Fix pipeline integration test - complex pipeline setup issues
-  // The matched_passthroug function exists but data flow through the
-  // pipeline isn't working correctly. This needs further investigation.
+  RUN_TEST(test_tee_variable_batch_sizes);
   RUN_TEST(test_tee_pipeline_integration);
 
   return UNITY_END();
