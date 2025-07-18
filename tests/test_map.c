@@ -106,13 +106,15 @@ void tearDown(void)
 void test_map_init_valid_config(void)
 {
   Map_filt_t filter;
-  Map_config_t config = {.buff_config = test_config,
-                         .map_fcn = test_identity_map};
+  Map_config_t config = {.name = "test_map",
+                         .buff_config = test_config,
+                         .map_fcn = test_identity_map,
+                         .timeout_us = 10000};
 
   Bp_EC result = map_init(&filter, config);
   TEST_ASSERT_EQUAL(Bp_EC_OK, result);
   TEST_ASSERT_EQUAL_PTR(test_identity_map, filter.map_fcn);
-  TEST_ASSERT_EQUAL_STRING("MAP_FILTER", filter.base.name);
+  TEST_ASSERT_EQUAL_STRING("test_map", filter.base.name);
   TEST_ASSERT_EQUAL(FILT_T_MAP, filter.base.filt_type);
 
   // Cleanup
@@ -121,8 +123,10 @@ void test_map_init_valid_config(void)
 
 void test_map_init_null_filter(void)
 {
-  Map_config_t config = {.buff_config = test_config,
-                         .map_fcn = test_identity_map};
+  Map_config_t config = {.name = "test_map",
+                         .buff_config = test_config,
+                         .map_fcn = test_identity_map,
+                         .timeout_us = 10000};
 
   Bp_EC result = map_init(NULL, config);
   TEST_ASSERT_EQUAL(Bp_EC_INVALID_CONFIG, result);
@@ -131,7 +135,10 @@ void test_map_init_null_filter(void)
 void test_map_init_null_function(void)
 {
   Map_filt_t filter;
-  Map_config_t config = {.buff_config = test_config, .map_fcn = NULL};
+  Map_config_t config = {.name = "test_map",
+                         .buff_config = test_config,
+                         .map_fcn = NULL,
+                         .timeout_us = 10000};
 
   Bp_EC result = map_init(&filter, config);
   TEST_ASSERT_EQUAL(Bp_EC_INVALID_CONFIG, result);
@@ -141,8 +148,10 @@ void test_map_init_null_function(void)
 void test_single_threaded_linear_ramp(void)
 {
   Map_filt_t filter;
-  Map_config_t config = {.buff_config = test_config,
-                         .map_fcn = test_identity_map};
+  Map_config_t config = {.name = "test_linear_ramp",
+                         .buff_config = test_config,
+                         .map_fcn = test_identity_map,
+                         .timeout_us = 10000};
 
   // Initialize filter
   CHECK_ERR(map_init(&filter, config));
@@ -226,8 +235,10 @@ void test_single_threaded_linear_ramp(void)
 void test_multi_stage_single_threaded(void)
 {
   Map_filt_t filter1, filter2;
-  Map_config_t config = {.buff_config = test_config,
-                         .map_fcn = test_identity_map};
+  Map_config_t config = {.name = "test_multi_stage",
+                         .buff_config = test_config,
+                         .map_fcn = test_identity_map,
+                         .timeout_us = 10000};
 
   // Initialize filters
   CHECK_ERR(map_init(&filter1, config));
@@ -377,8 +388,14 @@ void test_multi_threaded_slow_consumer(void)
   
   // Create cascade: producer -> scale filter -> offset filter -> consumer
   Map_filt_t scale_filter, offset_filter;
-  Map_config_t scale_config = {.buff_config = small_config, .map_fcn = test_scale_map};
-  Map_config_t offset_config = {.buff_config = small_config, .map_fcn = test_offset_map};
+  Map_config_t scale_config = {.name = "test_scale_threaded",
+                               .buff_config = small_config,
+                               .map_fcn = test_scale_map,
+                               .timeout_us = 10000};
+  Map_config_t offset_config = {.name = "test_offset_threaded",
+                                .buff_config = small_config,
+                                .map_fcn = test_offset_map,
+                                .timeout_us = 10000};
   
   CHECK_ERR(map_init(&scale_filter, scale_config));
   CHECK_ERR(map_init(&offset_filter, offset_config));
@@ -471,8 +488,10 @@ void test_map_error_handling(void)
 {
   Map_filt_t filter;
   Map_config_t config = {
+      .name = "test_error_map",
       .buff_config = test_config,
-      .map_fcn = test_error_map  // Function that always returns error
+      .map_fcn = test_error_map,  // Function that always returns error
+      .timeout_us = 10000
   };
 
   CHECK_ERR(map_init(&filter, config));
@@ -515,7 +534,10 @@ void test_map_error_handling(void)
 void test_scale_transform(void)
 {
   Map_filt_t filter;
-  Map_config_t config = {.buff_config = test_config, .map_fcn = test_scale_map};
+  Map_config_t config = {.name = "test_scale",
+                         .buff_config = test_config,
+                         .map_fcn = test_scale_map,
+                         .timeout_us = 10000};
   
   CHECK_ERR(map_init(&filter, config));
   
@@ -562,8 +584,14 @@ void test_scale_transform(void)
 void test_chained_transforms(void)
 {
   Map_filt_t scale_filter, offset_filter;
-  Map_config_t scale_config = {.buff_config = test_config, .map_fcn = test_scale_map};
-  Map_config_t offset_config = {.buff_config = test_config, .map_fcn = test_offset_map};
+  Map_config_t scale_config = {.name = "test_scale_chained",
+                               .buff_config = test_config,
+                               .map_fcn = test_scale_map,
+                               .timeout_us = 10000};
+  Map_config_t offset_config = {.name = "test_offset_chained",
+                                .buff_config = test_config,
+                                .map_fcn = test_offset_map,
+                                .timeout_us = 10000};
   
   CHECK_ERR(map_init(&scale_filter, scale_config));
   CHECK_ERR(map_init(&offset_filter, offset_config));
@@ -624,7 +652,10 @@ void test_buffer_wraparound(void)
   };
   
   Map_filt_t filter;
-  Map_config_t config = {.buff_config = small_config, .map_fcn = test_identity_map};
+  Map_config_t config = {.name = "test_wraparound",
+                         .buff_config = small_config,
+                         .map_fcn = test_identity_map,
+                         .timeout_us = 10000};
   
   CHECK_ERR(map_init(&filter, config));
   
@@ -764,8 +795,10 @@ void test_large_to_small_batch_cascade(void)
     // Create filter with large input config
     Map_filt_t filter;
     Map_config_t config = {
+        .name = "test_large_to_small",
         .buff_config = large_config,
-        .map_fcn = test_identity_map
+        .map_fcn = test_identity_map,
+        .timeout_us = 10000
     };
     
     CHECK_ERR(map_init(&filter, config));
@@ -828,8 +861,10 @@ void test_small_to_large_batch_cascade(void)
     
     Map_filt_t filter;
     Map_config_t config = {
+        .name = "test_small_to_large",
         .buff_config = small_config,
-        .map_fcn = test_identity_map
+        .map_fcn = test_identity_map,
+        .timeout_us = 10000
     };
     
     CHECK_ERR(map_init(&filter, config));
@@ -885,8 +920,14 @@ void test_mismatched_ring_capacity(void)
     };
     
     Map_filt_t filter1, filter2;
-    Map_config_t config1 = {.buff_config = few_buffers, .map_fcn = test_scale_map};
-    Map_config_t config2 = {.buff_config = many_buffers, .map_fcn = test_offset_map};
+    Map_config_t config1 = {.name = "test_few_buffers",
+                            .buff_config = few_buffers,
+                            .map_fcn = test_scale_map,
+                            .timeout_us = 10000};
+    Map_config_t config2 = {.name = "test_many_buffers",
+                            .buff_config = many_buffers,
+                            .map_fcn = test_offset_map,
+                            .timeout_us = 10000};
     
     CHECK_ERR(map_init(&filter1, config1));
     CHECK_ERR(map_init(&filter2, config2));

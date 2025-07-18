@@ -183,12 +183,12 @@ Bp_EC map_init(Map_filt_t* f, Map_config_t config)
   core_config.worker = &map_worker;
 
   /* Map is always a 1->1 filter */
-  core_config.n_inputs = 1;
-  core_config.max_supported_sinks = 1;
-  core_config.filt_type = FILT_T_MAP;
-  core_config.size = sizeof(Map_filt_t);
-  core_config.name = "MAP_FILTER";
-  core_config.timeout_us = 10000;  // TODO: this should be in config
+  core_config.n_inputs = 1;  // Map always has exactly one input
+  core_config.max_supported_sinks = 1;  // Map always has exactly one output
+  core_config.filt_type = FILT_T_MAP;  // Filter type is always map
+  core_config.size = sizeof(Map_filt_t);  // Size for inheritance
+  core_config.name = config.name;
+  core_config.timeout_us = config.timeout_us;
 
   Bp_EC err = filt_init(&f->base, core_config);
 

@@ -12,8 +12,10 @@ typedef struct _Map_filt_t {
 } Map_filt_t;
 
 typedef struct _Map_filt_config_t {
+  const char* name;
   BatchBuffer_config buff_config;
   Map_fcn_t map_fcn;
+  long timeout_us;
 } Map_config_t;
 
 Bp_EC map_init(Map_filt_t* f, Map_config_t config);
