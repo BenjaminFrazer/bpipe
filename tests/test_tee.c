@@ -271,7 +271,6 @@ void test_tee_dual_output(void)
   TEST_ASSERT_EQUAL(5, tee.successful_writes[1]);
 
   // Cleanup
-  CHECK_ERR(bb_stop(&tee.base.input_buffers[0]));
   CHECK_ERR(filt_stop(&tee.base));
   CHECK_ERR(bb_stop(&output1));
   CHECK_ERR(bb_stop(&output2));
@@ -334,7 +333,6 @@ void test_tee_max_outputs(void)
   }
 
   // Cleanup
-  CHECK_ERR(bb_stop(&tee.base.input_buffers[0]));
   CHECK_ERR(filt_stop(&tee.base));
   for (size_t i = 0; i < MAX_SINKS; i++) {
     CHECK_ERR(bb_stop(&outputs[i]));
@@ -442,7 +440,6 @@ void test_tee_mixed_overflow_behavior(void)
   printf("Output 1 (dropping) writes: %zu\n", tee.successful_writes[1]);
 
   // Cleanup
-  CHECK_ERR(bb_stop(&tee.base.input_buffers[0]));
   CHECK_ERR(filt_stop(&tee.base));
   CHECK_ERR(bb_stop(&output1));
   CHECK_ERR(bb_stop(&output2));
@@ -515,7 +512,6 @@ void test_tee_priority_output_latency(void)
       15, tee.successful_writes[0]);  // Should get most data
 
   // Cleanup
-  CHECK_ERR(bb_stop(&tee.base.input_buffers[0]));
   CHECK_ERR(filt_stop(&tee.base));
   for (size_t i = 0; i < 3; i++) {
     CHECK_ERR(bb_stop(&outputs[i]));
@@ -751,8 +747,7 @@ void test_tee_variable_batch_sizes(void)
   TEST_ASSERT_EQUAL(5, tee.successful_writes[1]);  // 5 input batches
   TEST_ASSERT_EQUAL(5, tee.successful_writes[2]);  // 5 input batches
 
-  // Cleanup - stop input buffer first to unblock worker thread
-  CHECK_ERR(bb_stop(&tee.base.input_buffers[0]));
+  // Cleanup
   CHECK_ERR(filt_stop(&tee.base));
   CHECK_ERR(bb_stop(&output_64));
   CHECK_ERR(bb_stop(&output_256));
