@@ -375,6 +375,13 @@ void *matched_passthroug(void *arg)
 
     BP_WORKER_ASSERT(f, memcpy(output->data, input->data, copy_size) != NULL,
                      Bp_EC_MALLOC_FAIL);
+    
+    // Copy batch metadata
+    output->head = input->head;
+    output->tail = input->tail;
+    output->t_ns = input->t_ns;
+    output->period_ns = input->period_ns;
+    output->batch_id = input->batch_id;
 
     err = bb_submit(f->sinks[0], f->timeout_us);
     BP_WORKER_ASSERT(f, err == Bp_EC_OK, err);
