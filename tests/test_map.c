@@ -678,6 +678,282 @@ void test_buffer_wraparound(void)
   CHECK_ERR(bb_deinit(&output_buffer));
 }
 
+/* Helper functions for mixed batch size tests */
+static void verify_sequence_continuity(Batch_buff_t* buffer, 
+                                      uint32_t start_value,
+                                      size_t total_samples,
+                                      const char* test_name) {
+    uint32_t expected = start_value;
+    Bp_EC err;
+    size_t batches_consumed = 0;
+    
+    while (expected < start_value + total_samples) {
+        Batch_t* batch = bb_get_tail(buffer, 10000, &err);
+        if (err == Bp_EC_TIMEOUT) {
+            printf("%s: Timeout waiting for batch, expected %u, got %u samples\n", 
+                   test_name, (unsigned)total_samples, (unsigned)(expected - start_value));
+            break;
+        }
+        if (!batch) break;
+        
+        float* data = (float*)batch->data;
+        for (size_t i = 0; i < batch->head; i++) {
+            TEST_ASSERT_EQUAL_FLOAT_MESSAGE((float)expected, data[i], 
+                                           "Sequence continuity broken");
+            expected++;
+        }
+        
+        // Print timing info for first few batches
+        if (batches_consumed < 3) {
+            printf("  Batch %zu: %zu samples, t_ns=%lld\n", 
+                   batches_consumed, batch->head, batch->t_ns);
+        }
+        
+        CHECK_ERR(bb_del_tail(buffer));
+        batches_consumed++;
+    }
+    
+    printf("%s: Consumed %zu batches, %u samples\n", 
+           test_name, batches_consumed, expected - start_value);
+    TEST_ASSERT_EQUAL_MESSAGE(start_value + total_samples, expected,
+                              "Not all samples were received");
+}
+
+static void fill_sequential_batches(Batch_buff_t* buffer,
+                                   uint32_t* counter,
+                                   size_t n_batches,
+                                   size_t samples_per_batch) {
+    for (size_t b = 0; b < n_batches; b++) {
+        Batch_t* batch = bb_get_head(buffer);
+        TEST_ASSERT_NOT_NULL(batch);
+        
+        float* data = (float*)batch->data;
+        for (size_t i = 0; i < samples_per_batch; i++) {
+            data[i] = (float)(*counter)++;
+        }
+        batch->head = samples_per_batch;
+        batch->t_ns = 1000000 * b;
+        batch->period_ns = 1000;
+        
+        CHECK_ERR(bb_submit(buffer, 10000));
+    }
+}
+
+/* Test: Large to small batch cascade */
+void test_large_to_small_batch_cascade(void)
+{
+    printf("\n=== Testing Large to Small Batch Cascade ===\n");
+    printf("Input: 256 samples/batch, Output: 64 samples/batch\n");
+    
+    // Stage 1: Large batches (256 samples)
+    BatchBuffer_config large_config = {
+        .dtype = DTYPE_FLOAT,
+        .overflow_behaviour = OVERFLOW_BLOCK,
+        .ring_capacity_expo = 4,   // 15 batches
+        .batch_capacity_expo = 8,  // 256 samples
+    };
+
+    // Stage 2: Small batches (64 samples)
+    BatchBuffer_config small_config = {
+        .dtype = DTYPE_FLOAT,
+        .overflow_behaviour = OVERFLOW_BLOCK,
+        .ring_capacity_expo = 5,   // 31 batches
+        .batch_capacity_expo = 6,  // 64 samples
+    };
+    
+    // Create filter with large input config
+    Map_filt_t filter;
+    Map_config_t config = {
+        .buff_config = large_config,
+        .map_fcn = test_identity_map
+    };
+    
+    CHECK_ERR(map_init(&filter, config));
+    
+    // Create output buffer with small config
+    Batch_buff_t output;
+    CHECK_ERR(bb_init(&output, "output", small_config));
+    
+    // Try to connect with mismatched sizes
+    // This tests the current behavior - it may fail or behave unexpectedly
+    Bp_EC connect_err = filt_sink_connect(&filter.base, 0, &output);
+    if (connect_err != Bp_EC_OK) {
+        printf("Connection failed with mismatched batch sizes: %d\n", connect_err);
+        // Document this limitation
+        TEST_ASSERT_EQUAL(Bp_EC_OK, connect_err); // This will fail, documenting the issue
+    }
+    
+    CHECK_ERR(filt_start(&filter.base));
+    CHECK_ERR(bb_start(&output));
+    
+    // Submit test data - 3 large batches = 768 samples
+    uint32_t counter = 0;
+    fill_sequential_batches(&filter.base.input_buffers[0], &counter, 3, 256);
+    
+    // Wait for processing
+    nanosleep(&ts_10ms, NULL);
+    
+    // Verify output - should get 768 samples in small batches
+    printf("Submitted %u samples in %d large batches\n", counter, 3);
+    printf("Expected output: %u small batches of 64 samples each\n", counter / 64);
+    verify_sequence_continuity(&output, 0, counter, "large_to_small");
+    
+    // Cleanup
+    CHECK_ERR(filt_stop(&filter.base));
+    CHECK_ERR(bb_stop(&output));
+    CHECK_ERR(filt_deinit(&filter.base));
+    CHECK_ERR(bb_deinit(&output));
+}
+
+/* Test: Small to large batch cascade */
+void test_small_to_large_batch_cascade(void)
+{
+    printf("\n=== Testing Small to Large Batch Cascade ===\n");
+    
+    // Stage 1: Small batches (64 samples)
+    BatchBuffer_config small_config = {
+        .dtype = DTYPE_FLOAT,
+        .overflow_behaviour = OVERFLOW_BLOCK,
+        .ring_capacity_expo = 5,   // 31 batches
+        .batch_capacity_expo = 6,  // 64 samples
+    };
+
+    // Stage 2: Large batches (256 samples)
+    BatchBuffer_config large_config = {
+        .dtype = DTYPE_FLOAT,
+        .overflow_behaviour = OVERFLOW_BLOCK,
+        .ring_capacity_expo = 4,   // 15 batches
+        .batch_capacity_expo = 8,  // 256 samples
+    };
+    
+    Map_filt_t filter;
+    Map_config_t config = {
+        .buff_config = small_config,
+        .map_fcn = test_identity_map
+    };
+    
+    CHECK_ERR(map_init(&filter, config));
+    
+    Batch_buff_t output;
+    CHECK_ERR(bb_init(&output, "output", large_config));
+    
+    // Try to connect - this will likely expose issues
+    Bp_EC connect_err = filt_sink_connect(&filter.base, 0, &output);
+    if (connect_err != Bp_EC_OK) {
+        printf("Connection failed with mismatched batch sizes: %d\n", connect_err);
+        TEST_ASSERT_EQUAL(Bp_EC_OK, connect_err);
+    }
+    
+    CHECK_ERR(filt_start(&filter.base));
+    CHECK_ERR(bb_start(&output));
+    
+    // Submit 8 small batches = 512 samples (should fill 2 large batches)
+    uint32_t counter = 0;
+    fill_sequential_batches(&filter.base.input_buffers[0], &counter, 8, 64);
+    
+    // Wait for processing
+    nanosleep(&ts_10ms, NULL);
+    
+    // Verify output
+    verify_sequence_continuity(&output, 0, counter, "small_to_large");
+    
+    // Cleanup
+    CHECK_ERR(filt_stop(&filter.base));
+    CHECK_ERR(bb_stop(&output));
+    CHECK_ERR(filt_deinit(&filter.base));
+    CHECK_ERR(bb_deinit(&output));
+}
+
+/* Test: Mismatched ring capacity */
+void test_mismatched_ring_capacity(void)
+{
+    printf("\n=== Testing Mismatched Ring Capacity ===\n");
+    
+    // Same batch size, different ring capacity
+    BatchBuffer_config few_buffers = {
+        .dtype = DTYPE_FLOAT,
+        .overflow_behaviour = OVERFLOW_BLOCK,
+        .ring_capacity_expo = 3,   // 7 batches
+        .batch_capacity_expo = 7,  // 128 samples
+    };
+
+    BatchBuffer_config many_buffers = {
+        .dtype = DTYPE_FLOAT,
+        .overflow_behaviour = OVERFLOW_BLOCK,
+        .ring_capacity_expo = 6,   // 63 batches
+        .batch_capacity_expo = 7,  // 128 samples (same size)
+    };
+    
+    Map_filt_t filter1, filter2;
+    Map_config_t config1 = {.buff_config = few_buffers, .map_fcn = test_scale_map};
+    Map_config_t config2 = {.buff_config = many_buffers, .map_fcn = test_offset_map};
+    
+    CHECK_ERR(map_init(&filter1, config1));
+    CHECK_ERR(map_init(&filter2, config2));
+    
+    Batch_buff_t output;
+    CHECK_ERR(bb_init(&output, "output", many_buffers));
+    
+    // Connect cascade
+    CHECK_ERR(filt_sink_connect(&filter1.base, 0, &filter2.base.input_buffers[0]));
+    CHECK_ERR(filt_sink_connect(&filter2.base, 0, &output));
+    
+    CHECK_ERR(filt_start(&filter1.base));
+    CHECK_ERR(filt_start(&filter2.base));
+    CHECK_ERR(bb_start(&output));
+    
+    // Burst submit to test backpressure
+    uint32_t counter = 0;
+    printf("Submitting burst of 10 batches to small ring buffer (capacity 7)\n");
+    
+    for (int i = 0; i < 10; i++) {
+        Batch_t* batch = bb_get_head(&filter1.base.input_buffers[0]);
+        if (!batch) {
+            printf("Buffer full at batch %d\n", i);
+            break;
+        }
+        
+        float* data = (float*)batch->data;
+        for (size_t j = 0; j < 128; j++) {
+            data[j] = (float)(counter++);
+        }
+        batch->head = 128;
+        
+        CHECK_ERR(bb_submit(&filter1.base.input_buffers[0], 10000));
+    }
+    
+    // Consume output slowly to test buffering
+    nanosleep(&ts_10ms, NULL);
+    
+    // Verify transformed data: (x * 2) + 100
+    uint32_t verified = 0;
+    Bp_EC err;
+    while (verified < counter) {
+        Batch_t* out = bb_get_tail(&output, 1000, &err);
+        if (err == Bp_EC_TIMEOUT) break;
+        TEST_ASSERT_NOT_NULL(out);
+        
+        float* data = (float*)out->data;
+        for (size_t i = 0; i < out->head; i++) {
+            float expected = ((float)verified * 2.0f) + 100.0f;
+            TEST_ASSERT_EQUAL_FLOAT(expected, data[i]);
+            verified++;
+        }
+        
+        CHECK_ERR(bb_del_tail(&output));
+    }
+    
+    printf("Processed %u samples through mismatched ring capacities\n", verified);
+    
+    // Cleanup
+    CHECK_ERR(filt_stop(&filter1.base));
+    CHECK_ERR(filt_stop(&filter2.base));
+    CHECK_ERR(bb_stop(&output));
+    CHECK_ERR(filt_deinit(&filter1.base));
+    CHECK_ERR(filt_deinit(&filter2.base));
+    CHECK_ERR(bb_deinit(&output));
+}
+
 /* Main test runner */
 int main(void)
 {
@@ -697,6 +973,11 @@ int main(void)
   // Multi-threaded tests
   RUN_TEST(test_multi_stage_single_threaded);
   RUN_TEST(test_multi_threaded_slow_consumer);
+  
+  // Mixed batch size tests
+  RUN_TEST(test_large_to_small_batch_cascade);
+  RUN_TEST(test_small_to_large_batch_cascade);
+  RUN_TEST(test_mismatched_ring_capacity);
   
   // Error handling
   RUN_TEST(test_map_error_handling);
