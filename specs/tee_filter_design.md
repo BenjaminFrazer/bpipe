@@ -86,9 +86,10 @@ docs/
 ### Current Limitations
 
 1. **Data Type Consistency**: All outputs must have same dtype (future: add casting)
-2. **No Dynamic Outputs**: Number of outputs fixed at initialization
-3. **Memory Overhead**: Deep copy implementation multiplies memory usage
-4. **Synchronous Distribution**: All outputs processed in single thread
+2. **Batch Size Consistency**: All I/O must have same batch size (Option B implementation)
+3. **No Dynamic Outputs**: Number of outputs fixed at initialization
+4. **Memory Overhead**: Deep copy implementation multiplies memory usage
+5. **Synchronous Distribution**: All outputs processed in single thread
 
 ### Architectural Impact
 
@@ -294,16 +295,16 @@ void test_tee_in_pipeline(void) {
 
 ## Implementation Phases
 
-### Phase 1: Basic Deep Copy Implementation
-- Single data type support (fail on mismatch)
-- Same batch size for all outputs
-- Priority copying to output 0
-- Basic metrics collection
+### Phase 1: Basic Deep Copy Implementation (COMPLETED)
+- Single data type support (fail on mismatch) ✓
+- Same batch size for all I/O (Option B) ✓
+- Priority copying to output 0 ✓
+- Basic metrics collection ✓
 
-### Phase 2: Mixed Batch Size Support
-- Leverage map filter batch size handling
-- Support different output batch configurations
-- Maintain timing accuracy
+### Phase 2: Batch Size Conversion (FUTURE)
+- Implement separate Reframe filter for batch size conversion
+- Compose Tee with Reframe for flexible sizing
+- Example: Input → Tee → [Output1, Reframe → Output2]
 
 ### Phase 3: Advanced Features
 - Per-output metrics and monitoring

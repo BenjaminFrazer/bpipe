@@ -28,15 +28,8 @@ static void* tee_worker(void* arg) {
                 continue;
             }
             
-            // Check if output buffer is large enough
-            size_t output_batch_size = bb_batch_size(f->sinks[i]);
-            if (input->head > output_batch_size) {
-                // For now, just copy what fits - proper handling would require
-                // maintaining state for partial batches
-                output->head = output_batch_size;
-            } else {
-                output->head = input->head;
-            }
+            // With Option B: batch sizes are guaranteed to match
+            output->head = input->head;
             
             // Deep copy data
             size_t data_width = bb_getdatawidth(f->input_buffers[0].dtype);
@@ -88,12 +81,19 @@ Bp_EC tee_init(Tee_filt_t* tee, Tee_config_t config) {
         }
     }
     
+    // Option B: Validate all outputs have same batch size as input
+    size_t input_batch_size = 1 << config.buff_config.batch_capacity_expo;
+    for (size_t i = 0; i < config.n_outputs; i++) {
+        size_t output_batch_size = 1 << config.output_configs[i].batch_capacity_expo;
+        if (output_batch_size != input_batch_size) {
+            return Bp_EC_INVALID_CONFIG;  // Batch size mismatch
+        }
+    }
+    
     // Initialize tee-specific fields
     tee->copy_data = config.copy_data;
     tee->n_outputs = config.n_outputs;
-    tee->input_position = 0;
     memset(tee->successful_writes, 0, sizeof(tee->successful_writes));
-    memset(tee->output_batches, 0, sizeof(tee->output_batches));
     
     // Initialize base filter
     Core_filt_config_t core_config = {
