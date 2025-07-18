@@ -59,11 +59,39 @@ void* BpGenericWorker(void* filter_ptr) {
 #### 3. Stateful Map Worker (State-Preserving Element-wise Operations)
 For filters that need to maintain state between processing iterations:
 
+#### 4. Reframe Worker (Batch Size Conversion)
+For filters that convert between different batch sizes:
 
-#### 4. Function Generator Worker (Arbitrary Waveform Generation)
+```c
+void* BpReframeWorker(void* filter_ptr) {
+    Bp_Filter_t* f = (Bp_Filter_t*)filter_ptr;
+    ReframeState* state = (ReframeState*)f->context;
+    
+    // Handles accumulation when output > input batch size
+    // Handles distribution when output < input batch size
+    // Maintains sample continuity across batch boundaries
+    // Preserves timing information appropriately
+    
+    while (f->running) {
+        // Get input data
+        // Accumulate or distribute based on size ratio
+        // Emit complete output batches
+        // Handle partial batch state
+    }
+    return NULL;
+}
+```
+
+Use cases:
+- Adapting between components with different batch size requirements
+- Downsampling data for reduced processing load
+- Accumulating small batches for more efficient bulk processing
+- Example: `Input(64) → Reframe → Output(256)` accumulates 4 input batches
+
+#### 5. Function Generator Worker (Arbitrary Waveform Generation)
 For source filters that generate arbitrary waveforms based on time:
 
-#### 5. Custom Workers
+#### 6. Custom Workers
 For specialized filters with unique requirements:
 
 ```c
@@ -92,4 +120,31 @@ void scale_samples(const float* in, float* out, size_t n) {
 ```
 
 The worker-centric design provides a cleaner, more flexible architecture that scales from simple element-wise operations to complex multi-input synchronization scenarios. By allowing each filter to own its execution model, we eliminate the impedance mismatch between what filters need and what the framework provides, resulting in simpler code for both users and maintainers.
+
+## Filter Composition Patterns
+
+### Batch Size Adaptation
+When components have different batch size requirements, compose Tee with Reframe:
+
+```
+// Different outputs need different batch sizes
+Input(128) → Tee → Output1(128)           // Direct, no conversion
+                 → Reframe → Output2(256)  // Accumulate 2 batches
+                 → Reframe → Output3(64)   // Split into 2 batches
+
+// This is more efficient than building size conversion into Tee because:
+// 1. Output1 has zero overhead (straight copy)
+// 2. Only outputs needing conversion pay the cost
+// 3. Each Reframe can be optimized for its specific ratio
+```
+
+### Multi-Stage Processing
+Complex pipelines benefit from clear separation of concerns:
+
+```
+Source → Map(scale) → Tee → Map(filter1) → Sink1
+                          → Reframe → Map(filter2) → Sink2
+```
+
+Each filter does exactly one thing, making the pipeline easy to understand, test, and optimize.
 
