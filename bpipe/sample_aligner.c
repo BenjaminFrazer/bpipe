@@ -2,6 +2,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include "bperr.h"
 #include "utils.h"
 
 // Forward declarations
@@ -141,7 +142,8 @@ static void* sample_aligner_worker(void* arg)
         output->ec = Bp_EC_COMPLETE;
         output->head = 0;
         output->tail = 0;
-        bb_submit(f->sinks[0], f->timeout_us);
+        err = bb_submit(f->sinks[0], f->timeout_us);
+        BP_WORKER_ASSERT(f, input->ec == Bp_EC_OK, input->ec);
       }
       break;
     }
@@ -182,10 +184,7 @@ static void* sample_aligner_worker(void* arg)
 
     // Get output batch
     Batch_t* output = bb_get_head(f->sinks[0]);
-    if (!output) {
-      // Wait for output buffer
-      continue;
-    }
+    BP_WORKER_ASSERT(f, output != NULL, Bp_EC_NULL_POINTER);
 
     // Simple passthrough with corrected timestamp
     output->t_ns = sa->next_output_ns;
@@ -216,7 +215,8 @@ static void* sample_aligner_worker(void* arg)
     err = bb_submit(f->sinks[0], f->timeout_us);
     BP_WORKER_ASSERT(f, err == Bp_EC_OK, err);
 
-    bb_del_tail(&f->input_buffers[0]);
+    err = bb_del_tail(&f->input_buffers[0]);
+    BP_WORKER_ASSERT(f, err == Bp_EC_OK, err);
   }
 
   return NULL;
