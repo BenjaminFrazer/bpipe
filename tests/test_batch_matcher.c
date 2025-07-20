@@ -42,7 +42,7 @@ void* test_source_worker(void* arg)
   while (fix->source_running) {
     Batch_t* batch = bb_get_head(f->sinks[0]);
     if (batch == NULL) {
-      break;
+      TEST_FAIL_MESSAGE("bb_get_head returned NULL - buffer allocation failed");
     }
 
     // Fill batch with test data
@@ -61,17 +61,18 @@ void* test_source_worker(void* arg)
 
     t_ns += 64 * period_ns;
 
-    bb_submit(f->sinks[0], 1000000);
+    CHECK_ERR(bb_submit(f->sinks[0], 1000000));
   }
 
   // Send completion
   Batch_t* batch = bb_get_head(f->sinks[0]);
-  if (batch != NULL) {
-    batch->ec = Bp_EC_COMPLETE;
-    batch->head = 0;
-    batch->tail = 0;
-    bb_submit(f->sinks[0], 1000000);
+  if (batch == NULL) {
+    TEST_FAIL_MESSAGE("bb_get_head returned NULL when sending completion");
   }
+  batch->ec = Bp_EC_COMPLETE;
+  batch->head = 0;
+  batch->tail = 0;
+  CHECK_ERR(bb_submit(f->sinks[0], 1000000));
 
   return NULL;
 }
@@ -83,19 +84,19 @@ void tearDown(void)
   // Ensure threads are stopped
   if (fixture.source_running) {
     fixture.source_running = false;
-    pthread_join(fixture.source_thread, NULL);
+    TEST_ASSERT_EQUAL(0, pthread_join(fixture.source_thread, NULL));
   }
 
   // Deinit filters if initialized
   if (fixture.matcher.base.worker != NULL) {
-    filt_stop(&fixture.matcher.base);
-    filt_deinit(&fixture.matcher.base);
+    CHECK_ERR(filt_stop(&fixture.matcher.base));
+    CHECK_ERR(filt_deinit(&fixture.matcher.base));
   }
   if (fixture.source.worker != NULL) {
-    filt_deinit(&fixture.source);
+    CHECK_ERR(filt_deinit(&fixture.source));
   }
   if (fixture.sink.worker != NULL) {
-    filt_deinit(&fixture.sink);
+    CHECK_ERR(filt_deinit(&fixture.sink));
   }
 }
 
@@ -114,7 +115,7 @@ void test_basic_batch_matching(void)
                       .overflow_behaviour = OVERFLOW_BLOCK},
       .timeout_us = 1000000,
       .worker = test_source_worker};
-  TEST_ASSERT_EQUAL(Bp_EC_OK, filt_init(&fixture.source, source_config));
+  CHECK_ERR(filt_init(&fixture.source, source_config));
 
   // Setup BatchMatcher
   BatchMatcher_config_t matcher_config = {
@@ -123,8 +124,7 @@ void test_basic_batch_matching(void)
                       .batch_capacity_expo = 6,  // 64 samples input
                       .ring_capacity_expo = 4,   // 16 batches
                       .overflow_behaviour = OVERFLOW_BLOCK}};
-  TEST_ASSERT_EQUAL(Bp_EC_OK,
-                    batch_matcher_init(&fixture.matcher, matcher_config));
+  CHECK_ERR(batch_matcher_init(&fixture.matcher, matcher_config));
 
   // Setup sink with 128-sample batches
   Core_filt_config_t sink_config = {
@@ -139,15 +139,13 @@ void test_basic_batch_matching(void)
                       .overflow_behaviour = OVERFLOW_BLOCK},
       .timeout_us = 1000000,
       .worker = matched_passthroug};
-  TEST_ASSERT_EQUAL(Bp_EC_OK, filt_init(&fixture.sink, sink_config));
+  CHECK_ERR(filt_init(&fixture.sink, sink_config));
 
   // Connect pipeline: source -> matcher -> sink
-  TEST_ASSERT_EQUAL(Bp_EC_OK,
-                    filt_sink_connect(&fixture.source, 0,
-                                      &fixture.matcher.base.input_buffers[0]));
-  TEST_ASSERT_EQUAL(Bp_EC_OK,
-                    filt_sink_connect(&fixture.matcher.base, 0,
-                                      &fixture.sink.input_buffers[0]));
+  CHECK_ERR(filt_sink_connect(&fixture.source, 0,
+                              &fixture.matcher.base.input_buffers[0]));
+  CHECK_ERR(filt_sink_connect(&fixture.matcher.base, 0,
+                              &fixture.sink.input_buffers[0]));
 
   // Verify auto-detection worked
   TEST_ASSERT_TRUE(fixture.matcher.size_detected);
@@ -156,10 +154,10 @@ void test_basic_batch_matching(void)
   // Start filters
   fixture.source_running = true;
   TEST_ASSERT_EQUAL(
-      Bp_EC_OK, pthread_create(&fixture.source_thread, NULL, test_source_worker,
-                               &fixture.source));
-  TEST_ASSERT_EQUAL(Bp_EC_OK, filt_start(&fixture.matcher.base));
-  TEST_ASSERT_EQUAL(Bp_EC_OK, filt_start(&fixture.sink));
+      0, pthread_create(&fixture.source_thread, NULL, test_source_worker,
+                         &fixture.source));
+  CHECK_ERR(filt_start(&fixture.matcher.base));
+  CHECK_ERR(filt_start(&fixture.sink));
 
   // Let it run briefly
   struct timespec sleep_time = {0, 100000000};  // 100ms
@@ -185,7 +183,7 @@ void test_auto_detection(void)
                       .batch_capacity_expo = 6,
                       .ring_capacity_expo = 4,
                       .overflow_behaviour = OVERFLOW_BLOCK}};
-  TEST_ASSERT_EQUAL(Bp_EC_OK, batch_matcher_init(&fixture.matcher, config));
+  CHECK_ERR(batch_matcher_init(&fixture.matcher, config));
 
   // Initially, size should not be detected
   TEST_ASSERT_FALSE(fixture.matcher.size_detected);
@@ -204,12 +202,11 @@ void test_auto_detection(void)
                       .overflow_behaviour = OVERFLOW_BLOCK},
       .timeout_us = 1000000,
       .worker = matched_passthroug};
-  TEST_ASSERT_EQUAL(Bp_EC_OK, filt_init(&fixture.sink, sink_config));
+  CHECK_ERR(filt_init(&fixture.sink, sink_config));
 
   // Connect sink
-  TEST_ASSERT_EQUAL(Bp_EC_OK,
-                    filt_sink_connect(&fixture.matcher.base, 0,
-                                      &fixture.sink.input_buffers[0]));
+  CHECK_ERR(filt_sink_connect(&fixture.matcher.base, 0,
+                              &fixture.sink.input_buffers[0]));
 
   // Now size should be detected
   TEST_ASSERT_TRUE(fixture.matcher.size_detected);
@@ -225,7 +222,7 @@ void test_no_sink_error(void)
                       .batch_capacity_expo = 6,
                       .ring_capacity_expo = 4,
                       .overflow_behaviour = OVERFLOW_BLOCK}};
-  TEST_ASSERT_EQUAL(Bp_EC_OK, batch_matcher_init(&fixture.matcher, config));
+  CHECK_ERR(batch_matcher_init(&fixture.matcher, config));
 
   // Try to start without connecting sink
   TEST_ASSERT_EQUAL(Bp_EC_NO_SINK, filt_start(&fixture.matcher.base));
@@ -247,7 +244,7 @@ void test_phase_validation(void)
       .timeout_us = 1000000,
       .worker = dummy_worker  // Use dummy worker for manual data pushing
   };
-  TEST_ASSERT_EQUAL(Bp_EC_OK, filt_init(&fixture.source, source_config));
+  CHECK_ERR(filt_init(&fixture.source, source_config));
 
   // Setup BatchMatcher and sink
   BatchMatcher_config_t matcher_config = {
@@ -256,8 +253,7 @@ void test_phase_validation(void)
                       .batch_capacity_expo = 6,
                       .ring_capacity_expo = 4,
                       .overflow_behaviour = OVERFLOW_BLOCK}};
-  TEST_ASSERT_EQUAL(Bp_EC_OK,
-                    batch_matcher_init(&fixture.matcher, matcher_config));
+  CHECK_ERR(batch_matcher_init(&fixture.matcher, matcher_config));
 
   Core_filt_config_t sink_config = {
       .name = "phase_sink",
@@ -271,23 +267,23 @@ void test_phase_validation(void)
                       .overflow_behaviour = OVERFLOW_BLOCK},
       .timeout_us = 1000000,
       .worker = matched_passthroug};
-  TEST_ASSERT_EQUAL(Bp_EC_OK, filt_init(&fixture.sink, sink_config));
+  CHECK_ERR(filt_init(&fixture.sink, sink_config));
 
   // Connect pipeline
-  TEST_ASSERT_EQUAL(Bp_EC_OK,
-                    filt_sink_connect(&fixture.source, 0,
-                                      &fixture.matcher.base.input_buffers[0]));
-  TEST_ASSERT_EQUAL(Bp_EC_OK,
-                    filt_sink_connect(&fixture.matcher.base, 0,
-                                      &fixture.sink.input_buffers[0]));
+  CHECK_ERR(filt_sink_connect(&fixture.source, 0,
+                              &fixture.matcher.base.input_buffers[0]));
+  CHECK_ERR(filt_sink_connect(&fixture.matcher.base, 0,
+                              &fixture.sink.input_buffers[0]));
 
   // Start source and matcher
-  TEST_ASSERT_EQUAL(Bp_EC_OK, filt_start(&fixture.source));
-  TEST_ASSERT_EQUAL(Bp_EC_OK, filt_start(&fixture.matcher.base));
+  CHECK_ERR(filt_start(&fixture.source));
+  CHECK_ERR(filt_start(&fixture.matcher.base));
 
   // Push a batch with non-aligned timestamp
   Batch_t* batch = bb_get_head(&fixture.matcher.base.input_buffers[0]);
-  TEST_ASSERT_NOT_NULL(batch);
+  if (batch == NULL) {
+    TEST_FAIL_MESSAGE("bb_get_head returned NULL - unable to get buffer for phase test");
+  }
 
   batch->t_ns = 12345000;      // 12.345ms - phase offset of 345us
   batch->period_ns = 1000000;  // 1ms period
@@ -295,7 +291,7 @@ void test_phase_validation(void)
   batch->tail = 64;
   batch->ec = Bp_EC_OK;
 
-  bb_submit(&fixture.matcher.base.input_buffers[0], 1000000);
+  CHECK_ERR(bb_submit(&fixture.matcher.base.input_buffers[0], 1000000));
 
   // Wait for worker to process
   struct timespec sleep_time = {0, 100000000};  // 100ms
@@ -318,8 +314,7 @@ void test_input_already_matched(void)
                       .batch_capacity_expo = 6,  // 64 samples
                       .ring_capacity_expo = 4,
                       .overflow_behaviour = OVERFLOW_BLOCK}};
-  TEST_ASSERT_EQUAL(Bp_EC_OK,
-                    batch_matcher_init(&fixture.matcher, matcher_config));
+  CHECK_ERR(batch_matcher_init(&fixture.matcher, matcher_config));
 
   Core_filt_config_t sink_config = {
       .name = "matched_sink",
@@ -333,12 +328,11 @@ void test_input_already_matched(void)
                       .overflow_behaviour = OVERFLOW_BLOCK},
       .timeout_us = 1000000,
       .worker = matched_passthroug};
-  TEST_ASSERT_EQUAL(Bp_EC_OK, filt_init(&fixture.sink, sink_config));
+  CHECK_ERR(filt_init(&fixture.sink, sink_config));
 
   // Connect
-  TEST_ASSERT_EQUAL(Bp_EC_OK,
-                    filt_sink_connect(&fixture.matcher.base, 0,
-                                      &fixture.sink.input_buffers[0]));
+  CHECK_ERR(filt_sink_connect(&fixture.matcher.base, 0,
+                              &fixture.sink.input_buffers[0]));
 
   // Both should have same size
   TEST_ASSERT_EQUAL(64, fixture.matcher.output_batch_samples);
