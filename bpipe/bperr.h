@@ -44,12 +44,12 @@ typedef enum _Bp_EC {
   Bp_EC_ALREADY_REGISTERED,
   Bp_EC_NOT_IMPLEMENTED,
   Bp_EC_NULL_POINTER,
-  Bp_EC_NO_SINK,              /* BatchMatcher requires connected sink */
-  Bp_EC_PHASE_ERROR,           /* Input has non-integer sample phase */
-  Bp_EC_TYPE_ERROR,            /* Data type not supported for operation */
-  Bp_EC_ALLOC,                 /* Memory allocation error */
-  Bp_EC_INVALID_DATA,          /* Invalid data format or content */
-  Bp_EC_NO_SPACE,              /* No space available in buffer */
+  Bp_EC_NO_SINK,      /* BatchMatcher requires connected sink */
+  Bp_EC_PHASE_ERROR,  /* Input has non-integer sample phase */
+  Bp_EC_TYPE_ERROR,   /* Data type not supported for operation */
+  Bp_EC_ALLOC,        /* Memory allocation error */
+  Bp_EC_INVALID_DATA, /* Invalid data format or content */
+  Bp_EC_NO_SPACE,     /* No space available in buffer */
   Bp_EC_MAX,
 } Bp_EC;
 

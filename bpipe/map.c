@@ -6,7 +6,6 @@
 #include "bperr.h"
 #include "core.h"
 
-
 void* map_worker(void* arg)
 {
   Map_filt_t* f = (Map_filt_t*) arg;
@@ -32,15 +31,15 @@ void* map_worker(void* arg)
     if (NEEDS_NEW_BATCH(input)) {
       if (input && (err = bb_del_tail(&f->base.input_buffers[0])) != Bp_EC_OK)
         break;
-      
+
       input = bb_get_tail(&f->base.input_buffers[0], f->base.timeout_us, &err);
       if (!input) {
         if (err == Bp_EC_TIMEOUT) {
           continue;  // Normal timeout, keep waiting for data
         } else if (err == Bp_EC_STOPPED) {
-          break;     // Buffer was stopped, exit gracefully
+          break;  // Buffer was stopped, exit gracefully
         } else {
-          break;     // Real error, exit
+          break;  // Real error, exit
         }
       }
     }
@@ -54,7 +53,7 @@ void* map_worker(void* arg)
 
     // Process available data if we have both input and output
     if (!input || !output) continue;  // Wait for both buffers
-    
+
     size_t n = MIN(input->head - input->tail, batch_size - output->head);
     if (n > 0) {
       err = f->map_fcn(input->data + input->tail * data_width,
@@ -79,7 +78,8 @@ void* map_worker(void* arg)
       if ((err = bb_submit(f->base.sinks[0], f->base.timeout_us)) != Bp_EC_OK)
         break;
       output = NULL;  // Force getting a new output batch
-      f->base.metrics.n_batches++;  // Increment batch count only when submitting
+      f->base.metrics
+          .n_batches++;  // Increment batch count only when submitting
     }
   }
 
@@ -89,7 +89,8 @@ void* map_worker(void* arg)
     atomic_store(&f->base.running, false);  // Stop filter on error
   }
 
-  if (output && output->head > 0) bb_submit(f->base.sinks[0], f->base.timeout_us);
+  if (output && output->head > 0)
+    bb_submit(f->base.sinks[0], f->base.timeout_us);
 
   return NULL;
 }
@@ -179,9 +180,9 @@ Bp_EC map_init(Map_filt_t* f, Map_config_t config)
   core_config.worker = &map_worker;
 
   /* Map is always a 1->1 filter */
-  core_config.n_inputs = 1;  // Map always has exactly one input
-  core_config.max_supported_sinks = 1;  // Map always has exactly one output
-  core_config.filt_type = FILT_T_MAP;  // Filter type is always map
+  core_config.n_inputs = 1;               // Map always has exactly one input
+  core_config.max_supported_sinks = 1;    // Map always has exactly one output
+  core_config.filt_type = FILT_T_MAP;     // Filter type is always map
   core_config.size = sizeof(Map_filt_t);  // Size for inheritance
   core_config.name = config.name;
   core_config.timeout_us = config.timeout_us;

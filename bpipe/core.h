@@ -45,11 +45,12 @@ typedef enum _CORE_FILT_T {
                               time alignment. */
   FILT_T_OVERLAP_BATCHES,  /* Used to create repeating regions at the start of
                               the batch. Used for batched convolution.*/
-  FILT_T_BATCH_MATCHER,    /* Matches batch sizes and zeros phase for element-wise ops */
-  FILT_T_SAMPLE_ALIGNER,   /* Corrects phase offset in regular data to align to sample grid */
-  FILT_T_MAX,              /* Overflow guard. */
+  FILT_T_BATCH_MATCHER,  /* Matches batch sizes and zeros phase for element-wise
+                            ops */
+  FILT_T_SAMPLE_ALIGNER, /* Corrects phase offset in regular data to align to
+                            sample grid */
+  FILT_T_MAX,            /* Overflow guard. */
 } CORE_FILT_T;
-
 
 /* Forward declaration */
 struct _Filter_t;
@@ -65,31 +66,31 @@ typedef enum _FilterHealth_t {
 /* Filter operations interface */
 typedef struct _FilterOps {
   /* Lifecycle operations */
-  Bp_EC (*start)(struct _Filter_t* self);
-  Bp_EC (*stop)(struct _Filter_t* self);
-  Bp_EC (*deinit)(struct _Filter_t* self);
-  
+  Bp_EC (*start)(struct _Filter_t *self);
+  Bp_EC (*stop)(struct _Filter_t *self);
+  Bp_EC (*deinit)(struct _Filter_t *self);
+
   /* Data flow operations */
-  Bp_EC (*flush)(struct _Filter_t* self);
-  Bp_EC (*drain)(struct _Filter_t* self);
-  Bp_EC (*reset)(struct _Filter_t* self);
-  
+  Bp_EC (*flush)(struct _Filter_t *self);
+  Bp_EC (*drain)(struct _Filter_t *self);
+  Bp_EC (*reset)(struct _Filter_t *self);
+
   /* Diagnostics operations */
-  Bp_EC (*get_stats)(struct _Filter_t* self, void* stats_out);
-  FilterHealth_t (*get_health)(struct _Filter_t* self);
-  size_t (*get_backlog)(struct _Filter_t* self);
-  
+  Bp_EC (*get_stats)(struct _Filter_t *self, void *stats_out);
+  FilterHealth_t (*get_health)(struct _Filter_t *self);
+  size_t (*get_backlog)(struct _Filter_t *self);
+
   /* Configuration operations */
-  Bp_EC (*reconfigure)(struct _Filter_t* self, void* config);
-  Bp_EC (*validate_connection)(struct _Filter_t* self, size_t sink_idx);
-  
+  Bp_EC (*reconfigure)(struct _Filter_t *self, void *config);
+  Bp_EC (*validate_connection)(struct _Filter_t *self, size_t sink_idx);
+
   /* Debugging operations */
-  Bp_EC (*describe)(struct _Filter_t* self, char* buffer, size_t buffer_size);
-  Bp_EC (*dump_state)(struct _Filter_t* self, char* buffer, size_t buffer_size);
-  
+  Bp_EC (*describe)(struct _Filter_t *self, char *buffer, size_t buffer_size);
+  Bp_EC (*dump_state)(struct _Filter_t *self, char *buffer, size_t buffer_size);
+
   /* Error handling */
-  Bp_EC (*handle_error)(struct _Filter_t* self, Bp_EC error);
-  Bp_EC (*recover)(struct _Filter_t* self);
+  Bp_EC (*handle_error)(struct _Filter_t *self, Bp_EC error);
+  Bp_EC (*recover)(struct _Filter_t *self);
 } FilterOps;
 
 /* Transform function signature
@@ -158,13 +159,13 @@ Bp_EC filt_stop(Filter_t *filter);
 Bp_EC filt_flush(Filter_t *filter);
 Bp_EC filt_drain(Filter_t *filter);
 Bp_EC filt_reset(Filter_t *filter);
-Bp_EC filt_get_stats(Filter_t *filter, void* stats_out);
+Bp_EC filt_get_stats(Filter_t *filter, void *stats_out);
 FilterHealth_t filt_get_health(Filter_t *filter);
 size_t filt_get_backlog(Filter_t *filter);
-Bp_EC filt_reconfigure(Filter_t *filter, void* config);
+Bp_EC filt_reconfigure(Filter_t *filter, void *config);
 Bp_EC filt_validate_connection(Filter_t *filter, size_t sink_idx);
-Bp_EC filt_describe(Filter_t *filter, char* buffer, size_t buffer_size);
-Bp_EC filt_dump_state(Filter_t *filter, char* buffer, size_t buffer_size);
+Bp_EC filt_describe(Filter_t *filter, char *buffer, size_t buffer_size);
+Bp_EC filt_dump_state(Filter_t *filter, char *buffer, size_t buffer_size);
 Bp_EC filt_handle_error(Filter_t *filter, Bp_EC error);
 Bp_EC filt_recover(Filter_t *filter);
 

@@ -21,8 +21,8 @@ char err_lut[Bp_EC_MAX][100] = {
     ERR_LUT_ENTRY(DTYPE_MISMATCH), /* Source/sink data types don't match */
     ERR_LUT_ENTRY(WIDTH_MISMATCH), /* Data width mismatch */
     ERR_LUT_ENTRY(DTYPE_INVALID),
-    ERR_LUT_ENTRY(INVALID_DTYPE),  /* Invalid or unsupported data type */
-    ERR_LUT_ENTRY(INVALID_CONFIG), /* Invalid configuration parameters */
+    ERR_LUT_ENTRY(INVALID_DTYPE),         /* Invalid or unsupported data type */
+    ERR_LUT_ENTRY(INVALID_CONFIG),        /* Invalid configuration parameters */
     ERR_LUT_ENTRY(INVALID_CONFIG_WORKER), /* Invalid configuration parameters */
     ERR_LUT_ENTRY(
         INVALID_CONFIG_MAX_INPUTS), /* Invalid configuration parameters */
