@@ -42,172 +42,130 @@ This specification defines the approach for handling sample rate mismatches and 
 └─────────┘
 ```
 
-## Implementation Phases
+## Core Alignment Primitives
 
-### Phase 1: Basic Infrastructure (Week 1-2)
+### Summary
 
-**Goals:**
-- Implement sample-and-hold synchronizer using existing batch metadata
-- Create basic multi-input math filters
-- Establish synchronization patterns
+The bpipe synchronization strategy is built on seven fundamental alignment primitives, each solving a specific timing problem:
 
-**Deliverables:**
+1. **Sample Phase Alignment** - Ensures timestamps align to sample grid boundaries
+2. **Batch Size Matching** - Ensures all streams have identical batch sizes  
+3. **Batch Phase Zeroing** - Aligns batch boundaries to epoch (t=0)
+4. **Rate Conversion** - Changes sample rate while preserving signal integrity
+5. **Regularization** - Converts irregular/event-driven data to regular sampling
+6. **Time Window Synchronization** - Outputs only when all inputs have overlapping data
+7. **Gap Filling** - Handles missing data without breaking downstream processing
 
-1. **Synchronizer Using Existing Metadata**
-```c
-// No new structures needed - use existing Bp_Batch_t fields:
-// - t_ns: timestamp of first sample in batch
-// - period_ns: fixed interval (0 for irregular)
-// - batch_id: sequence number for drop detection
+### Detailed Primitive Descriptions
 
-// Synchronizer tracks state per input
-typedef struct {
-    long long last_t_ns;
-    unsigned period_ns;
-    size_t last_batch_id;
-    float* last_samples;  // For sample-and-hold
-    size_t n_samples;
-} InputState_t;
+#### 1. Sample Phase Alignment (SampleAligner)
+
+**Purpose**: Corrects phase offsets in regularly sampled data, ensuring all timestamps align to the sample grid.
+
+**Problem Solved**: Sensors may start at arbitrary times, resulting in timestamps like t=12345ns when the sample period is 1000ns. This creates a 345ns phase offset that prevents proper batch alignment.
+
+**Guarantees**:
+- Output timestamps satisfy `t_ns % period_ns == 0`
+- Sample rate is preserved exactly
+- Signal quality maintained through configurable interpolation
+
+**When to Use**: Before any batch alignment operations when data has non-zero phase offset.
+
+[Detailed specification: specs/sample_aligner_design.md]
+
+#### 2. Batch Size Matching (BatchMatcher) 
+
+**Purpose**: Ensures multiple streams have identical batch sizes AND zero phase offset for element-wise operations.
+
+**Problem Solved**: Element-wise operations require all inputs to have the same number of samples per batch. This filter auto-detects the required size from its connected sink.
+
+**Guarantees**:
+- Output batch size matches downstream requirements (auto-detected)
+- All batches start at t = k × batch_period (phase=0)
+- Zero configuration needed
+
+**When to Use**: Before any element-wise operation on multiple streams.
+
+[Detailed specification: specs/batch_matcher_design.md]
+
+#### 3. Rate Conversion (Resampler)
+
+**Purpose**: Changes the sample rate of already-regular data using high-quality filtering.
+
+**Problem Solved**: Different sensors may operate at different rates (e.g., 48kHz audio and 44.1kHz processing).
+
+**Guarantees**:
+- Configurable filter quality (passband ripple, stopband attenuation)
+- No aliasing for downsampling
+- Maintains precise timing relationships
+
+**When to Use**: When inputs have different sample rates that need to be unified.
+
+#### 4. Regularization (Regularizer)
+
+**Purpose**: Converts irregular or event-driven data to fixed-rate streams.
+
+**Problem Solved**: Many sensors produce data at irregular intervals (GPS, user events) but downstream processing expects regular sampling.
+
+**Guarantees**:
+- Output has constant period_ns
+- Configurable interpolation methods (HOLD, LINEAR)
+- Handles gaps gracefully
+
+**When to Use**: When processing event-driven or irregularly sampled data.
+
+#### 5. Time Window Synchronization (TimeWindowSync)
+
+**Purpose**: Ensures multiple streams only output data for time ranges where all streams have data.
+
+**Problem Solved**: In multi-sensor systems, not all sensors may have data for all time ranges due to startup delays or dropouts.
+
+**Guarantees**:
+- Output batches have identical timestamps across all streams
+- Truncates to overlapping time ranges
+- Maintains sample correspondence
+
+**When to Use**: When you need guaranteed data availability across all inputs.
+
+#### 6. Gap Filling (GapFiller)
+
+**Purpose**: Handles temporary data dropouts by interpolating missing samples.
+
+**Problem Solved**: Network issues or sensor faults can cause data gaps that would break downstream processing.
+
+**Guarantees**:
+- Continuous output even with input gaps
+- Configurable interpolation strategies
+- Metadata flags for interpolated data
+
+**When to Use**: In systems where temporary data loss is expected but processing must continue.
+
+## Composition Patterns
+
+### Basic Multi-Sensor Synchronization
+```
+Sensor1 → BatchMatcher → TimeWindowSync → ElementWise
+Sensor2 → BatchMatcher ↗
 ```
 
-2. **Basic Synchronizer**
-```c
-// bpipe/sync.h
-typedef struct {
-    Bp_Filter_t base;
-    size_t n_inputs;
-    InputState_t input_states[BP_MAX_INPUTS];
-} Bp_SampleHoldSync_t;
-
-Bp_EC BpSampleHoldSync_Init(Bp_SampleHoldSync_t* sync, 
-                            size_t n_inputs,
-                            const BpFilterConfig* config);
-
-// Transform reads from all inputs, aligns by t_ns
-void BpSampleHoldSync_Transform(Bp_Filter_t* filter,
-                               Bp_Batch_t** inputs, int n_inputs,
-                               Bp_Batch_t** outputs, int n_outputs);
+### Multi-Rate Sensor Fusion
+```
+GPS(1Hz) → Regularizer → Resampler → BatchMatcher → TimeWindowSync → Fusion
+IMU(100Hz) → Resampler → BatchMatcher ──────────────↗
+Mag(10Hz) → Resampler → BatchMatcher ──────────────↗
 ```
 
-3. **Multi-Input Math Operations**
-```c
-// bpipe/math_ops.h
-typedef struct {
-    Bp_Filter_t base;
-    size_t n_inputs;
-} Bp_MultiInputOp_t;
-
-// Element-wise operations
-Bp_EC BpAdd_Init(Bp_MultiInputOp_t* op, size_t n_inputs, const BpFilterConfig* cfg);
-Bp_EC BpMultiply_Init(Bp_MultiInputOp_t* op, size_t n_inputs, const BpFilterConfig* cfg);
+### Phase-Misaligned Sensors
+```
+Sensor1 → SampleAligner → BatchMatcher → TimeWindowSync → Process
+Sensor2 → SampleAligner → BatchMatcher ↗
 ```
 
-**Tests:**
-- Unit tests for timing metadata
-- Sample-and-hold with known patterns
-- Multi-input math with synchronized data
-
-### Phase 2: Advanced Synchronization (Week 3-4)
-
-**Goals:**
-- Implement interpolating synchronizer
-- Add windowed synchronization
-- Create timing analysis utilities
-
-**Deliverables:**
-
-1. **Interpolating Synchronizer**
-```c
-typedef struct {
-    Bp_Filter_t base;
-    InterpolationType_t method;  // LINEAR, CUBIC, ZERO_ORDER_HOLD
-    long long max_extrapolation_ns;  // Max time to extrapolate
-    InputState_t input_states[BP_MAX_INPUTS];
-    float* history[BP_MAX_INPUTS];   // Past samples for interpolation
-    size_t history_size;
-} Bp_InterpolatingSync_t;
-
-// Uses t_ns and period_ns to interpolate between samples
+### Robust Network Telemetry
 ```
-
-2. **Windowed Synchronizer**
-```c
-typedef struct {
-    Bp_Filter_t base;
-    long long window_duration_ns;
-    AggregationMethod_t method;  // AVERAGE, MEDIAN, LAST
-    long long window_start_ns;
-    float* accumulators[BP_MAX_INPUTS];
-    size_t sample_counts[BP_MAX_INPUTS];
-} Bp_WindowedSync_t;
-
-// Aggregates samples within time windows based on t_ns
+Sensor1 → GapFiller → BatchMatcher → TimeWindowSync → Process
+Sensor2 → GapFiller → BatchMatcher ↗
 ```
-
-3. **Timing Analysis**
-```c
-// Utility to analyze timing from existing batch metadata
-typedef struct {
-    long long min_period_ns;
-    long long max_period_ns;
-    long long avg_period_ns;
-    bool is_regular;  // Based on period_ns consistency
-    size_t dropped_batches;  // Detected via batch_id gaps
-} TimingAnalysis_t;
-
-Bp_EC BpFilter_AnalyzeTiming(Bp_Filter_t* filter, 
-                            int input_idx,
-                            TimingAnalysis_t* analysis);
-```
-
-**Tests:**
-- Interpolation accuracy tests
-- Window boundary conditions
-- Rate mismatch detection
-
-### Phase 3: Resampling and Performance (Week 5-6)
-
-**Goals:**
-- Implement high-quality resampler
-- Optimize synchronizer performance
-- Add timing diagnostics
-
-**Deliverables:**
-
-1. **Resampling Filter**
-```c
-typedef struct {
-    Bp_Filter_t base;
-    long long target_period_ns;  // Desired output period
-    ResamplingKernel_t* kernel;  // Sinc, Kaiser, etc.
-    size_t kernel_size;
-    float* history_buffer;
-    long long next_output_t_ns;  // Next output sample time
-} Bp_Resampler_t;
-
-// Generates new batches with target_period_ns timing
-```
-
-2. **Performance Optimizations**
-- SIMD acceleration for interpolation
-- Lock-free synchronization where possible
-- Batch prefetching
-
-3. **Diagnostics**
-```c
-typedef struct {
-    uint64_t samples_aligned;
-    uint64_t samples_interpolated;
-    uint64_t samples_dropped;
-    double max_time_delta;
-    double avg_time_delta;
-} Bp_SyncStats_t;
-```
-
-**Tests:**
-- Resampling quality (SNR, aliasing)
-- Performance benchmarks
-- Long-running stability
 
 ## Test Strategy
 
@@ -295,26 +253,6 @@ Synchronizers leverage the batch metadata to align multi-input data:
 3. **Drop Detection**: Monitor `batch_id` sequences for missing data
 4. **Interpolation**: Calculate intermediate timestamps using `t_ns + n * period_ns`
 
-Example synchronization logic:
-```c
-// In synchronizer transform function
-long long target_time = /* current output time */;
-
-for (int i = 0; i < n_inputs; i++) {
-    Bp_Batch_t* batch = inputs[i];
-    
-    // Calculate sample time within batch
-    if (batch->period_ns > 0) {
-        // Regular sampling: interpolate within batch
-        int sample_idx = (target_time - batch->t_ns) / batch->period_ns;
-        // ... interpolate if needed
-    } else {
-        // Irregular: each batch is one sample at t_ns
-        // ... use sample-and-hold or interpolate from history
-    }
-}
-```
-
 ## Usage Examples
 
 ### Simple Case (No Sync Needed)
@@ -360,35 +298,58 @@ resample1.connect(multiply.input[0])
 resample2.connect(multiply.input[1])
 ```
 
-## Success Criteria
+## Design Decisions
 
-1. **Correctness**
-   - No data corruption in synchronized streams
-   - Accurate interpolation within specified bounds
-   - Proper handling of edge cases
+### Why Separate Synchronization Filters?
 
-2. **Performance**
-   - < 5% overhead for sample-and-hold
-   - < 20% overhead for linear interpolation
-   - Resampling meets real-time constraints
+The alternative of embedding synchronization logic in each mathematical filter was rejected because:
 
-3. **Usability**
-   - Clear error messages for timing mismatches
-   - Intuitive API for common cases
-   - Good defaults that work out of the box
+1. **Complexity Explosion**: Every filter would need timing logic
+2. **Duplication**: Same synchronization code repeated everywhere
+3. **Testing Difficulty**: Hard to isolate timing vs computation bugs
+4. **Performance**: Synchronization overhead even when not needed
 
-4. **Maintainability**
-   - Clean separation between sync and math
-   - Well-documented timing assumptions
-   - Comprehensive test coverage
+### Why Atomic Primitives?
 
-## Future Extensions
+A monolithic \"super synchronizer\" handling all cases was rejected because:
 
-1. **Adaptive Synchronization**: Automatically choose sync strategy based on rates
-2. **Time-Varying Rates**: Handle sources with changing sample rates
-3. **Network Time Sync**: Integration with PTP/NTP for distributed systems
-4. **GPU Acceleration**: CUDA/OpenCL kernels for resampling
+1. **Configuration Complexity**: Too many parameters for simple cases
+2. **Code Size**: Single filter would be ~1000+ lines
+3. **Testing**: Exponential test combinations
+4. **Performance**: Features you don't use still cost cycles
+
+The atomic approach provides:
+- Each primitive is ~200 lines of focused code
+- Linear testing complexity
+- Pay only for transformations you need
+- Clear composition patterns
+
+## Performance Characteristics
+
+### Latency per Primitive
+- **SampleAligner**: < period_ns (phase correction only)
+- **BatchMatcher**: ≤ batch_period_ns (accumulation time)
+- **Resampler**: ~filter_taps × period_ns (filter group delay)
+- **Regularizer**: ≤ output_period_ns
+- **TimeWindowSync**: ~0 (passthrough when aligned)
+- **GapFiller**: ~0 (minimal buffering)
+
+### Memory Requirements
+- **SampleAligner**: history_size × sizeof(sample)
+- **BatchMatcher**: 2 × batch_size × sizeof(sample)
+- **Resampler**: filter_taps × sizeof(sample) × channels
+- **Regularizer**: 2 samples (previous + current)
+- **TimeWindowSync**: Minimal (pointers only)
+- **GapFiller**: max_gap_samples × sizeof(sample)
+
+## Key Principles
+
+1. **Explicit Over Implicit**: Synchronization is visible in the pipeline
+2. **Fail Fast**: Primitives error on invalid assumptions rather than hide problems
+3. **Zero Configuration**: Auto-detection where possible (e.g., BatchMatcher)
+4. **Composability**: Complex synchronization from simple primitives
+5. **Performance**: Each primitive optimized for its specific task
 
 ## Conclusion
 
-This specification provides a flexible, performant approach to multi-input synchronization that maintains the simplicity of the bpipe framework while enabling complex multi-rate processing when needed. The phased implementation allows for incremental development and testing, ensuring stability at each stage.
+This specification defines a complete set of timing alignment primitives that enable complex multi-rate, multi-source telemetry processing through composition of simple, focused filters. By separating synchronization concerns from computation, the framework maintains clarity while providing the flexibility to handle real-world timing challenges.
