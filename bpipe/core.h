@@ -44,6 +44,7 @@ typedef enum _CORE_FILT_T {
                               time alignment. */
   FILT_T_OVERLAP_BATCHES,  /* Used to create repeating regions at the start of
                               the batch. Used for batched convolution.*/
+  FILT_T_BATCH_MATCHER,    /* Matches batch sizes and zeros phase for element-wise ops */
   FILT_T_MAX,              /* Overflow guard. */
 } CORE_FILT_T;
 
