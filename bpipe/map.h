@@ -3,6 +3,7 @@
 
 #include "bperr.h"
 #include "core.h"
+#include "utils.h"
 
 typedef Bp_EC (*Map_fcn_t)(const void* in, void* out, size_t n_samples);
 

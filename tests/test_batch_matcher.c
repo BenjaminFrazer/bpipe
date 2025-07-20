@@ -4,6 +4,7 @@
 #include "batch_matcher.h"
 #include "core.h"
 #include "unity.h"
+#include "test_utils.h"
 
 // Test fixture
 typedef struct {

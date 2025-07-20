@@ -22,6 +22,7 @@
 #include <unistd.h>
 #include "batch_buffer.h"
 #include "bperr.h"
+#include "utils.h"
 
 #define MAX_SINKS 10
 #define MAX_INPUTS 10
@@ -48,17 +49,6 @@ typedef enum _CORE_FILT_T {
   FILT_T_MAX,              /* Overflow guard. */
 } CORE_FILT_T;
 
-#define BP_WORKER_ASSERT(f, cond, err)            \
-  do {                                            \
-    if (!(cond)) {                                \
-      f->worker_err_info.line_no = __LINE__;      \
-      f->worker_err_info.function = __FUNCTION__; \
-      f->worker_err_info.filename = __FILE__;     \
-      f->worker_err_info.ec = err;                \
-      f->running = false;                         \
-      return NULL;                                \
-    }                                             \
-  } while (false)
 
 /* Forward declaration */
 struct _Filter_t;

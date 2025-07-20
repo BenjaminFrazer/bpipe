@@ -7,6 +7,7 @@
 #include "batch_buffer.h"
 #include "map.h"
 #include "unity.h"
+#include "test_utils.h"
 
 #define BATCH_CAPACITY_EXPO 8  // 256 samples per batch
 #define RING_CAPACITY_EXPO 6   // 63 batches in ring
@@ -29,12 +30,6 @@ static const struct timespec ts_10ms = {.tv_sec = 0, .tv_nsec = 10000000};
 /* Test utilities */
 static uint32_t count_in = 0;
 static uint32_t count_out = 0;
-
-#define CHECK_ERR(ERR)                                                  \
-  do {                                                                  \
-    Bp_EC _ec = ERR;                                                    \
-    TEST_ASSERT_EQUAL_INT_MESSAGE(Bp_EC_OK, _ec, "Error in operation"); \
-  } while (false);
 
 /* Test map function - identity passthrough */
 static Bp_EC test_identity_map(const void* in, void* out, size_t n_samples)

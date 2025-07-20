@@ -13,6 +13,7 @@
 #include "../bpipe/core.h"
 #include "time.h"
 #include "unity.h"
+#include "test_utils.h"
 
 #define BATCH_CAPACITY_EXPO 4
 #define RING_CAPACITY_EXPO 4
@@ -48,11 +49,6 @@ struct timespec ts_1ms = {.tv_nsec = 1000000};  // 10ms
 
 Bp_EC _ec;
 
-#define CHECK_ERR(ERR)                                          \
-  do {                                                          \
-    _ec = ERR;                                                  \
-    TEST_ASSERT_EQUAL_INT_MESSAGE(Bp_EC_OK, _ec, err_lut[_ec]); \
-  } while (false);
 
 void setUp(void)
 {

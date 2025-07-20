@@ -6,10 +6,6 @@
 #include "bperr.h"
 #include "core.h"
 
-/* Helper macros for cleaner code */
-#define MIN(a, b) ((a) < (b) ? (a) : (b))
-#define NEEDS_NEW_BATCH(batch) (!batch || batch->tail >= batch->head)
-#define BATCH_FULL(batch, size) (batch->head >= size)
 
 void* map_worker(void* arg)
 {
