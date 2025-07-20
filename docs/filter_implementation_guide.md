@@ -40,10 +40,10 @@ void* yourfilter_worker(void* arg) {
     Bp_EC err = Bp_EC_OK;
     
     // 1. Validate configuration
-    if (!validate_config(f)) {
-        f->base.worker_err_info.ec = Bp_EC_INVALID_CONFIG;
-        return NULL;
-    }
+    WORKER_ASSERT(&f->base, f->config_field >= 0, Bp_EC_INVALID_CONFIG,
+                  "Configuration field must be non-negative");
+    WORKER_ASSERT(&f->base, f->base.sinks[0] != NULL, Bp_EC_NO_SINK,
+                  "Filter requires connected sink");
     
     // 2. Main processing loop
     while (atomic_load(&f->base.running)) {
@@ -55,6 +55,16 @@ void* yourfilter_worker(void* arg) {
             if (err == Bp_EC_STOPPED) break;
             break; // Real error
         }
+        
+        // Check for completion
+        if (input->ec == Bp_EC_COMPLETE) {
+            bb_del_tail(&f->base.input_buffers[0]);
+            break;
+        }
+        
+        // Validate input
+        WORKER_ASSERT(&f->base, input->ec == Bp_EC_OK, input->ec,
+                      "Input batch has error");
         
         // Process data...
         
@@ -128,7 +138,7 @@ Bp_EC yourfilter_init(YourFilter_t* f, YourFilter_config_t config) {
 1. **Hardcode What's Fixed**: Filter type, I/O counts, size - set in init, not config
 2. **Expose What Varies**: name, timeout_us, buffer configs - user configurable
 3. **Batch Processing**: Handle partial batches, preserve timing metadata
-4. **Error Handling**: Use BP_WORKER_ASSERT in workers, proper cleanup
+4. **Error Handling**: Use WORKER_ASSERT in workers, proper cleanup
 5. **Thread Safety**: Filter runs in single worker thread, mutex protects sink array
 
 ## Common Patterns
@@ -174,7 +184,36 @@ The framework provides common utilities that should be used across all filters:
 - `MAX(a, b)` - Returns maximum of two values
 - `NEEDS_NEW_BATCH(batch)` - Checks if batch needs replacement
 - `BATCH_FULL(batch, size)` - Checks if batch is at capacity
-- `BP_WORKER_ASSERT(filter, condition, error)` - Worker thread assertion with error tracking
+- `WORKER_ASSERT(filter, condition, error_code, message)` - Worker thread assertion with error tracking
+
+### WORKER_ASSERT Usage
+
+The `WORKER_ASSERT` macro is crucial for proper error handling in worker threads:
+
+```c
+WORKER_ASSERT(filter_ptr, condition, error_code, error_message);
+```
+
+When the condition is false:
+1. Sets `filter->worker_err_info.ec` to the error code
+2. Captures the error message, file, function, and line number
+3. Sets `filter->running = false` to stop the worker
+4. Returns NULL from the worker function
+
+Common usage patterns:
+```c
+// Configuration validation
+WORKER_ASSERT(&f->base, f->batch_size > 0, Bp_EC_INVALID_CONFIG,
+              "Batch size must be positive");
+
+// Runtime requirements
+WORKER_ASSERT(&f->base, f->base.sinks[0] != NULL, Bp_EC_NO_SINK,
+              "Filter requires connected sink");
+
+// State validation
+WORKER_ASSERT(&f->base, f->accumulator != NULL, Bp_EC_ALLOC,
+              "Failed to allocate accumulator buffer");
+```
 
 ### Guidelines for utils.h
 - **Add common patterns**: If a macro/function is used by 2+ filters, consider adding it
@@ -187,7 +226,8 @@ Example usage:
 #include "utils.h"
 
 // In worker function
-BP_WORKER_ASSERT(filter, config->timeout_us >= 0, Bp_EC_INVALID_CONFIG);
+WORKER_ASSERT(&f->base, config->timeout_us >= 0, Bp_EC_INVALID_CONFIG,
+              "Timeout must be non-negative");
 
 // In processing loop
 if (NEEDS_NEW_BATCH(input)) {
