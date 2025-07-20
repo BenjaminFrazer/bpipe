@@ -6,6 +6,21 @@ This specification defines the approach for handling sample rate mismatches and 
 
 **Key Decision**: This design leverages the existing batch metadata (`t_ns`, `period_ns`, `batch_id`) rather than introducing additional timing structures. This maintains framework simplicity while providing sufficient information for synchronization.
 
+## The Fundamental Challenge
+
+Many telemetry operations require processing multiple data streams together:
+- Cross-correlation between sensors
+- Sensor fusion algorithms  
+- Differential measurements
+- Multi-channel FFTs
+
+These operations assume that:
+1. Samples at index N in each stream represent the same instant in time
+2. All inputs have the same sample rate
+3. Batch boundaries align across streams
+
+Real-world data rarely meets these requirements naturally.
+
 ## Design Philosophy
 
 ### Core Principles
@@ -46,15 +61,14 @@ This specification defines the approach for handling sample rate mismatches and 
 
 ### Summary
 
-The bpipe synchronization strategy is built on seven fundamental alignment primitives, each solving a specific timing problem:
+The bpipe synchronization strategy is built on six fundamental alignment primitives, each solving a specific timing problem:
 
 1. **Sample Phase Alignment** - Ensures timestamps align to sample grid boundaries
-2. **Batch Size Matching** - Ensures all streams have identical batch sizes  
-3. **Batch Phase Zeroing** - Aligns batch boundaries to epoch (t=0)
-4. **Rate Conversion** - Changes sample rate while preserving signal integrity
-5. **Regularization** - Converts irregular/event-driven data to regular sampling
-6. **Time Window Synchronization** - Outputs only when all inputs have overlapping data
-7. **Gap Filling** - Handles missing data without breaking downstream processing
+2. **Batch Size Matching & Phase Zeroing** - Ensures identical batch sizes AND aligns to epoch (t=0)
+3. **Rate Conversion** - Changes sample rate while preserving signal integrity
+4. **Regularization** - Converts irregular/event-driven data to regular sampling
+5. **Time Window Synchronization** - Outputs only when all inputs have overlapping data
+6. **Gap Filling** - Handles missing data without breaking downstream processing
 
 ### Detailed Primitive Descriptions
 
@@ -63,6 +77,20 @@ The bpipe synchronization strategy is built on seven fundamental alignment primi
 **Purpose**: Corrects phase offsets in regularly sampled data, ensuring all timestamps align to the sample grid.
 
 **Problem Solved**: Sensors may start at arbitrary times, resulting in timestamps like t=12345ns when the sample period is 1000ns. This creates a 345ns phase offset that prevents proper batch alignment.
+
+**Example**:
+```
+Problem:
+Sensor starts at t=12345ns with 1kHz sampling:
+Timestamps: 12345, 13345, 14345, 15345...
+Phase offset: 345ns (not on sample grid!)
+
+Solution:
+SampleAligner interpolates to grid-aligned timestamps:
+Output: 12000, 13000, 14000, 15000...
+        ↓
+    Now compatible with BatchMatcher!
+```
 
 **Guarantees**:
 - Output timestamps satisfy `t_ns % period_ns == 0`
@@ -79,10 +107,28 @@ The bpipe synchronization strategy is built on seven fundamental alignment primi
 
 **Problem Solved**: Element-wise operations require all inputs to have the same number of samples per batch. This filter auto-detects the required size from its connected sink.
 
+**Example**:
+```
+Problem:
+Two 1kHz sensors with different start times and batch sizes:
+Sensor A: starts t=12ms, 64-sample batches:  [12...75] [76...139]
+Sensor B: starts t=47ms, 256-sample batches: [47...302] [303...558]
+
+Solution:
+BatchMatcher performs two functions:
+1. Matches batch size (auto-detected from sink): 128 samples
+2. Zeros phase (aligns to t=0):
+
+Both sensors → BatchMatcher → [t=0...127] [t=128...255] [t=256...383]
+                            ↓
+                     Perfect size AND phase alignment!
+```
+
 **Guarantees**:
 - Output batch size matches downstream requirements (auto-detected)
 - All batches start at t = k × batch_period (phase=0)
 - Zero configuration needed
+- No sample loss (except initial samples before t=0)
 
 **When to Use**: Before any element-wise operation on multiple streams.
 
@@ -107,8 +153,20 @@ The bpipe synchronization strategy is built on seven fundamental alignment primi
 
 **Problem Solved**: Many sensors produce data at irregular intervals (GPS, user events) but downstream processing expects regular sampling.
 
+**Example**:
+```
+Problem:
+GPS data arrives irregularly:
+t=0.000s, t=0.987s, t=2.013s, t=2.891s, t=4.102s...
+
+Solution:
+Regularizer(1Hz, HOLD) produces:
+t=0.0s, t=1.0s, t=2.0s, t=3.0s, t=4.0s...
+```
+
 **Guarantees**:
 - Output has constant period_ns
+- One sample per output batch (for downstream flexibility)
 - Configurable interpolation methods (HOLD, LINEAR)
 - Handles gaps gracefully
 
@@ -119,6 +177,19 @@ The bpipe synchronization strategy is built on seven fundamental alignment primi
 **Purpose**: Ensures multiple streams only output data for time ranges where all streams have data.
 
 **Problem Solved**: In multi-sensor systems, not all sensors may have data for all time ranges due to startup delays or dropouts.
+
+**Example**:
+```
+Problem:
+After phase alignment, one stream has a gap:
+Stream A: [t=0...99ms] [t=100...199ms] [t=200...299ms]
+Stream B: [t=0...99ms] [missing]      [t=200...299ms]
+
+Solution:
+TimeWindowSync outputs:
+Stream A: [t=0...99ms] [empty]        [t=200...299ms]
+Stream B: [t=0...99ms] [empty]        [t=200...299ms]
+```
 
 **Guarantees**:
 - Output batches have identical timestamps across all streams
@@ -165,6 +236,12 @@ Sensor2 → SampleAligner → BatchMatcher ↗
 ```
 Sensor1 → GapFiller → BatchMatcher → TimeWindowSync → Process
 Sensor2 → GapFiller → BatchMatcher ↗
+```
+
+### Irregular to Regular Processing
+```
+Event1 → Regularizer → BatchMatcher → TimeWindowSync → Correlate
+Event2 → Regularizer → BatchMatcher ↗
 ```
 
 ## Test Strategy
@@ -324,6 +401,60 @@ The atomic approach provides:
 - Pay only for transformations you need
 - Clear composition patterns
 
+## Implementation Guidelines
+
+### Filter Order Matters
+
+Always apply filters in this order:
+1. **Regularizer** (if dealing with irregular data)
+2. **Resampler** (if rate conversion needed)
+3. **SampleAligner** (if phase correction needed)
+4. **GapFiller** (if dropouts expected)
+5. **BatchMatcher** (to match batch sizes)
+6. **TimeWindowSync** (to ensure temporal correspondence)
+
+### Common Pitfalls
+
+#### 1. Forgetting Batch Matching
+```
+// BAD: Direct to element-wise op
+Sensor1 → TimeWindowSync → Multiply
+Sensor2 ↗
+
+// GOOD: Match batch sizes first
+Sensor1 → BatchMatcher → TimeWindowSync → Multiply
+Sensor2 → BatchMatcher ↗
+```
+
+#### 2. Wrong Filter Order
+```
+// BAD: Batch match before resampling
+Irregular → BatchMatcher → Regularizer
+
+// GOOD: Regularize first
+Irregular → Regularizer → BatchMatcher
+```
+
+#### 3. Mismatched Expectations
+```
+// BAD: Expecting TimeWindowSync to interpolate
+Stream1 → TimeWindowSync
+Stream2 ↗
+
+// GOOD: Handle gaps explicitly
+Stream1 → GapFiller → TimeWindowSync
+Stream2 → GapFiller ↗
+```
+
+#### 4. Phase-Misaligned Data
+```
+// BAD: Direct to BatchMatcher with phase offset
+Sensor → BatchMatcher  // ERROR: "Input has non-integer sample phase"
+
+// GOOD: Correct phase first
+Sensor → SampleAligner → BatchMatcher
+```
+
 ## Performance Characteristics
 
 ### Latency per Primitive
@@ -342,6 +473,15 @@ The atomic approach provides:
 - **TimeWindowSync**: Minimal (pointers only)
 - **GapFiller**: max_gap_samples × sizeof(sample)
 
+### Throughput Analysis
+| Filter | Operations per Sample | Bottleneck |
+|--------|---------------------|------------|
+| Regularizer | 1-2 (hold) or 4-6 (linear) | Memory bandwidth |
+| Resampler | ~taps (convolution) | Computation |
+| SampleAligner | 2-4 (interpolation) | Memory bandwidth |
+| BatchMatcher | 1 (memcpy) | Memory bandwidth |
+| TimeWindowSync | 1 (pointer ops) | Synchronization |
+
 ## Key Principles
 
 1. **Explicit Over Implicit**: Synchronization is visible in the pipeline
@@ -349,6 +489,22 @@ The atomic approach provides:
 3. **Zero Configuration**: Auto-detection where possible (e.g., BatchMatcher)
 4. **Composability**: Complex synchronization from simple primitives
 5. **Performance**: Each primitive optimized for its specific task
+
+## Future Extensions
+
+### Planned Filters
+1. **ClockDomainCrossing**: Handle streams from different clock sources
+2. **AdaptiveResampler**: Adjust rate based on measured clock drift
+3. **QualityMonitor**: Track synchronization quality metrics
+4. **Accumulator**: Combine single-sample batches into larger ones
+5. **QualityIndicator**: Flag interpolated vs actual samples
+
+### Advanced Patterns
+1. **Cascaded Synchronization**: Sync groups, then sync groups-of-groups
+2. **Dynamic Routing**: Choose sync strategy based on data availability
+3. **Predictive Sync**: Use ML to predict missing samples
+4. **GPU Acceleration**: For high-channel-count scenarios
+5. **Pipeline Builder**: Automatic filter insertion based on requirements
 
 ## Conclusion
 
