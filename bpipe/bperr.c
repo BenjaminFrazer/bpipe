@@ -8,6 +8,7 @@ char err_lut[Bp_EC_MAX][100] = {
     ERR_LUT_ENTRY(PTHREAD_UNKOWN),
     ERR_LUT_ENTRY(NOINPUT),
     ERR_LUT_ENTRY(NOSPACE),
+    ERR_LUT_ENTRY(GET_HEAD_NULL),
     ERR_LUT_ENTRY(TYPE_MISMATCH),
     ERR_LUT_ENTRY(BAD_PYOBJECT),
     ERR_LUT_ENTRY(COND_INIT_FAIL),
@@ -22,6 +23,7 @@ char err_lut[Bp_EC_MAX][100] = {
     ERR_LUT_ENTRY(DTYPE_INVALID),
     ERR_LUT_ENTRY(INVALID_DTYPE),  /* Invalid or unsupported data type */
     ERR_LUT_ENTRY(INVALID_CONFIG), /* Invalid configuration parameters */
+    ERR_LUT_ENTRY(INVALID_CONFIG_WORKER), /* Invalid configuration parameters */
     ERR_LUT_ENTRY(
         INVALID_CONFIG_MAX_INPUTS), /* Invalid configuration parameters */
     ERR_LUT_ENTRY(
@@ -34,6 +36,8 @@ char err_lut[Bp_EC_MAX][100] = {
         INVALID_CONFIG_TIMEOUT),    /* Invalid configuration parameters */
     ERR_LUT_ENTRY(CONFIG_REQUIRED), /* Configuration missing required fields */
     ERR_LUT_ENTRY(MALLOC_FAIL),     /* Memory allocation failure */
+    ERR_LUT_ENTRY(MEMCPY_FAIL),     /* Memory copy failure */
+    ERR_LUT_ENTRY(MEMSET_FAIL),     /* Memory set failure */
     ERR_LUT_ENTRY(THREAD_CREATE_NAME_FAIL), /* Failed to name thread */
     ERR_LUT_ENTRY(BUFFER_EMPTY),
     ERR_LUT_ENTRY(CONNECTION_OCCUPIED),
@@ -44,4 +48,8 @@ char err_lut[Bp_EC_MAX][100] = {
     ERR_LUT_ENTRY(NULL_POINTER),
     ERR_LUT_ENTRY(NO_SINK),
     ERR_LUT_ENTRY(PHASE_ERROR),
+    ERR_LUT_ENTRY(TYPE_ERROR),
+    ERR_LUT_ENTRY(ALLOC),
+    ERR_LUT_ENTRY(INVALID_DATA),
+    ERR_LUT_ENTRY(NO_SPACE),
 };
