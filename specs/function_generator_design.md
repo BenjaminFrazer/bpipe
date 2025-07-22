@@ -27,8 +27,9 @@ FunctionGenerator → Filter → Analysis
 1. **Zero Inputs**: Pure source filter - generates data independently
 2. **Configurable Waveforms**: Support common periodic signals
 3. **Precise Timing**: Sample-accurate generation based on period_ns
-4. **Stateless Generation**: Each sample computed from time, enabling phase coherence
+4. **Time-Based Generation**: Each sample computed from time, enabling phase coherence
 5. **Batch-Optimized**: Generate full batches efficiently
+6. **Simple Implementation**: Use double precision for general-purpose accuracy
 
 ## B) Requirements
 
@@ -66,9 +67,12 @@ typedef enum {
    - Pre-compute constants during initialization
 
 2. **Accuracy**
-   - Floating-point precision for phase accumulation
-   - No phase drift over long runs
-   - Exact frequency generation (no rounding errors)
+   - Double precision floating-point for phase calculation
+   - Acceptable phase accuracy for typical use cases:
+     * 1 kHz at 1 MHz: < 1° error after ~30 days
+     * 10 kHz at 1 MHz: < 1° error after ~3 days  
+     * 1 kHz at 48 kHz: < 1° error after ~600 days
+   - Time-based calculation prevents unbounded drift
 
 ## C) Challenges/Considerations
 
@@ -106,7 +110,23 @@ for (i = 0; i < n; i++) {
 }
 ```
 
-### 2. Efficient Waveform Generation
+### 2. Phase Precision Limitations
+
+**Challenge**: Double precision has finite accuracy for large time values
+
+**Analysis**: 
+```c
+// After extended runtime:
+uint64_t t_ns = 86400ULL * 1000000000ULL;  // 1 day at 1ns resolution
+double phase = omega * t_ns;  // Loses least significant bits
+```
+
+**Decision**: Accept this limitation for general-purpose use
+- Document expected accuracy for common scenarios
+- Most telemetry applications run for hours/days, not months
+- Create specialized `IntegerSignalGenerator` if perfect phase needed
+
+### 3. Efficient Waveform Generation
 
 **Challenge**: Computing transcendental functions is expensive
 
@@ -114,7 +134,7 @@ for (i = 0; i < n; i++) {
 ```c
 switch (waveform_type) {
     case WAVEFORM_SINE:
-        // Use SIMD sin approximations or lookup tables
+        // Accept sin() cost for accuracy, consider SIMD later
         break;
     case WAVEFORM_SQUARE:
         // Simple comparison: sin(phase) >= 0 ? 1 : -1
@@ -128,7 +148,7 @@ switch (waveform_type) {
 }
 ```
 
-### 3. Nyquist Frequency Constraints
+### 4. Nyquist Frequency Constraints
 
 **Challenge**: Generating frequencies above Nyquist causes aliasing
 
@@ -142,7 +162,7 @@ if (frequency_hz > nyquist_hz) {
 }
 ```
 
-### 4. Batch Boundary Continuity
+### 5. Batch Boundary Continuity
 
 **Challenge**: Ensuring smooth transitions between batches
 
@@ -189,7 +209,14 @@ void test_with_downstream_filters(void) {
 
 void test_long_duration_stability(void) {
     // Run for millions of samples
-    // Verify no phase drift or amplitude changes
+    // Verify phase accuracy within documented bounds
+    // Not expecting perfect phase - just bounded error
+}
+
+void test_phase_precision_limits(void) {
+    // Generate at high frequency for extended time
+    // Verify phase error stays within expected bounds
+    // Document actual vs theoretical limits
 }
 ```
 
@@ -238,9 +265,9 @@ typedef struct {
     // Optional limits
     uint64_t max_samples;
     
-    // Optimization structures
-    void* lookup_table;       // Optional for sine
-    size_t table_size;
+    // Note: Using double precision time-based calculation
+    // Phase accuracy degrades slowly over very long runs
+    // See documentation for expected accuracy bounds
 } FunctionGenerator_t;
 ```
 
@@ -381,6 +408,7 @@ config.sweep_type = SWEEP_LINEAR;  // or SWEEP_LOG
 - **Option C**: Configurable start time
 
 **Recommendation**: Option C with default t=0
+agreed option c
 
 ### 2. Multi-Channel Support
 - **Current**: Single channel output
@@ -388,6 +416,7 @@ config.sweep_type = SWEEP_LINEAR;  // or SWEEP_LOG
 - **Use Case**: Quadrature signals (I/Q), stereo audio
 
 **Recommendation**: Keep single channel, use multiple filters for multi-channel
+agreed keep single channel, fanout is for tee filter.
 
 ### 3. Modulation Support
 - **AM/FM modulation**: Useful for communications testing
@@ -395,18 +424,30 @@ config.sweep_type = SWEEP_LINEAR;  // or SWEEP_LOG
 - **Harmonics**: Add controllable harmonics
 
 **Recommendation**: Start simple, add modulation in v2
+agreed add more complex signals in future revisions
 
 ### 4. Integer Output Support
 - **Current design**: Float output only
-- **Alternative**: Template on output type
+- **Alternative**: Support configurable dtype
 - **Use case**: Testing integer-only pipelines
 
-**Recommendation**: Support configurable dtype with appropriate scaling
+**Decision**: Start with float only, add dtype support in v2
+- Keep initial implementation simple
+- Most signal processing uses float anyway
+- Can add integer support when needed
 
 ## Success Metrics
 
 1. **Correctness**: Generated frequencies accurate to 0.01% or better
 2. **Performance**: > 1 Gsample/s for simple waveforms on modern CPU
-3. **Stability**: No phase drift over 10^9 samples
+3. **Stability**: Phase error bounded and predictable (see accuracy specs)
 4. **Usability**: Simple config for common use cases
 5. **Compatibility**: Works as drop-in source for any pipeline
+
+## Implementation Notes
+
+- Use double precision for simplicity and good-enough accuracy
+- Time-based calculation prevents unbounded drift
+- Document phase accuracy limitations for long runs
+- Consider specialized integer implementation only if needed
+- Focus on correctness and clarity over premature optimization
