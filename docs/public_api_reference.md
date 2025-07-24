@@ -303,3 +303,7 @@ void my_worker(Filter_t* f) {
     // 3. Exit worker thread
 }
 ```
+
+## Available Filters
+
+For a comprehensive list of all available filters including source filters (CSV Source, Signal Generator), processing filters (Map, Sample Aligner, Batch Matcher), sink filters (CSV Sink), and utility filters (Tee), see the [Available Filters Reference](available_filters.md).
