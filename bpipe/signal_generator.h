@@ -1,87 +1,69 @@
+#ifndef SIGNAL_GENERATOR_H
+#define SIGNAL_GENERATOR_H
 
+#include "core.h"
+#include "batch_buffer.h"
+#include <stdbool.h>
+#include <stdint.h>
+
+// Waveform types supported by the signal generator
 typedef enum {
-  /*is quantity integer rational or floating point.*/
-  NUM_INTEGER,
-  NUM_RATIONAL,
-  NUM_FLOAT,
-} NumericPrecision_t;
+    WAVEFORM_SINE,      // sin(2π * f * t + φ)
+    WAVEFORM_SQUARE,    // ±1 square wave
+    WAVEFORM_SAWTOOTH,  // Linear ramp -1 to +1
+    WAVEFORM_TRIANGLE   // Linear up/down -1 to +1
+} WaveformType_e;
 
+// Signal generator configuration
 typedef struct {
-  NumericPrecision_t type;
-  union {
-    long i;
-    float f;
-    struct {
-      unsigned num;   /* Numerator */
-      unsigned denom; /* Denominator */
-    } r;
-  } val;
-} Numeric_t;
+    const char* name;
+    BatchBuffer_config buff_config;  // For output buffer
+    long timeout_us;
+    
+    // Waveform parameters
+    WaveformType_e waveform_type;
+    double frequency_hz;         // Frequency in Hz
+    double phase_rad;           // Initial phase [0, 2π]
+    uint64_t sample_period_ns;  // Output sample period
+    
+    // Output scaling
+    double amplitude;           // Peak amplitude (default 1.0)
+    double offset;             // DC offset (default 0.0)
+    
+    // Runtime control
+    uint64_t max_samples;      // 0 = unlimited
+    bool allow_aliasing;       // false = error if f > Nyquist
+    uint64_t start_time_ns;    // Start timestamp (default 0)
+} SignalGenerator_config_t;
 
-float numeric_2_float(Numeric_t cfg, Bp_EC* err)
-{
-  float val;
-  *err = Bp_EC_OK;
-  switch (cfg.type) {
-    case NUM_INTEGER:
-      val = (float) cfg.val.i;
-    case NUM_RATIONAL:
-      val = (float) cfg.val.r.num / (float) cfg.val.r.denom;
-      break;
-    case NUM_FLOAT:
-      val = cfg.val.f;
-      break;
-    default:
-      *err = Bp_EC_INVALID_PRECISION;
-      val = NAN;
-      break;
-  }
-  return val;
-};
+// Signal generator filter structure
+typedef struct {
+    Filter_t base;  // MUST be first member
+    
+    // Configuration (cached for performance)
+    WaveformType_e waveform_type;
+    double frequency_hz;
+    double omega;              // 2π * f * 1e-9 (pre-computed)
+    double initial_phase_rad;
+    double amplitude;
+    double offset;
+    uint64_t period_ns;
+    
+    // Runtime state
+    uint64_t next_t_ns;       // Next timestamp to generate
+    uint64_t samples_generated;
+    
+    // Optional limits
+    uint64_t max_samples;
+    bool allow_aliasing;
+    uint64_t start_time_ns;
+    
+    // Note: Using double precision time-based calculation
+    // Phase accuracy degrades slowly over very long runs
+    // See documentation for expected accuracy bounds
+} SignalGenerator_t;
 
-typedef struct _waveform_cfg {
-  Numeric_t phase;
-  Numeric_t amplitude;
-  Numeric_t period;
-} WaveformCfg_t;
+// Initialize signal generator
+Bp_EC signal_generator_init(SignalGenerator_t* sg, SignalGenerator_config_t config);
 
-typedef Bp_EC(WaveformFcn_t)(void* data, size_t n_samples,
-                             long long start_ts_ns, unsigned sample_period,
-                             WaveformCfg_t cfg);
-WaveformFcn_t sin_float;
-Bp_EC sin_float(void* data, size_t n_samples, long long start_ts_ns,
-                unsigned sample_period, WaveformCfg_t cfg)
-{
-  Bp_EC err;
-  long long ts_ns = start_ts_ns;
-  float period = numeric_2_float(cfg.phase, &err);
-  if (err != Bp_EC_OK) return err;
-  float phase = numeric_2_float(cfg.phase, &err);
-  if (err != Bp_EC_OK) return err;
-  float amplitude = numeric_2_float(cfg.phase, &err);
-  if (err != Bp_EC_OK) return err;
-
-  float* sample = (float*) data;
-  for (int i = 0; i < n_samples; i++) {
-    float theta = (2 * PI * ts_ns) / (period * 1000000000) + phase;
-    float val = sin(theta) * amplitude;
-    sample[i] = val;
-    ts_ns += sample_period;
-  }
-  return Bp_EC_OK;
-};
-
-typedef struct _Signal_Generator_t {
-  Filter_t base;
-  WaveformFcn_t* waveform_fcn;
-  WaveformCfg_t cfg;
-} Signal_Generator_t;
-
-typedef struct _Signal_Generator_Cfg_t {
-  const char* name;
-  long timeout_us;
-  WaveformFcn_t* waveform_fcn;
-  WaveformCfg_t waveform_cfg;
-} Signal_Generator_Cfg_t;
-
-Bp_EC validate_WaveformCfg(WaveformCfg_t cfg) { return Bp_EC_NOT_IMPLEMENTED; };
+#endif // SIGNAL_GENERATOR_H
