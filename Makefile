@@ -76,6 +76,11 @@ build-py:
 	@echo "Building Python extension..."
 	python setup.py build_ext --inplace
 
+# Individual test targets
+test-csv-sink: $(BUILD_DIR)/test_csv_sink
+	@echo "Running CSV sink tests..."
+	scripts/run_with_timeout.sh 30 $(BUILD_DIR)/test_csv_sink
+
 # Linting targets
 lint: lint-c lint-py
 
