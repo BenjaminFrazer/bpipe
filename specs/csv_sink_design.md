@@ -38,11 +38,11 @@ Data → Processing → CSVSink → Persistent CSV file
 ### Key Design Decisions
 
 1. **Streaming Write**: Write data as it arrives, don't buffer entire dataset
-2. **Configurable Format**: Support different timestamp formats, delimiters
+2. **Simple Format**: Nanosecond timestamps with configurable precision
 3. **Atomic File Operations**: Use temp file + rename for crash safety
 4. **Batch-Optimized**: Write full batches efficiently
-5. **Header Management**: Optional column headers with metadata
-6. **File Rotation**: Support size/time-based file rotation
+5. **Header Management**: Optional column headers with configurable names
+6. **Error Handling**: Fail immediately and propagate useful errors
 
 ## B) Requirements
 
@@ -54,36 +54,26 @@ Data → Processing → CSVSink → Persistent CSV file
 - Handle partial batches correctly
 - Process completion signals gracefully
 
-#### 2. CSV Format Options
+#### 2. CSV Format Options (Initial Implementation)
 ```c
 typedef enum {
     CSV_FORMAT_SIMPLE,      // timestamp,value
-    CSV_FORMAT_INDEXED,     // index,timestamp,value
     CSV_FORMAT_MULTI_COL,   // timestamp,ch0,ch1,ch2...
-    CSV_FORMAT_RAW         // value only (no timestamp)
 } CSVFormat_e;
-
-typedef enum {
-    TIMESTAMP_NS,          // Nanoseconds since epoch
-    TIMESTAMP_US,          // Microseconds since epoch
-    TIMESTAMP_MS,          // Milliseconds since epoch
-    TIMESTAMP_S,           // Seconds since epoch
-    TIMESTAMP_ISO8601,     // 2024-01-15T10:30:45.123Z
-    TIMESTAMP_RELATIVE     // Seconds from start
-} TimestampFormat_e;
 ```
 
+**Note**: Initial implementation will use nanosecond timestamps only. Other timestamp formats will be added as a future capability.
+
 #### 3. File Management
-- **Output Path**: Configurable file path with variable substitution
+- **Output Path**: Configurable file path
 - **Overwrite Policy**: Append, overwrite, or error if exists
-- **File Rotation**: By size (MB) or time interval
+- **Max File Size**: Block when maximum size reached
 - **Atomic Writes**: Write to temp file, rename on close
 
 #### 4. Performance Requirements
-- Minimize syscalls by buffering writes
-- Support configurable write buffer size
-- Flush on batch boundaries for data integrity
-- Option to sync to disk periodically
+- Write after each batch for data integrity
+- Minimize syscalls with appropriate buffering
+- Clear error propagation on write failures
 
 ### Non-Functional Requirements
 
@@ -104,84 +94,64 @@ typedef enum {
 
 ## C) Challenges/Considerations
 
-### 1. Timestamp Precision vs Readability
+### 1. Timestamp Format
 
-**Challenge**: Nanosecond timestamps are precise but not human-readable
+**Decision**: Use nanosecond timestamps for initial implementation
 
-**Solution**: Configurable timestamp formats
 ```c
 // Nanoseconds (precise, sortable)
 1705315845123456789,42.5
-
-// ISO 8601 (readable, standard)
-2024-01-15T10:30:45.123456789Z,42.5
-
-// Relative seconds (analysis-friendly)
-0.000000,42.5
-0.001000,42.6
+1705315845123457789,42.6
 ```
+
+**Future Capability**: Add support for other timestamp formats (ISO8601, relative seconds, etc.) in later versions.
 
 ### 2. Multi-Channel Data Handling
 
 **Challenge**: How to represent vector data in CSV
 
-**Option A: Wide Format (Recommended)**
+**Decision**: Use wide format with configurable channel names
+
 ```csv
-timestamp,ch0,ch1,ch2,ch3
+timestamp,channel_0,channel_1,channel_2,channel_3
 1000000,1.0,2.0,3.0,4.0
 2000000,1.1,2.1,3.1,4.1
 ```
 
-**Option B: Long Format**
-```csv
-timestamp,channel,value
-1000000,0,1.0
-1000000,1,2.0
-1000000,2,3.0
+Channel names can be configured via `column_names` array in configuration.
+
+### 3. File Size Management
+
+**Initial Implementation**: Support maximum file size with blocking behavior
+
+```c
+size_t max_file_size_bytes;  // Maximum file size (0 = unlimited)
+// When limit reached: block and wait (no data loss)
 ```
 
-**Decision**: Support wide format by default, long format optional
+**Future Capability**: Add file rotation support with time-based rotation, compression, and old file management.
 
-### 3. Large File Handling
+### 4. Write Strategy
 
-**Challenge**: CSV files can grow very large
+**Initial Implementation**: Write after each batch for data integrity
 
-**Solution**: File rotation
 ```c
-typedef struct {
-    size_t max_file_size_mb;      // Rotate when size exceeded
-    uint64_t rotation_interval_s;  // Rotate after time interval
-    size_t max_files;             // Keep N most recent files
-    bool compress_on_rotate;      // Gzip completed files
-} FileRotation_config_t;
+// Simple approach: write and flush after processing each batch
+// Ensures no data loss on unexpected shutdown
 ```
 
-### 4. Buffering Strategy
+**Future Capability**: Add configurable buffering strategies for performance optimization.
 
-**Challenge**: Balance between write performance and data integrity
+### 5. Error Handling
 
-**Solution**: Configurable buffering
+**Decision**: Fail immediately and propagate useful errors
+
 ```c
-typedef enum {
-    BUFFER_LINE,      // Flush after each line (safest)
-    BUFFER_BATCH,     // Flush after each batch (default)
-    BUFFER_SIZE,      // Flush when buffer full
-    BUFFER_TIME       // Flush on time interval
-} BufferStrategy_e;
-```
-
-### 5. Error Recovery
-
-**Challenge**: How to handle write errors (disk full, permissions)
-
-**Solution**: Error handling modes
-```c
-typedef enum {
-    ON_ERROR_STOP,      // Stop filter and propagate error
-    ON_ERROR_DROP,      // Drop data and continue
-    ON_ERROR_RETRY,     // Retry with exponential backoff
-    ON_ERROR_ROTATE     // Try rotating to new file
-} ErrorMode_e;
+// On any write error:
+// 1. Stop the filter
+// 2. Set worker_err_info with specific error code
+// 3. Propagate error message with context
+// Examples: "Disk full", "Permission denied", "Invalid path"
 ```
 
 ## D) Testing Strategy
@@ -192,23 +162,25 @@ typedef enum {
 void test_basic_csv_write(void) {
     // Write known data, verify CSV format
     // Check proper escaping of commas, quotes
+    // Verify nanosecond timestamps
 }
 
-void test_timestamp_formats(void) {
-    // Test each timestamp format
-    // Verify precision and readability
+void test_multi_column_output(void) {
+    // Test multi-column format with custom names
+    // Verify header generation
+    // Check column alignment
 }
 
-void test_file_rotation(void) {
-    // Test size-based rotation
-    // Test time-based rotation
-    // Verify no data loss during rotation
+void test_file_size_limit(void) {
+    // Test max file size enforcement
+    // Verify filter blocks when limit reached
+    // Check error propagation
 }
 
 void test_error_handling(void) {
     // Simulate disk full
     // Test permission errors
-    // Verify error modes work correctly
+    // Verify immediate failure and error messages
 }
 
 void test_completion_handling(void) {
@@ -248,34 +220,19 @@ typedef struct {
     BatchBuffer_config buff_config;    // Input buffer config
     
     // File configuration
-    const char* output_path;          // File path (supports %d, %t variables)
+    const char* output_path;          // File path
     bool append;                      // Append vs overwrite
     mode_t file_mode;                 // Unix file permissions (0644)
+    size_t max_file_size_bytes;       // Maximum file size (0 = unlimited)
     
     // CSV format
-    CSVFormat_e format;               // Output format
-    TimestampFormat_e timestamp_fmt;  // Timestamp format
+    CSVFormat_e format;               // Output format (SIMPLE or MULTI_COL)
     const char* delimiter;            // Field delimiter (default ",")
     const char* line_ending;          // Line ending (default "\n")
     bool write_header;                // Write column headers
     const char** column_names;        // Custom column names (optional)
+    size_t n_columns;                 // Number of columns for MULTI_COL
     int precision;                    // Decimal places for floats
-    
-    // Buffering
-    BufferStrategy_e buffer_strategy; // When to flush
-    size_t buffer_size_kb;           // Write buffer size
-    uint64_t flush_interval_ms;      // Time-based flush
-    
-    // File rotation
-    FileRotation_config_t rotation;   // Rotation settings
-    
-    // Error handling
-    ErrorMode_e error_mode;          // How to handle write errors
-    size_t max_retries;              // For ON_ERROR_RETRY mode
-    
-    // Performance
-    bool use_direct_io;              // O_DIRECT flag
-    bool sync_on_flush;              // fsync() on flush
 } CSVSink_config_t;
 ```
 
@@ -288,39 +245,22 @@ typedef struct {
     
     // Configuration (cached)
     CSVFormat_e format;
-    TimestampFormat_e timestamp_fmt;
     char delimiter;
     const char* line_ending;
     int precision;
-    BufferStrategy_e buffer_strategy;
-    ErrorMode_e error_mode;
+    size_t max_file_size_bytes;
+    const char** column_names;
+    size_t n_columns;
     
     // File management
     FILE* file;
     char* current_filename;
     size_t bytes_written;
     uint64_t lines_written;
-    time_t file_opened_time;
-    
-    // Write buffering
-    char* write_buffer;
-    size_t buffer_size;
-    size_t buffer_used;
-    uint64_t last_flush_ns;
-    
-    // File rotation
-    FileRotation_config_t rotation;
-    size_t rotation_index;
     
     // State tracking
-    uint64_t start_time_ns;      // For relative timestamps
     uint64_t samples_written;
     uint64_t batches_processed;
-    size_t write_errors;
-    
-    // Error handling
-    size_t consecutive_errors;
-    uint64_t last_error_ns;
 } CSVSink_t;
 ```
 
@@ -338,19 +278,12 @@ void* csv_sink_worker(void* arg) {
         write_csv_header(sink);
     }
     
-    // Record start time for relative timestamps
-    sink->start_time_ns = get_current_time_ns();
-    
     while (atomic_load(&sink->base.running)) {
         // Get input batch
         Batch_t* input = bb_get_tail(&sink->base.input_buffers[0],
                                      sink->base.timeout_us, &err);
         if (!input) {
-            if (err == Bp_EC_TIMEOUT) {
-                // Check if time-based flush needed
-                maybe_flush_buffer(sink);
-                continue;
-            }
+            if (err == Bp_EC_TIMEOUT) continue;
             if (err == Bp_EC_STOPPED) break;
             break; // Real error
         }
@@ -367,14 +300,9 @@ void* csv_sink_worker(void* arg) {
             // Calculate timestamp for this sample
             uint64_t sample_time_ns = input->t_ns + i * input->period_ns;
             
-            // Format and buffer the CSV line
+            // Format and write the CSV line
             format_csv_line(sink, sample_time_ns, 
                           &input->data[input->head + i]);
-            
-            // Check if buffer flush needed
-            if (should_flush_buffer(sink)) {
-                flush_buffer(sink);
-            }
         }
         
         // Update metrics
@@ -386,14 +314,16 @@ void* csv_sink_worker(void* arg) {
         // Release input batch
         bb_del_tail(&sink->base.input_buffers[0]);
         
-        // Check file rotation
-        if (should_rotate_file(sink)) {
-            rotate_output_file(sink);
+        // Check file size limit
+        if (sink->max_file_size_bytes > 0 && 
+            sink->bytes_written >= sink->max_file_size_bytes) {
+            // Block until space available or filter stopped
+            WORKER_ASSERT(&sink->base, false, Bp_EC_FILE_FULL,
+                          "Output file reached maximum size limit");
         }
     }
     
-    // Final flush and close
-    flush_buffer(sink);
+    // Close output file
     close_output_file(sink);
     
     return NULL;
@@ -403,22 +333,9 @@ static void format_csv_line(CSVSink_t* sink, uint64_t t_ns, void* data) {
     char line[MAX_LINE_LENGTH];
     size_t len = 0;
     
-    // Format timestamp
-    switch (sink->timestamp_fmt) {
-        case TIMESTAMP_NS:
-            len += snprintf(line + len, sizeof(line) - len, 
-                          "%llu", (unsigned long long)t_ns);
-            break;
-        case TIMESTAMP_ISO8601:
-            len += format_iso8601(line + len, sizeof(line) - len, t_ns);
-            break;
-        case TIMESTAMP_RELATIVE:
-            double rel_s = (t_ns - sink->start_time_ns) * 1e-9;
-            len += snprintf(line + len, sizeof(line) - len,
-                          "%.*f", sink->precision, rel_s);
-            break;
-        // ... other formats
-    }
+    // Format timestamp (nanoseconds)
+    len += snprintf(line + len, sizeof(line) - len, 
+                  "%llu", (unsigned long long)t_ns);
     
     // Add delimiter
     line[len++] = sink->delimiter;
@@ -440,8 +357,10 @@ static void format_csv_line(CSVSink_t* sink, uint64_t t_ns, void* data) {
     strcpy(line + len, sink->line_ending);
     len += strlen(sink->line_ending);
     
-    // Buffer the line
-    buffer_write(sink, line, len);
+    // Write the line directly
+    fwrite(line, 1, len, sink->file);
+    sink->bytes_written += len;
+    sink->lines_written++;
 }
 ```
 
@@ -454,8 +373,8 @@ CSVSink_config_t config = {
     .name = "sensor_log",
     .output_path = "sensor_data.csv",
     .format = CSV_FORMAT_SIMPLE,
-    .timestamp_fmt = TIMESTAMP_ISO8601,
     .write_header = true,
+    .precision = 6,
     .buff_config = {
         .dtype = DTYPE_FLOAT,
         .batch_capacity_expo = 10,  // 1024 samples
@@ -466,37 +385,34 @@ CSVSink_config_t config = {
 Sensor → Processing → CSVSink("sensor_data.csv")
 ```
 
-### High-Performance Logging
+### Multi-Channel Logging
 ```c
-// Optimized for throughput
-config.buffer_strategy = BUFFER_SIZE;
-config.buffer_size_kb = 1024;  // 1MB buffer
-config.use_direct_io = true;
-config.sync_on_flush = false;
+// Log multi-channel data with custom names
+const char* channels[] = {"temperature", "pressure", "humidity"};
+config.format = CSV_FORMAT_MULTI_COL;
+config.column_names = channels;
+config.n_columns = 3;
+config.write_header = true;
 
-HighRateSource → CSVSink("high_rate.csv")
+MultiChannelSource → CSVSink("multi_channel.csv")
 ```
 
-### Rotating Log Files
+### Size-Limited Logging
 ```c
-// Daily rotation with compression
-config.output_path = "telemetry_%Y%m%d_%H%M%S.csv";
-config.rotation = {
-    .rotation_interval_s = 86400,  // 24 hours
-    .max_files = 7,                // Keep 1 week
-    .compress_on_rotate = true     // Gzip old files
-};
+// Stop when file reaches size limit
+config.max_file_size_bytes = 100 * 1024 * 1024;  // 100MB
+config.append = false;  // Start fresh
 
-ContinuousSource → CSVSink(rotating)
+ContinuousSource → CSVSink("limited.csv")
+// Filter will block and error when limit reached
 ```
 
 ### Debug Pipeline Output
 ```c
-// Detailed debugging with all metadata
-config.format = CSV_FORMAT_INDEXED;
-config.timestamp_fmt = TIMESTAMP_NS;
+// Detailed debugging with high precision
+config.format = CSV_FORMAT_SIMPLE;
 config.precision = 9;  // Full float precision
-config.buffer_strategy = BUFFER_LINE;  // Immediate write
+config.write_header = true;
 
 Pipeline → [NormalOutput, CSVSink("debug.csv")]
 ```
@@ -528,16 +444,45 @@ Pipeline → [NormalOutput, CSVSink("debug.csv")]
 
 1. **Correctness**: All data written, proper CSV escaping
 2. **Performance**: < 5% overhead vs raw file write
-3. **Reliability**: No data loss on shutdown or rotation
+3. **Reliability**: No data loss on shutdown
 4. **Compatibility**: Output readable by standard tools
 5. **Usability**: Simple config for common cases
+
+## Future Capabilities
+
+The following features are planned for future versions:
+
+1. **Timestamp Formats**
+   - ISO8601 timestamps for human readability
+   - Relative timestamps from start
+   - Configurable precision (ms, us, ns)
+
+2. **File Rotation**
+   - Size-based rotation with automatic file naming
+   - Time-based rotation (hourly, daily)
+   - Compression of rotated files
+   - Retention policies
+
+3. **Buffering Strategies**
+   - Line-based buffering for debugging
+   - Size-based buffering for performance
+   - Time-based flushing
+
+4. **Advanced Error Handling**
+   - Retry with backoff
+   - Alternative file on error
+   - Partial write recovery
+
+5. **Format Extensions**
+   - Long format for multi-channel data
+   - Metadata headers with comments
+   - Variable substitution in filenames
 
 ## Implementation Notes
 
 - Use buffered I/O (fwrite) for efficiency
-- Pre-allocate format strings to avoid repeated parsing
-- Consider memory mapping for very high throughput
+- Write after each batch for data integrity
 - Implement proper CSV escaping (quotes, commas)
 - Test with various locales (decimal separators)
-- Handle timezone correctly for ISO8601 format
 - Document performance characteristics clearly
+- Clear error messages for common failures (disk full, permissions)
