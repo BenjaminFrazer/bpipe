@@ -348,7 +348,7 @@ static void* csvsource_worker(void* arg)
 
     // Apply state machine logic from spec
     bool should_submit = false;
-    
+
     if (!self->detect_regular_timing) {
       // Force single-sample batches for irregular mode
       if (state.samples_in_batch > 0) {
@@ -368,8 +368,9 @@ static void* csvsource_worker(void* arg)
 
       } else {
         // Check if sample fits pattern
-        uint64_t expected_time = state.batch_start_time +
-                                 (state.samples_in_batch * state.expected_delta);
+        uint64_t expected_time =
+            state.batch_start_time +
+            (state.samples_in_batch * state.expected_delta);
 
         if (timestamp != expected_time) {
           // Doesn't fit pattern - submit current batch and start new one
