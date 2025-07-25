@@ -2,19 +2,24 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## Quick Start for New Agents
+## MANDATORY: Before Starting ANY Work
 
-1. **Read Core Documentation First**:
-   - `docs/core_data_model.md` - Understand data structures
-   - `docs/filter_implementation_guide.md` - Learn filter patterns
-   - `docs/public_api_reference.md` - API conventions
-   - `docs/threading_model.md` - Threading requirements
-   - `docs/error_handling_guide.md` - Error patterns
+**YOU MUST READ THESE DOCUMENTS FIRST before writing or modifying ANY code:**
 
-2. **For New Filter Development**:
+1. **Core Concepts (REQUIRED READING)**:
+   - `docs/core_data_model.md` - MUST understand data structures, filter types, and architecture
+   - `docs/filter_implementation_guide.md` - MUST learn filter patterns before implementing
+   - `docs/public_api_reference.md` - MUST know API conventions
+   - `docs/threading_model.md` - MUST understand threading requirements
+   - `docs/error_handling_guide.md` - MUST follow error patterns
+
+**IMPORTANT**: If you have not read the above documents, STOP and read them NOW. Do not proceed with any implementation work until you understand these core concepts. This is non-negotiable.
+
+2. **For New Filter Development** (read AFTER core concepts):
    - Follow `docs/filter_development_checklist.md`
    - Reference `docs/zero_input_filter_patterns.md` for source filters
    - Use `docs/debugging_guide.md` when issues arise
+
 
 ## Development Commands
 
@@ -43,24 +48,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a **modular real-time telemetry data processing framework** built in C with Python bindings. The system implements a push-based data processing pipeline using directed acyclic graphs (DAGs).
 
-### Key Documentation
-- **Core Concepts**:
-  - `docs/core_data_model.md` - Data structures and core concepts
-  - `docs/multi-input_syncronisation.md` - Multi-input synchronization
-  - `docs/filter_implementation_guide.md` - How to implement filters
-  - `docs/public_api_reference.md` - Public API reference
-  
-- **Development Guides**:
-  - `docs/filter_development_checklist.md` - Step-by-step filter creation
-  - `docs/error_handling_guide.md` - Error handling patterns
-  - `docs/threading_model.md` - Threading and synchronization
-  - `docs/testing_guidelines.md` - Testing best practices
-  
+### Additional Documentation
 - **Specialized Topics**:
-  - `docs/zero_input_filter_patterns.md` - Source filter patterns
+  - `docs/multi-input_syncronisation.md` - Multi-input synchronization
+  - `docs/testing_guidelines.md` - Testing best practices
   - `docs/performance_considerations.md` - Performance optimization
   - `docs/build_system_guide.md` - Build system details
-  - `docs/debugging_guide.md` - Debugging strategies
 
 ### Build System
 - **C compilation**: Makefile with gcc, Unity testing framework
@@ -104,3 +97,4 @@ This is a **modular real-time telemetry data processing framework** built in C w
 - **Run linting**: Always `make lint` before committing
 - **Test thoroughly**: Run tests with timeout wrapper
 - **Check error codes**: Every function returns Bp_EC - check it
+
