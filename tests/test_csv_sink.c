@@ -191,9 +191,9 @@ void test_file_size_limit(void)
   // Verify sink stopped due to file size limit
   TEST_ASSERT_EQUAL(Bp_EC_NO_SPACE, sink.base.worker_err_info.ec);
 
-  // Source should get STOPPED error when sink's input buffer is stopped
-  TEST_ASSERT_EQUAL_MESSAGE(Bp_EC_STOPPED, source.base.worker_err_info.ec,
-                            "Source should get STOPPED error when sink stops");
+  // Source should get FILTER_STOPPING error when downstream filter stops
+  TEST_ASSERT_EQUAL_MESSAGE(Bp_EC_FILTER_STOPPING, source.base.worker_err_info.ec,
+                            "Source should get FILTER_STOPPING error when sink stops");
 
   // Verify file exists and is around the limit
   TEST_ASSERT_TRUE(file_exists(output_file));

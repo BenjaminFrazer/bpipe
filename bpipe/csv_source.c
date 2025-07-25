@@ -1,15 +1,16 @@
 #define _GNU_SOURCE  // For strdup
 #include "csv_source.h"
-#include "utils.h"
 #include <errno.h>
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include "utils.h"
 
 #define LINE_BUFFER_SIZE 4096
 
 /* Future extensions to consider:
- * - Support for different timestamp formats (ISO8601, Unix epoch, custom formats)
+ * - Support for different timestamp formats (ISO8601, Unix epoch, custom
+ * formats)
  * - Support for compressed files (gzip, bzip2, etc.)
  * - Support for remote files (HTTP/HTTPS URLs)
  * - Support for streaming input (stdin, named pipes)
@@ -50,7 +51,7 @@ Bp_EC csvsource_init(CsvSource_t* self, CsvSource_config_t config)
   self->loop = config.loop;
   self->skip_invalid = config.skip_invalid;
   self->batch_size = config.batch_size;
-  
+
   // Store file path
   self->file_path = strdup(config.file_path);
   if (!self->file_path) {
@@ -144,11 +145,11 @@ Bp_EC csvsource_init(CsvSource_t* self, CsvSource_config_t config)
   if (err != Bp_EC_OK) {
     return err;
   }
-  
+
   // Set operations
   self->base.ops.describe = csvsource_describe;
   self->base.ops.get_stats = csvsource_get_stats;
-  
+
   return Bp_EC_OK;
 }
 
@@ -157,7 +158,7 @@ static Bp_EC parse_header(CsvSource_t* self)
   if (!fgets(self->line_buffer, self->line_buffer_size, self->file)) {
     return Bp_EC_INVALID_DATA;
   }
-  
+
   // Check if header line was truncated
   size_t len = strlen(self->line_buffer);
   if (len > 0 && self->line_buffer[len - 1] != '\n' && !feof(self->file)) {
@@ -301,7 +302,7 @@ static void* csvsource_worker(void* arg)
         BP_WORKER_ASSERT(&self->base, false, Bp_EC_INVALID_DATA);
       }
     }
-    
+
     // Check if line was truncated (no newline and not EOF)
     size_t len = strlen(self->line_buffer);
     if (len > 0 && self->line_buffer[len - 1] != '\n' && !feof(self->file)) {
@@ -439,7 +440,7 @@ static void* csvsource_worker(void* arg)
       }
 
       bb_submit(output_buffer, self->base.timeout_us);
-      
+
       // Update metrics
       self->base.metrics.samples_processed += self->timestamps_in_buffer;
       self->base.metrics.n_batches++;
@@ -512,7 +513,7 @@ static void* csvsource_worker(void* arg)
       }
 
       bb_submit(output_buffer, self->base.timeout_us);
-      
+
       // Update metrics
       self->base.metrics.samples_processed += self->timestamps_in_buffer;
       self->base.metrics.n_batches++;
@@ -528,12 +529,12 @@ static void* csvsource_worker(void* arg)
   }
 
   free(value_buffer);
-  
+
   // Set error code if stopped cleanly (Bp_EC_OK is 0)
   if (self->base.worker_err_info.ec == Bp_EC_OK) {
     self->base.worker_err_info.ec = Bp_EC_STOPPED;
   }
-  
+
   return NULL;
 }
 
@@ -545,7 +546,7 @@ void csvsource_destroy(CsvSource_t* self)
     fclose(self->file);
     self->file = NULL;
   }
-  
+
   if (self->file_path) {
     free(self->file_path);
     self->file_path = NULL;
@@ -581,49 +582,49 @@ void csvsource_destroy(CsvSource_t* self)
 
 static Bp_EC csvsource_describe(Filter_t* self, char* buffer, size_t size)
 {
-  CsvSource_t* source = (CsvSource_t*)self;
+  CsvSource_t* source = (CsvSource_t*) self;
   int written = 0;
-  
-  written += snprintf(buffer + written, size - written, 
-                      "CsvSource: %s\n", self->name);
-  written += snprintf(buffer + written, size - written,
-                      "  File: %s\n", source->file_path);
-  written += snprintf(buffer + written, size - written,
-                      "  Delimiter: '%c'\n", source->delimiter);
-  written += snprintf(buffer + written, size - written,
-                      "  Has header: %s\n", source->has_header ? "yes" : "no");
+
+  written +=
+      snprintf(buffer + written, size - written, "CsvSource: %s\n", self->name);
+  written += snprintf(buffer + written, size - written, "  File: %s\n",
+                      source->file_path);
+  written += snprintf(buffer + written, size - written, "  Delimiter: '%c'\n",
+                      source->delimiter);
+  written += snprintf(buffer + written, size - written, "  Has header: %s\n",
+                      source->has_header ? "yes" : "no");
   written += snprintf(buffer + written, size - written,
                       "  Timestamp column: %s\n", source->ts_column_name);
-  written += snprintf(buffer + written, size - written,
-                      "  Data columns: ");
-  
+  written += snprintf(buffer + written, size - written, "  Data columns: ");
+
   for (size_t i = 0; i < source->n_data_columns; i++) {
-    written += snprintf(buffer + written, size - written,
-                        "%s%s", source->data_column_names[i],
+    written += snprintf(buffer + written, size - written, "%s%s",
+                        source->data_column_names[i],
                         i < source->n_data_columns - 1 ? ", " : "\n");
   }
-  
-  written += snprintf(buffer + written, size - written,
-                      "  Batch size: %zu\n", source->batch_size);
-  written += snprintf(buffer + written, size - written,
-                      "  Regular timing: %s\n", 
-                      source->detect_regular_timing ? "enabled" : "disabled");
+
+  written += snprintf(buffer + written, size - written, "  Batch size: %zu\n",
+                      source->batch_size);
+  written +=
+      snprintf(buffer + written, size - written, "  Regular timing: %s\n",
+               source->detect_regular_timing ? "enabled" : "disabled");
   if (source->is_regular) {
-    written += snprintf(buffer + written, size - written,
-                        "  Detected period: %lu ns\n", source->detected_period_ns);
+    written +=
+        snprintf(buffer + written, size - written,
+                 "  Detected period: %lu ns\n", source->detected_period_ns);
   }
-  written += snprintf(buffer + written, size - written,
-                      "  Loop mode: %s\n", source->loop ? "enabled" : "disabled");
-  written += snprintf(buffer + written, size - written,
-                      "  Skip invalid: %s\n", source->skip_invalid ? "yes" : "no");
-  
+  written += snprintf(buffer + written, size - written, "  Loop mode: %s\n",
+                      source->loop ? "enabled" : "disabled");
+  written += snprintf(buffer + written, size - written, "  Skip invalid: %s\n",
+                      source->skip_invalid ? "yes" : "no");
+
   return Bp_EC_OK;
 }
 
 static Bp_EC csvsource_get_stats(Filter_t* self, void* stats_out)
 {
   // Copy current metrics
-  Filt_metrics* stats = (Filt_metrics*)stats_out;
+  Filt_metrics* stats = (Filt_metrics*) stats_out;
   *stats = self->metrics;
   return Bp_EC_OK;
 }

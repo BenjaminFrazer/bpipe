@@ -343,10 +343,24 @@ Bp_EC filt_stop(Filter_t* f)
 
   atomic_store(&f->running, false);
 
-  // Stop all input buffers to wake up any waiting threads
+  // Force return on input buffers to wake up upstream writers
   for (int i = 0; i < f->n_input_buffers; i++) {
     if (f->input_buffers[i].data_ring != NULL) {
-      bb_stop(&f->input_buffers[i]);
+      bb_force_return_head(&f->input_buffers[i], Bp_EC_FILTER_STOPPING);
+    }
+  }
+  
+  // Force return on output buffers to wake up this filter if blocked
+  for (int i = 0; i < f->n_sinks; i++) {
+    if (f->sinks[i] != NULL) {
+      bb_force_return_head(f->sinks[i], Bp_EC_FILTER_STOPPING);
+    }
+  }
+  
+  // Also force return on our own input buffers if we're blocked reading
+  for (int i = 0; i < f->n_input_buffers; i++) {
+    if (f->input_buffers[i].data_ring != NULL) {
+      bb_force_return_tail(&f->input_buffers[i], Bp_EC_FILTER_STOPPING);
     }
   }
 

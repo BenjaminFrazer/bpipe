@@ -127,6 +127,12 @@ typedef struct _Bp_BatchBuffer {
   pthread_cond_t not_full;
   _Atomic bool running;
 
+  /* Force return mechanism for clean filter stopping */
+  _Atomic bool force_return_head;     /* Force producer to return */
+  _Atomic bool force_return_tail;     /* Force consumer to return */
+  Bp_EC force_return_head_code;       /* Error code for producer */
+  Bp_EC force_return_tail_code;       /* Error code for consumer */
+
   OverflowBehaviour_t overflow_behaviour;
 } Batch_buff_t;
 
@@ -253,6 +259,10 @@ Bp_EC bb_deinit(Batch_buff_t *buff);
 Bp_EC bb_start(Batch_buff_t *buff);
 
 Bp_EC bb_stop(Batch_buff_t *buff);
+
+/* Force return functions for clean filter stopping */
+Bp_EC bb_force_return_head(Batch_buff_t *buff, Bp_EC return_code);
+Bp_EC bb_force_return_tail(Batch_buff_t *buff, Bp_EC return_code);
 
 /* Pretty printing functions */
 void bb_print(Batch_buff_t *buff);

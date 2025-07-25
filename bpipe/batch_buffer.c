@@ -46,7 +46,7 @@ Bp_EC bb_await_notfull(Batch_buff_t *buff, long long timeout_us)
     */
   }
 
-  while (bb_isfull(buff) && atomic_load(&buff->running)) {
+  while (bb_isfull(buff) && atomic_load(&buff->running) && !atomic_load(&buff->force_return_head)) {
     if (timeout_us == 0) {
       // Wait indefinitely
       pthread_cond_wait(&buff->not_full, &buff->mutex);
@@ -64,6 +64,12 @@ Bp_EC bb_await_notfull(Batch_buff_t *buff, long long timeout_us)
       /* Continue looping on spurious wakeup (ret == 0 but condition still true)
        */
     }
+  }
+  
+  /* Check if we were forced to return */
+  if (atomic_load(&buff->force_return_head)) {
+    ec = buff->force_return_head_code;
+    atomic_store(&buff->force_return_head, false);  /* Clear flag */
   }
 
   /* Check why we exited the loop */
@@ -86,7 +92,7 @@ Bp_EC bb_await_notempty(Batch_buff_t *buff, long long timeout_us)
     abs_timeout = future_ts(timeout_us * 1000, CLOCK_REALTIME);
   }
 
-  while (bb_isempy(buff) && atomic_load(&buff->running)) {
+  while (bb_isempy(buff) && atomic_load(&buff->running) && !atomic_load(&buff->force_return_tail)) {
     int ret = 0;
     if (timeout_us == 0) {
       // Wait indefinitely
@@ -105,6 +111,12 @@ Bp_EC bb_await_notempty(Batch_buff_t *buff, long long timeout_us)
     }
     /* Continue looping on spurious wakeup (ret == 0 but condition still true)
      */
+  }
+  
+  /* Check if we were forced to return */
+  if (atomic_load(&buff->force_return_tail)) {
+    ec = buff->force_return_tail_code;
+    atomic_store(&buff->force_return_tail, false);  /* Clear flag */
   }
 
   /* Check why we exited the loop */
@@ -326,6 +338,12 @@ Bp_EC bb_init(Batch_buff_t *buff, const char *name, BatchBuffer_config config)
   atomic_store(&buff->producer.dropped_batches, 0);
   atomic_store(&buff->consumer.dropped_by_producer, 0);
   atomic_store(&buff->running, true);
+  
+  /* Initialize force return fields */
+  atomic_store(&buff->force_return_head, false);
+  atomic_store(&buff->force_return_tail, false);
+  buff->force_return_head_code = Bp_EC_OK;
+  buff->force_return_tail_code = Bp_EC_OK;
 
   /* Populate key batch data*/
   for (int i = 0; i < bb_n_batches(buff); i++) {
@@ -417,6 +435,50 @@ Bp_EC bb_stop(Batch_buff_t *buff)
   pthread_mutex_lock(&buff->mutex);
   pthread_cond_broadcast(&buff->not_empty);
   pthread_cond_broadcast(&buff->not_full);
+  pthread_mutex_unlock(&buff->mutex);
+
+  return Bp_EC_OK;
+}
+
+/**
+ * Force producer to return from bb_submit/bb_get_head with error code
+ * This does not stop the buffer - it only wakes the producer once
+ * @param buff Buffer to signal
+ * @param return_code Error code to return to producer
+ * @return Bp_EC_OK on success
+ */
+Bp_EC bb_force_return_head(Batch_buff_t *buff, Bp_EC return_code)
+{
+  if (!buff) {
+    return Bp_EC_NULL_FILTER;
+  }
+
+  pthread_mutex_lock(&buff->mutex);
+  buff->force_return_head_code = return_code;
+  atomic_store(&buff->force_return_head, true);
+  pthread_cond_signal(&buff->not_full);  /* Wake producer if waiting */
+  pthread_mutex_unlock(&buff->mutex);
+
+  return Bp_EC_OK;
+}
+
+/**
+ * Force consumer to return from bb_get_tail with error code
+ * This does not stop the buffer - it only wakes the consumer once
+ * @param buff Buffer to signal
+ * @param return_code Error code to return to consumer
+ * @return Bp_EC_OK on success
+ */
+Bp_EC bb_force_return_tail(Batch_buff_t *buff, Bp_EC return_code)
+{
+  if (!buff) {
+    return Bp_EC_NULL_FILTER;
+  }
+
+  pthread_mutex_lock(&buff->mutex);
+  buff->force_return_tail_code = return_code;
+  atomic_store(&buff->force_return_tail, true);
+  pthread_cond_signal(&buff->not_empty);  /* Wake consumer if waiting */
   pthread_mutex_unlock(&buff->mutex);
 
   return Bp_EC_OK;
