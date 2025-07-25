@@ -499,40 +499,57 @@ void test_csv_source_multi_channel(void) {
     CHECK_ERR(csvsource_init(&source, config));
     TEST_ASSERT_EQUAL(4, source.n_data_columns);
     
-    // Create and connect sink with 4 channels
-    Batch_buff_t* sink = create_test_sink(DTYPE_FLOAT, 2, 4);
-    CHECK_ERR(filt_sink_connect(&source.base, 0, sink));
+    // Create and connect separate sinks for each data column (as per spec)
+    Batch_buff_t* sinks[4];
+    for (int i = 0; i < 4; i++) {
+        sinks[i] = create_test_sink(DTYPE_FLOAT, 2, 1);  // Each sink handles 1 column
+        CHECK_ERR(filt_sink_connect(&source.base, i, sinks[i]));
+    }
     
     // Start filter
     CHECK_ERR(filt_start(&source.base));
     
-    // Read batch with both samples
+    // Read batch from each column sink
     Bp_EC read_err;
-    Batch_t* batch = bb_get_tail(sink, 1000000, &read_err);
-    TEST_ASSERT_EQUAL(Bp_EC_OK, read_err);
-    TEST_ASSERT_NOT_NULL(batch);
-    TEST_ASSERT_EQUAL(2, batch->tail);
+    Batch_t* batches[4];
     
-    float* data = (float*)batch->data;
-    // First sample
-    TEST_ASSERT_FLOAT_WITHIN(0.001, 1.1, data[0]);  // x
-    TEST_ASSERT_FLOAT_WITHIN(0.001, 2.2, data[1]);  // y
-    TEST_ASSERT_FLOAT_WITHIN(0.001, 3.3, data[2]);  // z
-    TEST_ASSERT_FLOAT_WITHIN(0.001, 25.5, data[3]); // temp
+    for (int i = 0; i < 4; i++) {
+        batches[i] = bb_get_tail(sinks[i], 1000000, &read_err);
+        TEST_ASSERT_EQUAL(Bp_EC_OK, read_err);
+        TEST_ASSERT_NOT_NULL(batches[i]);
+        TEST_ASSERT_EQUAL(2, batches[i]->tail);
+        TEST_ASSERT_EQUAL(1000, batches[i]->period_ns);  // Regular timing detected
+    }
     
-    // Second sample
-    TEST_ASSERT_FLOAT_WITHIN(0.001, 4.4, data[4]);  // x
-    TEST_ASSERT_FLOAT_WITHIN(0.001, 5.5, data[5]);  // y
-    TEST_ASSERT_FLOAT_WITHIN(0.001, 6.6, data[6]);  // z
-    TEST_ASSERT_FLOAT_WITHIN(0.001, 26.0, data[7]); // temp
+    // Verify data for each column
+    float* x_data = (float*)batches[0]->data;
+    TEST_ASSERT_FLOAT_WITHIN(0.001, 1.1, x_data[0]);  // First x
+    TEST_ASSERT_FLOAT_WITHIN(0.001, 4.4, x_data[1]);  // Second x
     
-    bb_del_tail(sink);
+    float* y_data = (float*)batches[1]->data;
+    TEST_ASSERT_FLOAT_WITHIN(0.001, 2.2, y_data[0]);  // First y
+    TEST_ASSERT_FLOAT_WITHIN(0.001, 5.5, y_data[1]);  // Second y
+    
+    float* z_data = (float*)batches[2]->data;
+    TEST_ASSERT_FLOAT_WITHIN(0.001, 3.3, z_data[0]);  // First z
+    TEST_ASSERT_FLOAT_WITHIN(0.001, 6.6, z_data[1]);  // Second z
+    
+    float* temp_data = (float*)batches[3]->data;
+    TEST_ASSERT_FLOAT_WITHIN(0.001, 25.5, temp_data[0]);  // First temp
+    TEST_ASSERT_FLOAT_WITHIN(0.001, 26.0, temp_data[1]);  // Second temp
+    
+    // Clean up batches
+    for (int i = 0; i < 4; i++) {
+        bb_del_tail(sinks[i]);
+    }
     
     // Stop and cleanup
     filt_stop(&source.base);
-    bb_stop(sink);
-    bb_deinit(sink);
-    free(sink);
+    for (int i = 0; i < 4; i++) {
+        bb_stop(sinks[i]);
+        bb_deinit(sinks[i]);
+        free(sinks[i]);
+    }
     csvsource_destroy(&source);
     unlink(config.file_path);
 }
