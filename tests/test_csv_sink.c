@@ -140,7 +140,7 @@ void test_file_size_limit(void)
   const char* output_file = "test_size_limit.csv";
   unlink(output_file);
 
-  // Create source
+  // Create source with timeout to detect when sink stops
   SignalGenerator_t source;
   SignalGenerator_config_t source_cfg = {
       .name = "test_source",
@@ -148,7 +148,8 @@ void test_file_size_limit(void)
       .frequency_hz = 1.0,
       .sample_period_ns = 1000000,
       .amplitude = 1.0,
-      .max_samples = 1000,  // Many samples
+      .max_samples = 1000,   // Many samples
+      .timeout_us = 100000,  // 100ms timeout
       .buff_config = {.dtype = DTYPE_FLOAT,
                       .batch_capacity_expo = 6,
                       .ring_capacity_expo = 2}};
@@ -171,23 +172,28 @@ void test_file_size_limit(void)
   CHECK_ERR(filt_start(&source.base));
   CHECK_ERR(filt_start(&sink.base));
 
-  // Wait for filters to stop
-  // Note: We expect the sink to stop when it hits the file size limit
-  // The source will continue running until we stop it manually
+  // Wait for sink to hit the file size limit
+  // The sink will stop on its own when it hits the limit
   int wait_count = 0;
   while (atomic_load(&sink.base.running)) {
     usleep(10000);
     wait_count++;
-    if (wait_count > 100) {  // 1 second timeout
+    if (wait_count > 200) {  // 2 second timeout
+      printf("WARNING: Sink did not stop within 2 seconds\n");
       break;
     }
   }
 
+  // Stop both filters - this will unblock the source if it's waiting
   CHECK_ERR(filt_stop(&sink.base));
   CHECK_ERR(filt_stop(&source.base));
 
   // Verify sink stopped due to file size limit
   TEST_ASSERT_EQUAL(Bp_EC_NO_SPACE, sink.base.worker_err_info.ec);
+
+  // Source should get STOPPED error when sink's input buffer is stopped
+  TEST_ASSERT_EQUAL_MESSAGE(Bp_EC_STOPPED, source.base.worker_err_info.ec,
+                            "Source should get STOPPED error when sink stops");
 
   // Verify file exists and is around the limit
   TEST_ASSERT_TRUE(file_exists(output_file));
@@ -297,8 +303,7 @@ int main(void)
 
   RUN_TEST(test_basic_csv_write);
   RUN_TEST(test_multi_column_output);
-  // TODO: Fix file size limit test - it hangs because the source keeps running
-  // RUN_TEST(test_file_size_limit);
+  RUN_TEST(test_file_size_limit);
   RUN_TEST(test_error_handling);
   RUN_TEST(test_completion_handling);
 

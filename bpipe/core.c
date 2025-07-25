@@ -337,11 +337,11 @@ Bp_EC filt_stop(Filter_t* f)
     return f->ops.stop(f);
   }
 
-  if (!f->running) {
+  if (!atomic_load(&f->running)) {
     return Bp_EC_OK;  // Already stopped, not an error
   }
 
-  f->running = false;
+  atomic_store(&f->running, false);
 
   // Stop all input buffers to wake up any waiting threads
   for (int i = 0; i < f->n_input_buffers; i++) {
