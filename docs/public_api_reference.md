@@ -119,6 +119,27 @@ bb_start(buffer);
 bb_stop(buffer);
 ```
 
+#### Force Return Mechanism
+The force return mechanism allows filters to unblock threads waiting on buffer operations during shutdown:
+
+#### `bb_force_return_head(Batch_buff_t *buff, Bp_EC error_code)`
+**Purpose**: Forces any thread blocked on `bb_get_head()` to return with specified error  
+**When**: Called during filter shutdown to unblock producers
+
+```c
+// In filt_stop() to unblock upstream filters
+bb_force_return_head(input_buffer, Bp_EC_FILTER_STOPPING);
+```
+
+#### `bb_force_return_tail(Batch_buff_t *buff, Bp_EC error_code)`
+**Purpose**: Forces any thread blocked on `bb_get_tail()` to return with specified error  
+**When**: Called during filter shutdown to unblock consumers
+
+```c
+// In filt_stop() to unblock this filter if waiting for data
+bb_force_return_tail(input_buffer, Bp_EC_FILTER_STOPPING);
+```
+
 ## Filter API
 
 ### Filter Lifecycle
@@ -288,6 +309,7 @@ void my_worker(Filter_t* f) {
 - `Bp_EC_BUFFER_EMPTY` - No data available
 - `Bp_EC_NO_SPACE` - Buffer full
 - `Bp_EC_STOPPED` - Operation on stopped buffer
+- `Bp_EC_FILTER_STOPPING` - Filter is stopping (from bb_force_return)
 
 ### Worker Thread Assertions
 Use `BP_WORKER_ASSERT` for unrecoverable errors in worker threads:

@@ -17,6 +17,7 @@ All bpipe2 functions return `Bp_EC` (error code) enum values. The primary codes 
 - `Bp_EC_ALREADY_CONNECTED`: Filter already connected
 - `Bp_EC_PTHREAD`: pthread operation failed
 - `Bp_EC_EOF`: End of file/stream reached
+- `Bp_EC_FILTER_STOPPING`: Filter is stopping (from bb_force_return)
 
 ## Error Handling Patterns
 

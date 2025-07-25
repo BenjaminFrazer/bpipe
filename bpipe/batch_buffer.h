@@ -128,10 +128,10 @@ typedef struct _Bp_BatchBuffer {
   _Atomic bool running;
 
   /* Force return mechanism for clean filter stopping */
-  _Atomic bool force_return_head;     /* Force producer to return */
-  _Atomic bool force_return_tail;     /* Force consumer to return */
-  Bp_EC force_return_head_code;       /* Error code for producer */
-  Bp_EC force_return_tail_code;       /* Error code for consumer */
+  _Atomic bool force_return_head; /* Force producer to return */
+  _Atomic bool force_return_tail; /* Force consumer to return */
+  Bp_EC force_return_head_code;   /* Error code for producer */
+  Bp_EC force_return_tail_code;   /* Error code for consumer */
 
   OverflowBehaviour_t overflow_behaviour;
 } Batch_buff_t;

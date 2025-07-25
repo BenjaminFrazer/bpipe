@@ -21,6 +21,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
    - Use `docs/debugging_guide.md` when issues arise
 
 
+3.  Once you've finished reading this file, Announce in terminal "I have read CLAUDE.md"
+
 ## Development Commands
 
 ### Building and Testing

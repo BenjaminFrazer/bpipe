@@ -62,6 +62,22 @@ Bp_EC filter_stop(Filter_t* filter) {
     // Signal worker to stop
     atomic_store(&filter->running, false);
     
+    // Force return on buffers to unblock any waiting operations
+    // This ensures the worker thread can exit cleanly
+    for (int i = 0; i < filter->n_input_buffers; i++) {
+        // Unblock upstream filters writing to our input
+        bb_force_return_head(&filter->input_buffers[i], Bp_EC_FILTER_STOPPING);
+        // Unblock our worker if reading from input
+        bb_force_return_tail(&filter->input_buffers[i], Bp_EC_FILTER_STOPPING);
+    }
+    
+    // Unblock our worker if writing to output buffers
+    for (int i = 0; i < filter->n_sinks; i++) {
+        if (filter->sinks[i] != NULL) {
+            bb_force_return_head(filter->sinks[i], Bp_EC_FILTER_STOPPING);
+        }
+    }
+    
     // Wait for worker to finish
     if (filter->worker) {
         int ret = pthread_join(filter->worker_thread, NULL);
@@ -195,19 +211,19 @@ static void* transform_worker(void* arg) {
     
     while (atomic_load(&tf->base.running)) {
         // Get input
-        Batch_t* input = bb_get_tail(tf->base.sources[0]);
+        Bp_EC err;
+        Batch_t* input = bb_get_tail(tf->base.sources[0], timeout_us, &err);
         if (!input) {
-            usleep(1000);
-            continue;
+            // Handle force return during shutdown
+            if (err == Bp_EC_FILTER_STOPPING) {
+                break;
+            }
+            continue;  // Normal timeout
         }
         
-        // Get output
+        // Get output  
         Batch_t* output = bb_get_head(tf->base.sinks[0]);
-        if (!output) {
-            bb_return(tf->base.sources[0], 0);
-            usleep(1000);
-            continue;
-        }
+        BP_WORKER_ASSERT(&tf->base, output != NULL, Bp_EC_GET_HEAD_NULL);
         
         // Process
         transform_batch(input, output);

@@ -2,13 +2,13 @@
 
 ## Overview
 
-The CSV Source Filter is a source filter that reads CSV files and emits data samples to connected sink filters. It expects CSV files to contain a timestamp column (in nanoseconds) and converts rows into batches according to the bpipe data model, automatically detecting whether the data is regularly or irregularly sampled.
+The CSV Source Filter is a source filter that reads CSV files and emits data samples to connected sink filters. It expects CSV files to contain a timestamp column (in nanoseconds) and outputs each data column to a separate sink, enabling clean composition with downstream filters. The filter uses a simple state machine to automatically detect whether data is regularly or irregularly sampled.
 
 ## Design Goals
 
 1. **File-based input**: Read CSV files from disk specified in configuration
-2. **Flexible parsing**: Support configurable column selection and data types
-3. **Timing control**: Generate appropriate timing metadata for samples
+2. **Multi-output design**: Each data column outputs to a separate sink for composability
+3. **Simple timing logic**: State machine automatically handles regular/irregular data
 4. **Memory efficient**: Stream data without loading entire file
 5. **Error handling**: Graceful handling of malformed data
 
@@ -31,14 +31,10 @@ typedef struct _CsvSource_config_t {
     const char* ts_column_name;          // Name of timestamp column (e.g., "ts_ns", "timestamp")
     const char* data_column_names[BP_CSV_MAX_COLUMNS]; // NULL-terminated array of column names
     
-    // Timing configuration
-    bool detect_regular_timing;          // Auto-detect if data is regularly sampled
-    uint64_t regular_threshold_ns;       // Max deviation to consider "regular" (default: 1000ns)
+    // Timing configuration (simplified - no threshold needed)
     
     // Output configuration
-    Bp_dtype_t output_dtype;            // Output data type (DTYPE_FLOAT, DTYPE_I32, etc.)
-    size_t batch_size;                  // Max samples per batch (power of 2)
-    size_t ring_capacity;               // Number of batches in ring buffer
+    BatchBuffer_config buff_config;     // Standard buffer configuration (includes dtype, capacities)
     
     // Processing options
     bool loop;                          // Loop file when EOF reached
@@ -69,22 +65,21 @@ typedef struct _CsvSource_t {
     double parse_buffer[BP_CSV_MAX_COLUMNS]; // Fixed buffer for parsing
     size_t current_line;                // Current line number (for errors)
     
-    // Timing detection
-    bool is_regular;                    // Whether data has regular timing
-    uint64_t detected_period_ns;        // Detected period if regular
-    uint64_t last_timestamp_ns;         // Previous row's timestamp
+    // State machine for batching
+    uint64_t batch_start_time;          // First timestamp in current batch
+    uint64_t expected_delta;            // Time delta established by first two samples
+    bool delta_established;             // Whether we have a delta from two samples
+    size_t samples_in_batch;            // Current batch size
     
-    // Batch accumulation
+    // Batch accumulation buffers (one per column)
+    double** column_buffers;            // Array of buffers, one per data column
     uint64_t* timestamp_buffer;         // Buffer for accumulating timestamps
-    size_t timestamps_in_buffer;        // Current number of timestamps
     
     // Configuration (copied)
     char delimiter;
     bool has_header;
     const char* ts_column_name;
     const char* data_column_names[BP_CSV_MAX_COLUMNS];
-    bool detect_regular_timing;
-    uint64_t regular_threshold_ns;
     bool loop;
     bool skip_invalid;
     
@@ -101,30 +96,86 @@ typedef struct _CsvSource_t {
      - Find `ts_column_name` → `ts_column_index`
      - Find each `data_column_names[i]` → `data_column_indices[i]`
    - Error if any requested column not found
-3. Allocate line buffer, parse buffer, and timestamp buffer
-4. Initialize timing detection state
-5. Create base filter with no inputs, configurable outputs
+3. Allocate buffers:
+   - Line buffer for reading
+   - Parse buffer for parsing
+   - Timestamp buffer (size = 1 << buff_config.batch_capacity_expo)
+   - Column buffers array (n_data_columns buffers, each size = 1 << buff_config.batch_capacity_expo)
+4. Initialize state machine (all zeros)
+5. Create base filter with:
+   - No inputs (source filter)
+   - Number of outputs = n_data_columns (one sink per column)
 
 ### Worker Thread Logic
 
 ```
+BatchState state = {0};
+
 while (running):
-    1. Check for available output buffer space
-    2. Read and accumulate samples:
-        a. Parse line, extract timestamp from ts_column
-        b. If detect_regular_timing, check timing consistency
-        c. Accumulate data until:
-           - Batch full (batch_size reached)
-           - Irregular data detected (for regular batches)
-           - Timing gap detected (for regular batches)
-    3. Create output batch:
-        - If regular timing: set period_ns, use first timestamp
-        - If irregular timing: create single-sample batches
-    4. Submit batch
+    1. Read next line from CSV
+    2. Parse timestamp and data values
+    3. Apply state machine logic:
+       
+       if (state.samples_in_batch == 0):
+           // Starting new batch
+           state.batch_start_time = timestamp
+           state.delta_established = false
+           add_to_batch(timestamp, values)
+           state.samples_in_batch = 1
+           
+       else if (state.samples_in_batch == 1):
+           // Second sample establishes delta
+           state.expected_delta = timestamp - state.batch_start_time
+           state.delta_established = true
+           add_to_batch(timestamp, values)
+           state.samples_in_batch = 2
+           
+       else:
+           // Check if sample fits pattern
+           expected_time = state.batch_start_time + 
+                          (state.samples_in_batch * state.expected_delta)
+           
+           if (timestamp == expected_time):
+               // Fits pattern - add to batch
+               add_to_batch(timestamp, values)
+               state.samples_in_batch++
+           else:
+               // Doesn't fit - submit current batch to all outputs
+               submit_batches_to_all_columns(state.expected_delta)
+               
+               // Start new batch
+               state.batch_start_time = timestamp
+               state.delta_established = false
+               add_to_batch(timestamp, values)
+               state.samples_in_batch = 1
+    
+    4. Check if batch full:
+       batch_capacity = 1 << buff_config.batch_capacity_expo
+       if (state.samples_in_batch >= batch_capacity):
+           submit_batches_to_all_columns(state.delta_established ? state.expected_delta : 0)
+           state.samples_in_batch = 0
+           
     5. Handle EOF:
-        - If loop=true: seek to beginning, skip header
-        - If loop=false: send completion batch, exit
+       - Submit any remaining samples in batch
+       - If loop=true: seek to beginning, skip header
+       - If loop=false: send completion batch, exit
+       
     6. Update metrics
+
+// Helper function: submit_batches_to_all_columns
+submit_batches_to_all_columns(period_ns):
+    for (i = 0; i < n_data_columns; i++):
+        batch = bb_get_head(sinks[i])
+        batch->t_ns = timestamp_buffer[0]
+        batch->period_ns = period_ns
+        batch->head = 0
+        batch->tail = samples_in_batch
+        
+        // Copy column data to batch
+        for (j = 0; j < samples_in_batch; j++):
+            ((float*)batch->data)[j] = column_buffers[i][j]
+        
+        bb_submit(sinks[i], timeout_us)
 ```
 
 ### CSV Parsing
@@ -166,26 +217,50 @@ while (token != NULL) {
 
 ### Timing Detection and Batch Formation
 
-The filter implements smart batching based on timing patterns:
+The filter uses a simple state machine for batching that naturally handles both regular and irregular data:
 
-#### Regular Timing Mode
-If `detect_regular_timing = true`:
-1. Calculate period between first two samples
-2. For each subsequent sample, check if: `abs(expected_ts - actual_ts) < regular_threshold_ns`
-3. If regular:
-   - Accumulate multiple samples per batch
-   - Set `batch->period_ns = detected_period`
-   - Set `batch->t_ns` = first sample timestamp
-4. If timing deviation detected:
-   - Submit current batch
-   - Start new batch with new timing
+#### State Machine Design
+The filter maintains minimal state:
+```c
+typedef struct {
+    uint64_t batch_start_time;    // First timestamp in current batch
+    uint64_t expected_delta;      // Time delta established by first two samples
+    bool delta_established;       // Whether we have a delta from two samples
+    size_t samples_in_batch;      // Current batch size
+} BatchState;
+```
 
-#### Irregular Timing Mode
-If timing is irregular or detection disabled:
-- Create single-sample batches
-- Set `batch->period_ns = 0`
-- Set `batch->t_ns` = sample timestamp
-- Preserves exact timing for each sample
+#### Batching Algorithm
+1. **First sample**: Start new batch, record start time
+2. **Second sample**: Calculate delta (`timestamp - batch_start_time`), establish pattern
+3. **Subsequent samples**: 
+   - If `timestamp == batch_start_time + (n * expected_delta)`: Add to batch
+   - Otherwise: Submit current batch, start new batch with this sample
+
+#### Behavioral Model
+```
+Regular data (1kHz):
+  t=0, t=1000, t=2000, t=3000
+  → Single batch: period_ns=1000, 4 samples
+
+Irregular data:
+  t=0, t=1001, t=2003, t=3000
+  → Four batches: each with period_ns=0, 1 sample each
+
+Mixed data:
+  t=0, t=1000, t=2000, [gap], t=5000, t=6000
+  → Batch 1: period_ns=1000, 3 samples
+  → Batch 2: period_ns=1000, 2 samples
+```
+
+#### Design Rationale
+This approach embraces bpipe2's fundamental design:
+- **Regular data is efficient**: Multi-sample batches with period_ns set
+- **Irregular data is correct**: Single-sample batches preserve exact timing
+- **Simple and predictable**: No complex heuristics or threshold tuning
+- **Natural batch boundaries**: Timing changes automatically create new batches
+
+The implementation accepts that irregular data will have higher overhead (more batches), which aligns with bpipe2's optimization for regular, high-rate telemetry data. This is a deliberate trade-off for simplicity and correctness.
 
 ### Handling Timing Gaps
 
@@ -211,9 +286,9 @@ Timestamps: 1000, 2000, 3000, [gap], 8000, 9000
 
 ### Configuration Errors
 - Invalid file_path → Bp_EC_INVALID_CONFIG
-- batch_size not power of 2 → Bp_EC_INVALID_CONFIG
 - has_header = false with column names → Bp_EC_INVALID_CONFIG
 - Column name not found in header → Bp_EC_COLUMN_NOT_FOUND
+- Invalid buffer configuration → Bp_EC_INVALID_CONFIG
 
 ## Example Usage
 
@@ -232,52 +307,57 @@ CsvSource_config_t config = {
         "sensor3",
         NULL                         // Marks end of array
     },
-    .detect_regular_timing = true,   // Auto-detect if regular
-    .regular_threshold_ns = 1000,    // 1μs tolerance
-    .output_dtype = DTYPE_FLOAT,
-    .batch_size = 64,
-    .ring_capacity = 256,
+    .buff_config = {
+        .dtype = DTYPE_FLOAT,
+        .batch_capacity_expo = 6,    // 64 samples per batch
+        .ring_capacity_expo = 8,     // 256 batches in ring
+        .overflow_behaviour = OVERFLOW_BLOCK
+    },
     .timeout_us = 1000000           // 1s timeout
 };
 
 CsvSource_t source;
 csvsource_init(&source, config);
-filt_sink_connect(&source.base, 0, &downstream.input_buffers[0]);
+
+// Connect each column to its own downstream filter
+filt_sink_connect(&source.base, 0, &sensor1_filter.input_buffers[0]);  // sensor1 data
+filt_sink_connect(&source.base, 1, &sensor2_filter.input_buffers[0]);  // sensor2 data
+filt_sink_connect(&source.base, 2, &sensor3_filter.input_buffers[0]);  // sensor3 data
+
 filt_start(&source.base);
 ```
 
-### Irregular Event Data
+### Combining Multiple Columns
 ```c
-// CSV header: timestamp,event_value,event_type
-CsvSource_config_t config = {
-    .name = "events",
-    .file_path = "/data/events.csv",
-    .detect_regular_timing = false,  // Force single-sample batches
-    .ts_column_name = "timestamp",
-    .data_column_names = {
-        "event_value", 
-        "event_type",
-        NULL                         // End of array
-    },
-    // ... other fields ...
-};
+// If you need all columns together, use a MISO filter
+CsvSource_t source;
+MisoElementwise_t combiner;  // Combines multiple inputs
+
+// Connect CSV columns to combiner
+filt_sink_connect(&source.base, 0, &combiner.input_buffers[0]);
+filt_sink_connect(&source.base, 1, &combiner.input_buffers[1]);
+filt_sink_connect(&source.base, 2, &combiner.input_buffers[2]);
+
+// Combiner output has all columns interleaved
+filt_sink_connect(&combiner.base, 0, &downstream.input_buffers[0]);
 ```
 
 ### High-Rate Regular Data
 ```c
-// 10kHz sensor data with strict timing
-config.detect_regular_timing = true;
-config.regular_threshold_ns = 100;  // 100ns tolerance (strict)
-config.batch_size = 1024;           // Large batches for efficiency
+// 10kHz sensor data - state machine will automatically batch efficiently
+config.buff_config.batch_capacity_expo = 10;  // 1024 samples per batch
+// Regular timing is detected automatically - no configuration needed
 ```
 
 ## Performance Considerations
 
-1. **Buffering**: Use reasonably sized line buffer (e.g., 4KB)
-2. **Batch size**: Larger batches amortize parsing overhead
-3. **Memory allocation**: Reuse buffers, avoid per-row allocations
-4. **Type conversion**: Parse as double, then convert once
-5. **I/O pattern**: Sequential reads, consider mmap for large files
+1. **Multi-output efficiency**: Each column gets its own buffer, reducing copying
+2. **Batch size trade-offs**: 
+   - Regular data: Larger batches (256-1024) for efficiency
+   - Irregular data: Will create single-sample batches regardless
+3. **Memory allocation**: All buffers pre-allocated, no per-row allocations
+4. **Type conversion**: Parse as double, convert once when copying to output
+5. **Simple state machine**: Minimal overhead, predictable behavior
 
 ## Limitations
 

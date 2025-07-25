@@ -46,7 +46,8 @@ Bp_EC bb_await_notfull(Batch_buff_t *buff, long long timeout_us)
     */
   }
 
-  while (bb_isfull(buff) && atomic_load(&buff->running) && !atomic_load(&buff->force_return_head)) {
+  while (bb_isfull(buff) && atomic_load(&buff->running) &&
+         !atomic_load(&buff->force_return_head)) {
     if (timeout_us == 0) {
       // Wait indefinitely
       pthread_cond_wait(&buff->not_full, &buff->mutex);
@@ -65,11 +66,11 @@ Bp_EC bb_await_notfull(Batch_buff_t *buff, long long timeout_us)
        */
     }
   }
-  
+
   /* Check if we were forced to return */
   if (atomic_load(&buff->force_return_head)) {
     ec = buff->force_return_head_code;
-    atomic_store(&buff->force_return_head, false);  /* Clear flag */
+    atomic_store(&buff->force_return_head, false); /* Clear flag */
   }
 
   /* Check why we exited the loop */
@@ -92,7 +93,8 @@ Bp_EC bb_await_notempty(Batch_buff_t *buff, long long timeout_us)
     abs_timeout = future_ts(timeout_us * 1000, CLOCK_REALTIME);
   }
 
-  while (bb_isempy(buff) && atomic_load(&buff->running) && !atomic_load(&buff->force_return_tail)) {
+  while (bb_isempy(buff) && atomic_load(&buff->running) &&
+         !atomic_load(&buff->force_return_tail)) {
     int ret = 0;
     if (timeout_us == 0) {
       // Wait indefinitely
@@ -112,11 +114,11 @@ Bp_EC bb_await_notempty(Batch_buff_t *buff, long long timeout_us)
     /* Continue looping on spurious wakeup (ret == 0 but condition still true)
      */
   }
-  
+
   /* Check if we were forced to return */
   if (atomic_load(&buff->force_return_tail)) {
     ec = buff->force_return_tail_code;
-    atomic_store(&buff->force_return_tail, false);  /* Clear flag */
+    atomic_store(&buff->force_return_tail, false); /* Clear flag */
   }
 
   /* Check why we exited the loop */
@@ -338,7 +340,7 @@ Bp_EC bb_init(Batch_buff_t *buff, const char *name, BatchBuffer_config config)
   atomic_store(&buff->producer.dropped_batches, 0);
   atomic_store(&buff->consumer.dropped_by_producer, 0);
   atomic_store(&buff->running, true);
-  
+
   /* Initialize force return fields */
   atomic_store(&buff->force_return_head, false);
   atomic_store(&buff->force_return_tail, false);
@@ -456,7 +458,7 @@ Bp_EC bb_force_return_head(Batch_buff_t *buff, Bp_EC return_code)
   pthread_mutex_lock(&buff->mutex);
   buff->force_return_head_code = return_code;
   atomic_store(&buff->force_return_head, true);
-  pthread_cond_signal(&buff->not_full);  /* Wake producer if waiting */
+  pthread_cond_signal(&buff->not_full); /* Wake producer if waiting */
   pthread_mutex_unlock(&buff->mutex);
 
   return Bp_EC_OK;
@@ -478,7 +480,7 @@ Bp_EC bb_force_return_tail(Batch_buff_t *buff, Bp_EC return_code)
   pthread_mutex_lock(&buff->mutex);
   buff->force_return_tail_code = return_code;
   atomic_store(&buff->force_return_tail, true);
-  pthread_cond_signal(&buff->not_empty);  /* Wake consumer if waiting */
+  pthread_cond_signal(&buff->not_empty); /* Wake consumer if waiting */
   pthread_mutex_unlock(&buff->mutex);
 
   return Bp_EC_OK;

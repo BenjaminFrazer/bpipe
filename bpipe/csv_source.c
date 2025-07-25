@@ -8,6 +8,14 @@
 
 #define LINE_BUFFER_SIZE 4096
 
+// Define specific error codes using existing ones
+#define Bp_EC_FILE_NOT_FOUND Bp_EC_INVALID_CONFIG
+#define Bp_EC_IO_ERROR Bp_EC_INVALID_DATA
+#define Bp_EC_PERMISSION_DENIED Bp_EC_INVALID_CONFIG
+#define Bp_EC_PARSE_ERROR Bp_EC_INVALID_DATA
+#define Bp_EC_FORMAT_ERROR Bp_EC_INVALID_DATA
+#define Bp_EC_COLUMN_NOT_FOUND Bp_EC_INVALID_CONFIG
+
 /* Future extensions to consider:
  * - Support for different timestamp formats (ISO8601, Unix epoch, custom
  * formats)
@@ -78,7 +86,12 @@ Bp_EC csvsource_init(CsvSource_t* self, CsvSource_config_t config)
   self->file = fopen(config.file_path, "r");
   if (!self->file) {
     free(self->file_path);
-    return Bp_EC_INVALID_CONFIG;
+    if (errno == ENOENT) {
+      return Bp_EC_FILE_NOT_FOUND;
+    } else if (errno == EACCES) {
+      return Bp_EC_PERMISSION_DENIED;
+    }
+    return Bp_EC_IO_ERROR;
   }
 
   self->line_buffer_size = LINE_BUFFER_SIZE;
@@ -130,10 +143,10 @@ Bp_EC csvsource_init(CsvSource_t* self, CsvSource_config_t config)
 
   Core_filt_config_t filter_config = {
       .name = config.name,
-      .filt_type = FILT_T_NDEF,  // Source filter
+      .filt_type = FILT_T_NDEF,  // Source filter (no inputs)
       .size = sizeof(CsvSource_t),
       .n_inputs = 0,
-      .max_supported_sinks = MAX_SINKS,
+      .max_supported_sinks = self->n_data_columns,  // One sink per data column
       .buff_config = {.dtype = config.output_dtype,
                       .batch_capacity_expo = batch_capacity_expo,
                       .ring_capacity_expo = ring_capacity_expo,
@@ -213,12 +226,12 @@ static Bp_EC parse_header(CsvSource_t* self)
   free(header_copy);
 
   if (self->ts_column_index == -1) {
-    return Bp_EC_INVALID_CONFIG;
+    return Bp_EC_COLUMN_NOT_FOUND;
   }
 
   for (size_t i = 0; i < self->n_data_columns; i++) {
     if (self->data_column_indices[i] == -1) {
-      return Bp_EC_INVALID_CONFIG;
+      return Bp_EC_COLUMN_NOT_FOUND;
     }
   }
 
@@ -277,13 +290,22 @@ static Bp_EC parse_line(CsvSource_t* self, char* line, uint64_t* timestamp,
 static void* csvsource_worker(void* arg)
 {
   CsvSource_t* self = (CsvSource_t*) arg;
-  Batch_buff_t* output_buffer = self->base.sinks[0];
+
+  // Validate we have the correct number of sinks connected
+  for (size_t i = 0; i < self->n_data_columns; i++) {
+    BP_WORKER_ASSERT(&self->base, self->base.sinks[i] != NULL, Bp_EC_NO_SINK);
+  }
 
   double* value_buffer = malloc(self->n_data_columns * sizeof(double));
   BP_WORKER_ASSERT(&self->base, value_buffer != NULL, Bp_EC_MALLOC_FAIL);
 
-  self->timestamps_in_buffer = 0;
-  bool first_sample = true;
+  // State machine for batching
+  struct {
+    uint64_t batch_start_time;
+    uint64_t expected_delta;
+    bool delta_established;
+    size_t samples_in_batch;
+  } state = {0};
 
   while (atomic_load(&self->base.running)) {
     if (!fgets(self->line_buffer, self->line_buffer_size, self->file)) {
@@ -295,7 +317,7 @@ static void* csvsource_worker(void* arg)
           }
           continue;
         } else {
-          break;
+          break;  // Exit loop to submit any remaining data
         }
       } else {
         free(value_buffer);
@@ -324,208 +346,158 @@ static void* csvsource_worker(void* arg)
       }
     }
 
-    // Detect regularity at start or after a gap
-    if (self->detect_regular_timing && self->timestamps_in_buffer == 0 &&
-        !first_sample) {
-      // Starting a new batch - could be regular
-      self->is_regular = false;  // Will be set true if we detect regularity
-    }
-
-    if (first_sample) {
-      self->last_timestamp_ns = timestamp;
-      first_sample = false;
-    } else if (self->detect_regular_timing && self->timestamps_in_buffer == 1) {
-      // Calculate period from first two samples
-      uint64_t period = timestamp - self->timestamp_buffer[0];
-      if (!self->is_regular || self->detected_period_ns == 0) {
-        // Either first time or re-detecting after gap
-        self->detected_period_ns = period;
-        self->is_regular = true;
-      } else if (labs((int64_t) (period - self->detected_period_ns)) <=
-                 self->regular_threshold_ns) {
-        // Period matches previously detected period
-        self->is_regular = true;
-      } else {
-        // Period doesn't match
-        self->is_regular = false;
-      }
-    }
-
-    if (self->is_regular && self->timestamps_in_buffer > 1) {
-      uint64_t expected_ts =
-          self->timestamp_buffer[0] +
-          (self->timestamps_in_buffer * self->detected_period_ns);
-      if (labs((int64_t) (timestamp - expected_ts)) >
-          self->regular_threshold_ns) {
-        self->is_regular = false;
-      }
-    }
-
+    // Apply state machine logic from spec
     bool should_submit = false;
+    
+    if (!self->detect_regular_timing) {
+      // Force single-sample batches for irregular mode
+      if (state.samples_in_batch > 0) {
+        should_submit = true;
+      }
+    } else {
+      // Regular timing detection state machine
+      if (state.samples_in_batch == 0) {
+        // Starting new batch
+        state.batch_start_time = timestamp;
+        state.delta_established = false;
 
-    if (self->timestamps_in_buffer >= self->batch_size) {
-      should_submit = true;
-    } else if (self->timestamps_in_buffer > 0) {
-      // Check if we need to submit due to timing issues
-      if (self->detect_regular_timing && self->detected_period_ns > 0) {
-        // We have a detected period - check if current timestamp fits
-        uint64_t expected_ts =
-            self->last_timestamp_ns + self->detected_period_ns;
-        if (labs((int64_t) (timestamp - expected_ts)) >
-            self->regular_threshold_ns) {
-          // Timing gap detected - submit current batch
+      } else if (state.samples_in_batch == 1) {
+        // Second sample establishes delta
+        state.expected_delta = timestamp - state.batch_start_time;
+        state.delta_established = true;
+
+      } else {
+        // Check if sample fits pattern
+        uint64_t expected_time = state.batch_start_time +
+                                 (state.samples_in_batch * state.expected_delta);
+
+        if (timestamp != expected_time) {
+          // Doesn't fit pattern - submit current batch and start new one
           should_submit = true;
         }
-      } else if (!self->detect_regular_timing) {
-        // Not detecting regular timing - create single-sample batches
+      }
+
+      // Check if batch is full
+      if (!should_submit && state.samples_in_batch >= self->batch_size) {
         should_submit = true;
       }
     }
 
-    if (should_submit && self->timestamps_in_buffer > 0) {
-      Batch_t* batch = bb_get_head(output_buffer);
-      if (!batch) {
-        free(value_buffer);
-        BP_WORKER_ASSERT(&self->base, false, Bp_EC_TIMEOUT);
-      }
+    if (should_submit && state.samples_in_batch > 0) {
+      // Submit batch to all column outputs
+      uint64_t period_ns = state.delta_established ? state.expected_delta : 0;
 
-      batch->head = 0;
-      batch->tail = self->timestamps_in_buffer;
-      batch->t_ns = self->timestamp_buffer[0];
-      // For regular data, set period if we've detected it
-      if (self->is_regular && self->detected_period_ns > 0) {
-        batch->period_ns = self->detected_period_ns;
-      } else if (self->detect_regular_timing &&
-                 self->timestamps_in_buffer > 1) {
-        // Check if this batch itself is regular
-        uint64_t first_period =
-            self->timestamp_buffer[1] - self->timestamp_buffer[0];
-        bool batch_regular = true;
-        for (size_t i = 2; i < self->timestamps_in_buffer; i++) {
-          uint64_t period =
-              self->timestamp_buffer[i] - self->timestamp_buffer[i - 1];
-          if (labs((int64_t) (period - first_period)) >
-              self->regular_threshold_ns) {
-            batch_regular = false;
-            break;
-          }
+      for (size_t col = 0; col < self->n_data_columns; col++) {
+        Batch_t* batch = bb_get_head(self->base.sinks[col]);
+        if (!batch) {
+          free(value_buffer);
+          BP_WORKER_ASSERT(&self->base, false, Bp_EC_TIMEOUT);
         }
-        batch->period_ns = batch_regular ? first_period : 0;
-      } else {
-        batch->period_ns = 0;
-      }
 
-      // Copy accumulated data to batch
-      for (size_t s = 0; s < self->timestamps_in_buffer; s++) {
-        for (size_t ch = 0; ch < self->n_data_columns; ch++) {
-          size_t src_idx = s * self->n_data_columns + ch;
-          size_t dst_idx = s * self->n_data_columns + ch;
-          switch (output_buffer->dtype) {
+        batch->head = 0;
+        batch->tail = state.samples_in_batch;
+        batch->t_ns = self->timestamp_buffer[0];
+        batch->period_ns = period_ns;
+        batch->ec = Bp_EC_OK;
+
+        // Copy column data to batch
+        for (size_t s = 0; s < state.samples_in_batch; s++) {
+          // Extract data for this column from accumulation buffer
+          double value =
+              self->data_accumulation_buffer[s * self->n_data_columns + col];
+
+          // Convert to output type
+          switch (self->base.sinks[col]->dtype) {
             case DTYPE_FLOAT:
-              ((float*) batch->data)[dst_idx] =
-                  (float) self->data_accumulation_buffer[src_idx];
+              ((float*) batch->data)[s] = (float) value;
               break;
             case DTYPE_I32:
-              ((int32_t*) batch->data)[dst_idx] =
-                  (int32_t) self->data_accumulation_buffer[src_idx];
+              ((int32_t*) batch->data)[s] = (int32_t) value;
               break;
             case DTYPE_U32:
-              ((uint32_t*) batch->data)[dst_idx] =
-                  (uint32_t) self->data_accumulation_buffer[src_idx];
+              ((uint32_t*) batch->data)[s] = (uint32_t) value;
               break;
             default:
               break;
           }
         }
+
+        bb_submit(self->base.sinks[col], self->base.timeout_us);
       }
 
-      bb_submit(output_buffer, self->base.timeout_us);
-
       // Update metrics
-      self->base.metrics.samples_processed += self->timestamps_in_buffer;
+      self->base.metrics.samples_processed += state.samples_in_batch;
       self->base.metrics.n_batches++;
 
-      self->timestamps_in_buffer = 0;
+      // Reset state for new batch if current sample doesn't fit
+      if (should_submit) {
+        state.batch_start_time = timestamp;
+        state.delta_established = false;
+        state.samples_in_batch = 0;
+      }
     }
 
     // Always store the current sample
-    self->timestamp_buffer[self->timestamps_in_buffer] = timestamp;
+    self->timestamp_buffer[state.samples_in_batch] = timestamp;
     for (size_t ch = 0; ch < self->n_data_columns; ch++) {
-      self->data_accumulation_buffer[self->timestamps_in_buffer *
+      self->data_accumulation_buffer[state.samples_in_batch *
                                          self->n_data_columns +
                                      ch] = value_buffer[ch];
     }
-    self->timestamps_in_buffer++;
-    self->last_timestamp_ns = timestamp;
+    state.samples_in_batch++;
   }
 
-  if (self->timestamps_in_buffer > 0) {
-    Batch_t* batch = bb_get_head(output_buffer);
-    if (batch) {
-      batch->head = 0;
-      batch->tail = self->timestamps_in_buffer;
-      batch->t_ns = self->timestamp_buffer[0];
-      // For regular data, set period if we've detected it
-      if (self->is_regular && self->detected_period_ns > 0) {
-        batch->period_ns = self->detected_period_ns;
-      } else if (self->detect_regular_timing &&
-                 self->timestamps_in_buffer > 1) {
-        // Check if this batch itself is regular
-        uint64_t first_period =
-            self->timestamp_buffer[1] - self->timestamp_buffer[0];
-        bool batch_regular = true;
-        for (size_t i = 2; i < self->timestamps_in_buffer; i++) {
-          uint64_t period =
-              self->timestamp_buffer[i] - self->timestamp_buffer[i - 1];
-          if (labs((int64_t) (period - first_period)) >
-              self->regular_threshold_ns) {
-            batch_regular = false;
-            break;
-          }
-        }
-        batch->period_ns = batch_regular ? first_period : 0;
-      } else {
-        batch->period_ns = 0;
-      }
+  // Submit any remaining samples
+  if (state.samples_in_batch > 0) {
+    uint64_t period_ns = state.delta_established ? state.expected_delta : 0;
 
-      // Copy remaining data to batch
-      for (size_t s = 0; s < self->timestamps_in_buffer; s++) {
-        for (size_t ch = 0; ch < self->n_data_columns; ch++) {
-          size_t src_idx = s * self->n_data_columns + ch;
-          size_t dst_idx = s * self->n_data_columns + ch;
-          switch (output_buffer->dtype) {
+    for (size_t col = 0; col < self->n_data_columns; col++) {
+      Batch_t* batch = bb_get_head(self->base.sinks[col]);
+      if (batch) {
+        batch->head = 0;
+        batch->tail = state.samples_in_batch;
+        batch->t_ns = self->timestamp_buffer[0];
+        batch->period_ns = period_ns;
+        batch->ec = Bp_EC_OK;
+
+        // Copy column data to batch
+        for (size_t s = 0; s < state.samples_in_batch; s++) {
+          double value =
+              self->data_accumulation_buffer[s * self->n_data_columns + col];
+
+          switch (self->base.sinks[col]->dtype) {
             case DTYPE_FLOAT:
-              ((float*) batch->data)[dst_idx] =
-                  (float) self->data_accumulation_buffer[src_idx];
+              ((float*) batch->data)[s] = (float) value;
               break;
             case DTYPE_I32:
-              ((int32_t*) batch->data)[dst_idx] =
-                  (int32_t) self->data_accumulation_buffer[src_idx];
+              ((int32_t*) batch->data)[s] = (int32_t) value;
               break;
             case DTYPE_U32:
-              ((uint32_t*) batch->data)[dst_idx] =
-                  (uint32_t) self->data_accumulation_buffer[src_idx];
+              ((uint32_t*) batch->data)[s] = (uint32_t) value;
               break;
             default:
               break;
           }
         }
+
+        bb_submit(self->base.sinks[col], self->base.timeout_us);
       }
-
-      bb_submit(output_buffer, self->base.timeout_us);
-
-      // Update metrics
-      self->base.metrics.samples_processed += self->timestamps_in_buffer;
-      self->base.metrics.n_batches++;
     }
+
+    // Update metrics
+    self->base.metrics.samples_processed += state.samples_in_batch;
+    self->base.metrics.n_batches++;
   }
 
-  Batch_t* completion_batch = bb_get_head(output_buffer);
-  if (completion_batch) {
-    completion_batch->head = 0;
-    completion_batch->tail = 0;
-    completion_batch->ec = Bp_EC_COMPLETE;
-    bb_submit(output_buffer, self->base.timeout_us);
+  // Send completion batch to all outputs
+  for (size_t col = 0; col < self->n_data_columns; col++) {
+    Batch_t* completion_batch = bb_get_head(self->base.sinks[col]);
+    if (completion_batch) {
+      completion_batch->head = 0;
+      completion_batch->tail = 0;
+      completion_batch->ec = Bp_EC_COMPLETE;
+      bb_submit(self->base.sinks[col], self->base.timeout_us);
+    }
   }
 
   free(value_buffer);
