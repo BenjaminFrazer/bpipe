@@ -287,6 +287,116 @@ static Bp_EC parse_line(CsvSource_t* self, char* line, uint64_t* timestamp,
   return Bp_EC_OK;
 }
 
+// Define the batch state structure
+typedef struct {
+  uint64_t batch_start_time;
+  uint64_t expected_delta;
+  bool delta_established;
+  size_t samples_in_batch;
+} BatchState;
+
+// Helper function to submit accumulated samples to all column outputs
+static void submit_batch_to_all_columns(CsvSource_t* self,
+                                        const BatchState* state,
+                                        double* value_buffer)
+{
+  uint64_t period_ns = state->delta_established ? state->expected_delta : 0;
+
+  for (size_t col = 0; col < self->n_data_columns; col++) {
+    Batch_t* batch = bb_get_head(self->base.sinks[col]);
+    if (!batch) {
+      free(value_buffer);
+      BP_WORKER_ASSERT(&self->base, false, Bp_EC_TIMEOUT);
+    }
+
+    batch->head = 0;
+    batch->tail = state->samples_in_batch;
+    batch->t_ns = self->timestamp_buffer[0];
+    batch->period_ns = period_ns;
+    batch->ec = Bp_EC_OK;
+
+    // Copy column data to batch
+    for (size_t s = 0; s < state->samples_in_batch; s++) {
+      double value =
+          self->data_accumulation_buffer[s * self->n_data_columns + col];
+
+      switch (self->base.sinks[col]->dtype) {
+        case DTYPE_FLOAT:
+          ((float*) batch->data)[s] = (float) value;
+          break;
+        case DTYPE_I32:
+          ((int32_t*) batch->data)[s] = (int32_t) value;
+          break;
+        case DTYPE_U32:
+          ((uint32_t*) batch->data)[s] = (uint32_t) value;
+          break;
+        default:
+          break;
+      }
+    }
+
+    bb_submit(self->base.sinks[col], self->base.timeout_us);
+  }
+
+  // Update metrics
+  self->base.metrics.samples_processed += state->samples_in_batch;
+  self->base.metrics.n_batches++;
+}
+
+// Helper to determine if current sample should trigger batch submission
+static bool should_submit_batch(const CsvSource_t* self,
+                                const BatchState* state, uint64_t timestamp)
+{
+  // Force single-sample batches for irregular mode
+  if (!self->detect_regular_timing && state->samples_in_batch > 0) {
+    return true;
+  }
+
+  // Check if batch is full
+  if (state->samples_in_batch >= self->batch_size) {
+    return true;
+  }
+
+  // For regular timing detection
+  if (self->detect_regular_timing && state->samples_in_batch > 1) {
+    // Check if sample fits the established pattern
+    uint64_t expected_time = state->batch_start_time +
+                             (state->samples_in_batch * state->expected_delta);
+    if (timestamp != expected_time) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+// Helper to update state after processing a sample
+static void update_batch_state(BatchState* state, uint64_t timestamp)
+{
+  if (state->samples_in_batch == 0) {
+    // Starting new batch
+    state->batch_start_time = timestamp;
+    state->delta_established = false;
+  } else if (state->samples_in_batch == 1) {
+    // Second sample establishes delta
+    state->expected_delta = timestamp - state->batch_start_time;
+    state->delta_established = true;
+  }
+}
+
+// Helper to accumulate a sample into buffers
+static void accumulate_sample(CsvSource_t* self, BatchState* state,
+                              uint64_t timestamp, const double* values)
+{
+  self->timestamp_buffer[state->samples_in_batch] = timestamp;
+  for (size_t ch = 0; ch < self->n_data_columns; ch++) {
+    self->data_accumulation_buffer[state->samples_in_batch *
+                                       self->n_data_columns +
+                                   ch] = values[ch];
+  }
+  state->samples_in_batch++;
+}
+
 static void* csvsource_worker(void* arg)
 {
   CsvSource_t* self = (CsvSource_t*) arg;
@@ -299,13 +409,7 @@ static void* csvsource_worker(void* arg)
   double* value_buffer = malloc(self->n_data_columns * sizeof(double));
   BP_WORKER_ASSERT(&self->base, value_buffer != NULL, Bp_EC_MALLOC_FAIL);
 
-  // State machine for batching
-  struct {
-    uint64_t batch_start_time;
-    uint64_t expected_delta;
-    bool delta_established;
-    size_t samples_in_batch;
-  } state = {0};
+  BatchState state = {0};
 
   while (atomic_load(&self->base.running)) {
     if (!fgets(self->line_buffer, self->line_buffer_size, self->file)) {
@@ -346,148 +450,22 @@ static void* csvsource_worker(void* arg)
       }
     }
 
-    // Apply state machine logic from spec
-    bool should_submit = false;
-
-    if (!self->detect_regular_timing) {
-      // Force single-sample batches for irregular mode
-      if (state.samples_in_batch > 0) {
-        should_submit = true;
-      }
-    } else {
-      // Regular timing detection state machine
-      if (state.samples_in_batch == 0) {
-        // Starting new batch
-        state.batch_start_time = timestamp;
-        state.delta_established = false;
-
-      } else if (state.samples_in_batch == 1) {
-        // Second sample establishes delta
-        state.expected_delta = timestamp - state.batch_start_time;
-        state.delta_established = true;
-
-      } else {
-        // Check if sample fits pattern
-        uint64_t expected_time =
-            state.batch_start_time +
-            (state.samples_in_batch * state.expected_delta);
-
-        if (timestamp != expected_time) {
-          // Doesn't fit pattern - submit current batch and start new one
-          should_submit = true;
-        }
-      }
-
-      // Check if batch is full
-      if (!should_submit && state.samples_in_batch >= self->batch_size) {
-        should_submit = true;
-      }
-    }
+    // Check if we should submit the current batch before adding this sample
+    bool should_submit = should_submit_batch(self, &state, timestamp);
 
     if (should_submit && state.samples_in_batch > 0) {
-      // Submit batch to all column outputs
-      uint64_t period_ns = state.delta_established ? state.expected_delta : 0;
-
-      for (size_t col = 0; col < self->n_data_columns; col++) {
-        Batch_t* batch = bb_get_head(self->base.sinks[col]);
-        if (!batch) {
-          free(value_buffer);
-          BP_WORKER_ASSERT(&self->base, false, Bp_EC_TIMEOUT);
-        }
-
-        batch->head = 0;
-        batch->tail = state.samples_in_batch;
-        batch->t_ns = self->timestamp_buffer[0];
-        batch->period_ns = period_ns;
-        batch->ec = Bp_EC_OK;
-
-        // Copy column data to batch
-        for (size_t s = 0; s < state.samples_in_batch; s++) {
-          // Extract data for this column from accumulation buffer
-          double value =
-              self->data_accumulation_buffer[s * self->n_data_columns + col];
-
-          // Convert to output type
-          switch (self->base.sinks[col]->dtype) {
-            case DTYPE_FLOAT:
-              ((float*) batch->data)[s] = (float) value;
-              break;
-            case DTYPE_I32:
-              ((int32_t*) batch->data)[s] = (int32_t) value;
-              break;
-            case DTYPE_U32:
-              ((uint32_t*) batch->data)[s] = (uint32_t) value;
-              break;
-            default:
-              break;
-          }
-        }
-
-        bb_submit(self->base.sinks[col], self->base.timeout_us);
-      }
-
-      // Update metrics
-      self->base.metrics.samples_processed += state.samples_in_batch;
-      self->base.metrics.n_batches++;
-
-      // Reset state for new batch if current sample doesn't fit
-      if (should_submit) {
-        state.batch_start_time = timestamp;
-        state.delta_established = false;
-        state.samples_in_batch = 0;
-      }
+      submit_batch_to_all_columns(self, &state, value_buffer);
+      state.samples_in_batch = 0;  // Reset for new batch
     }
 
-    // Always store the current sample
-    self->timestamp_buffer[state.samples_in_batch] = timestamp;
-    for (size_t ch = 0; ch < self->n_data_columns; ch++) {
-      self->data_accumulation_buffer[state.samples_in_batch *
-                                         self->n_data_columns +
-                                     ch] = value_buffer[ch];
-    }
-    state.samples_in_batch++;
+    // Update state and accumulate the sample
+    update_batch_state(&state, timestamp);
+    accumulate_sample(self, &state, timestamp, value_buffer);
   }
 
   // Submit any remaining samples
   if (state.samples_in_batch > 0) {
-    uint64_t period_ns = state.delta_established ? state.expected_delta : 0;
-
-    for (size_t col = 0; col < self->n_data_columns; col++) {
-      Batch_t* batch = bb_get_head(self->base.sinks[col]);
-      if (batch) {
-        batch->head = 0;
-        batch->tail = state.samples_in_batch;
-        batch->t_ns = self->timestamp_buffer[0];
-        batch->period_ns = period_ns;
-        batch->ec = Bp_EC_OK;
-
-        // Copy column data to batch
-        for (size_t s = 0; s < state.samples_in_batch; s++) {
-          double value =
-              self->data_accumulation_buffer[s * self->n_data_columns + col];
-
-          switch (self->base.sinks[col]->dtype) {
-            case DTYPE_FLOAT:
-              ((float*) batch->data)[s] = (float) value;
-              break;
-            case DTYPE_I32:
-              ((int32_t*) batch->data)[s] = (int32_t) value;
-              break;
-            case DTYPE_U32:
-              ((uint32_t*) batch->data)[s] = (uint32_t) value;
-              break;
-            default:
-              break;
-          }
-        }
-
-        bb_submit(self->base.sinks[col], self->base.timeout_us);
-      }
-    }
-
-    // Update metrics
-    self->base.metrics.samples_processed += state.samples_in_batch;
-    self->base.metrics.n_batches++;
+    submit_batch_to_all_columns(self, &state, value_buffer);
   }
 
   // Send completion batch to all outputs
