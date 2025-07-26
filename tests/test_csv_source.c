@@ -654,6 +654,56 @@ void test_csv_source_get_stats_operation(void) {
     unlink(config.file_path);
 }
 
+void test_csv_source_different_sink_batch_sizes(void) {
+    CsvSource_t source;
+    
+    const char* csv_content = "ts_ns,value1,value2\n"
+                             "1000,1.0,2.0\n"
+                             "2000,1.1,2.1\n";
+    
+    CsvSource_config_t config = {
+        .name = "test_csv_batch_mismatch",
+        .file_path = TEST_DATA_DIR "batch_mismatch.csv",
+        .delimiter = ',',
+        .has_header = true,
+        .ts_column_name = "ts_ns",
+        .data_column_names = {"value1", "value2", NULL},
+        .timeout_us = 100000
+    };
+    
+    create_test_csv(config.file_path, csv_content);
+    CHECK_ERR(csvsource_init(&source, config));
+    
+    // Create sinks with different batch capacities
+    Batch_buff_t* sink1 = create_test_sink(DTYPE_FLOAT, 6);  // 64 samples
+    Batch_buff_t* sink2 = create_test_sink(DTYPE_FLOAT, 4);  // 16 samples - DIFFERENT!
+    
+    CHECK_ERR(filt_sink_connect(&source.base, 0, sink1));
+    CHECK_ERR(filt_sink_connect(&source.base, 1, sink2));
+    
+    // Start filter - worker should detect batch size mismatch
+    CHECK_ERR(filt_start(&source.base));
+    
+    // Let worker thread start and detect the mismatch
+    usleep(10000);  // 10ms
+    
+    // Stop filter
+    filt_stop(&source.base);
+    
+    // Check that worker detected the mismatch
+    TEST_ASSERT_EQUAL(Bp_EC_INVALID_CONFIG, source.base.worker_err_info.ec);
+    
+    // Cleanup
+    bb_stop(sink1);
+    bb_stop(sink2);
+    bb_deinit(sink1);
+    bb_deinit(sink2);
+    free(sink1);
+    free(sink2);
+    csvsource_destroy(&source);
+    unlink(config.file_path);
+}
+
 void test_csv_source_concurrent_stop(void) {
     CsvSource_t source;
     
@@ -826,6 +876,7 @@ int main(void) {
     
     // New thread safety tests
     RUN_TEST(test_csv_source_concurrent_stop);
+    RUN_TEST(test_csv_source_different_sink_batch_sizes);
     
     return UNITY_END();
 }

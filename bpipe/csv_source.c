@@ -386,6 +386,17 @@ static void* csvsource_worker(void* arg)
     BP_WORKER_ASSERT(&self->base, self->base.sinks[i] != NULL, Bp_EC_NO_SINK);
   }
 
+  // Validate all sinks have the same batch capacity
+  if (self->n_data_columns > 1) {
+    uint8_t expected_capacity_expo = self->base.sinks[0]->batch_capacity_expo;
+    for (size_t i = 1; i < self->n_data_columns; i++) {
+      BP_WORKER_ASSERT(
+          &self->base,
+          self->base.sinks[i]->batch_capacity_expo == expected_capacity_expo,
+          Bp_EC_INVALID_CONFIG);
+    }
+  }
+
   double* value_buffer = malloc(self->n_data_columns * sizeof(double));
   BP_WORKER_ASSERT(&self->base, value_buffer != NULL, Bp_EC_MALLOC_FAIL);
 
