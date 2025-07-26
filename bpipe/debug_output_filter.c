@@ -168,11 +168,12 @@ static void* debug_output_worker(void* arg)
       size_t data_size = (in_batch->tail - in_batch->head) *
                          bb_getdatawidth(base->input_buffers[0].dtype);
       if (data_size > 0) {
-        memcpy((char*) out_batch->data +
-                   in_batch->head * bb_getdatawidth(base->input_buffers[0].dtype),
-               (char*) in_batch->data +
-                   in_batch->head * bb_getdatawidth(base->input_buffers[0].dtype),
-               data_size);
+        memcpy(
+            (char*) out_batch->data +
+                in_batch->head * bb_getdatawidth(base->input_buffers[0].dtype),
+            (char*) in_batch->data +
+                in_batch->head * bb_getdatawidth(base->input_buffers[0].dtype),
+            data_size);
       }
 
       // Submit output

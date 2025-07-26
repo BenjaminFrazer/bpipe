@@ -1,0 +1,13 @@
+[sensor3] [Batch t=1000000000ns, period=1000000ns, samples=10, type=FLOAT]
+[sensor3]   [0] 30.000000
+[sensor3]   [1] 31.000000
+[sensor3]   [2] 32.000000
+[sensor3]   [3] 33.000000
+[sensor3]   [4] 34.000000
+[sensor3]   [5] 35.000000
+[sensor3]   [6] 36.000000
+[sensor3]   [7] 37.000000
+[sensor3]   [8] 38.000000
+[sensor3]   [9] 39.000000
+[sensor3] [Batch t=-1ns, period=0ns, samples=0, type=FLOAT, ec=1]
+[sensor3] [Stream completed]
