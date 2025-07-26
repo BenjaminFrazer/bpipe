@@ -316,8 +316,7 @@ static bool need_new_batches(const CsvSource_t* self, const BatchState* state,
 }
 
 // Helper to submit current batches and get new ones
-static void submit_and_get_new_batches(CsvSource_t* self, BatchState* state,
-                                       double* value_buffer)
+static Bp_EC submit_and_get_new_batches(CsvSource_t* self, BatchState* state)
 {
   // Submit current batches if they have data
   if (state->batches[0] && state->batches[0]->head > 0) {
@@ -341,14 +340,14 @@ static void submit_and_get_new_batches(CsvSource_t* self, BatchState* state,
   for (size_t col = 0; col < self->n_data_columns; col++) {
     state->batches[col] = bb_get_head(self->base.sinks[col]);
     if (!state->batches[col]) {
-      free(value_buffer);
-      BP_WORKER_ASSERT(&self->base, false, Bp_EC_TIMEOUT);
+      return Bp_EC_TIMEOUT;  // bb_get_head should never return NULL
     }
     state->batches[col]->head = 0;
     state->batches[col]->tail = 0;
   }
 
   state->delta_established = false;
+  return Bp_EC_OK;
 }
 
 // Helper to write sample directly to batches
@@ -445,7 +444,11 @@ static void* csvsource_worker(void* arg)
 
     // Check if we need new batches before writing this sample
     if (need_new_batches(self, &state, timestamp)) {
-      submit_and_get_new_batches(self, &state, value_buffer);
+      Bp_EC err = submit_and_get_new_batches(self, &state);
+      if (err != Bp_EC_OK) {
+        free(value_buffer);
+        BP_WORKER_ASSERT(&self->base, false, err);
+      }
     }
 
     // Write sample directly to all column batches
