@@ -21,7 +21,7 @@ SRC_FILES=$(wildcard $(SRC_DIR)/*.c)
 OBJ_FILES=$(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(SRC_FILES))
 # List of working examples (add more as they are fixed)
 # To add a new example, just add its name (without .c extension) to this list
-WORKING_EXAMPLES=csv_to_debug_example csv_scale_simple
+WORKING_EXAMPLES=csv_to_debug_auto csv_scale_simple
 # Generate full paths for working examples
 EXAMPLE_EXECUTABLES=$(addprefix $(EXAMPLES_DIR)/,$(WORKING_EXAMPLES))
 
