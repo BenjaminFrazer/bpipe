@@ -110,6 +110,118 @@ void* worker(void* arg) {
 }
 ```
 
+#### Use Debug Output Filter
+
+For debugging data flow through pipelines, insert the Debug Output filter at strategic points:
+
+```c
+#include "bpipe/debug_output_filter.h"
+
+// Insert debug filter to trace data between processing stages
+void debug_pipeline(void) {
+    // Original pipeline: Source -> Process1 -> Process2 -> Sink
+    // Debug pipeline:   Source -> Debug1 -> Process1 -> Debug2 -> Process2 -> Sink
+    
+    DebugOutputFilter_t debug1, debug2;
+    
+    // Debug after source to verify input data
+    DebugOutputConfig_t debug1_config = {
+        .prefix = "[SOURCE] ",
+        .show_metadata = true,
+        .show_samples = true,
+        .max_samples_per_batch = 5,  // Limit output
+        .format = DEBUG_FMT_DECIMAL,
+        .flush_after_print = true,
+        .filename = NULL  // stdout
+    };
+    debug_output_filter_init(&debug1, &debug1_config);
+    
+    // Debug after first processor
+    DebugOutputConfig_t debug2_config = {
+        .prefix = "[PROCESS1] ",
+        .show_metadata = true,
+        .show_samples = false,  // Only show metadata
+        .format = DEBUG_FMT_DECIMAL,
+        .flush_after_print = true,
+        .filename = "pipeline_trace.log"
+    };
+    debug_output_filter_init(&debug2, &debug2_config);
+    
+    // Connect pipeline with debug points
+    bp_connect(&source, 0, &debug1.base, 0);
+    bp_connect(&debug1.base, 0, &process1, 0);
+    bp_connect(&process1, 0, &debug2.base, 0);
+    bp_connect(&debug2.base, 0, &process2, 0);
+    bp_connect(&process2, 0, &sink, 0);
+}
+```
+
+**Debug Output Filter Use Cases:**
+
+1. **Verify Source Data**:
+```c
+// Check what data is coming from source
+DebugOutputConfig_t config = {
+    .prefix = "[RAW_INPUT] ",
+    .show_samples = true,
+    .max_samples_per_batch = -1,  // Show all
+    .format = DEBUG_FMT_HEX,      // Useful for binary protocols
+    .filename = "raw_input.log"
+};
+```
+
+2. **Track Timing Issues**:
+```c
+// Focus on batch timing metadata
+DebugOutputConfig_t config = {
+    .prefix = "[TIMING] ",
+    .show_metadata = true,
+    .show_samples = false,  // Only metadata
+    .flush_after_print = true
+};
+```
+
+3. **Compare Before/After Processing**:
+```c
+// Place debug filters before and after a suspicious filter
+DebugOutputFilter_t before, after;
+
+// Same format for easy comparison
+DebugOutputConfig_t config = {
+    .format = DEBUG_FMT_SCIENTIFIC,
+    .max_samples_per_batch = 10
+};
+
+config.prefix = "[BEFORE] ";
+debug_output_filter_init(&before, &config);
+
+config.prefix = "[AFTER] ";
+debug_output_filter_init(&after, &config);
+```
+
+4. **Monitor Long-Running Pipelines**:
+```c
+// Log to file with timestamps
+DebugOutputConfig_t config = {
+    .prefix = "[MONITOR] ",
+    .show_metadata = true,
+    .show_samples = false,
+    .filename = "/tmp/pipeline_monitor.log",
+    .append_mode = true,  // Don't overwrite
+    .flush_after_print = true  // Ensure writes
+};
+```
+
+**Tips for Using Debug Output Filter:**
+- Start with `max_samples_per_batch` limited to avoid flooding output
+- Use different prefixes to distinguish multiple debug points
+- Log to files for long runs to avoid terminal overflow
+- Disable sample printing (`show_samples = false`) for high-frequency data
+- Use hex or binary format for debugging binary protocols
+- Remember to remove debug filters from production code
+
+For more examples and use cases, see [Debug Output Filter Examples](debug_output_filter_examples.md).
+
 #### Use GDB
 ```bash
 # Compile with debug symbols

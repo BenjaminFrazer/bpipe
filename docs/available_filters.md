@@ -122,6 +122,60 @@ Duplicates input to multiple outputs.
 - Configurable number of outputs
 - Independent output buffering
 
+### Debug Output Filter (`debug_output_filter.h`)
+
+A passthrough filter that prints batch metadata and sample data for debugging purposes.
+
+**Configuration:**
+```c
+typedef struct {
+    const char* prefix;           // Prefix for output lines (default: "DEBUG: ")
+    bool show_metadata;          // Print batch metadata
+    bool show_samples;           // Print sample values
+    int max_samples_per_batch;   // Limit samples printed (-1 for all)
+    DebugOutputFormat format;    // Output format (decimal, hex, binary, scientific)
+    bool flush_after_print;      // Flush output after each batch
+    const char* filename;        // Output file (NULL for stdout)
+    bool append_mode;           // Append to file instead of overwrite
+} DebugOutputConfig_t;
+```
+
+**Output Formats:**
+- `DEBUG_FMT_DECIMAL`: Standard decimal notation
+- `DEBUG_FMT_HEX`: Hexadecimal (0x format)
+- `DEBUG_FMT_BINARY`: Binary (0b format)
+- `DEBUG_FMT_SCIENTIFIC`: Scientific notation (for floats)
+
+**Features:**
+- Zero-overhead when printing is disabled
+- Thread-safe file operations
+- Supports all data types (FLOAT, I32, U32)
+- Configurable sample limiting to prevent output flooding
+- Batch metadata display (timestamp, period, sample count, type)
+- Stream completion tracking
+
+**Example:**
+```c
+DebugOutputFilter_t debug;
+DebugOutputConfig_t config = {
+    .prefix = "[PIPELINE] ",
+    .show_metadata = true,
+    .show_samples = true,
+    .max_samples_per_batch = 10,  // Only show first 10 samples
+    .format = DEBUG_FMT_DECIMAL,
+    .flush_after_print = true,
+    .filename = "debug_trace.log",
+    .append_mode = false
+};
+
+Bp_EC err = debug_output_filter_init(&debug, &config);
+
+// Insert into pipeline for debugging
+// Source -> Processing -> DebugOutput -> Sink
+```
+
+For detailed examples and debugging scenarios, see [Debug Output Filter Examples](debug_output_filter_examples.md).
+
 ## Filter Operations
 
 All filters support the standard operations interface:
