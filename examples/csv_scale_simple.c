@@ -94,9 +94,6 @@ int main(int argc, char* argv[])
         .data_column_names = {"sensor1", NULL},  // Single column
         .detect_regular_timing = true,
         .regular_threshold_ns = 10000,
-        .output_dtype = DTYPE_FLOAT,
-        .batch_size = 64,
-        .ring_capacity = 256,
         .loop = false,
         .skip_invalid = true,
         .timeout_us = 1000000

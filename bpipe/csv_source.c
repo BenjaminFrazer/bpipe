@@ -44,10 +44,6 @@ Bp_EC csvsource_init(CsvSource_t* self, CsvSource_config_t config)
     return Bp_EC_NULL_POINTER;
   }
 
-  if (!is_power_of_two(config.batch_size)) {
-    return Bp_EC_INVALID_CONFIG;
-  }
-
   memset(self, 0, sizeof(CsvSource_t));
 
   self->delimiter = config.delimiter ? config.delimiter : ',';
@@ -58,7 +54,6 @@ Bp_EC csvsource_init(CsvSource_t* self, CsvSource_config_t config)
       config.regular_threshold_ns ? config.regular_threshold_ns : 1000;
   self->loop = config.loop;
   self->skip_invalid = config.skip_invalid;
-  self->batch_size = config.batch_size;
 
   // Store file path
   self->file_path = strdup(config.file_path);
@@ -113,20 +108,13 @@ Bp_EC csvsource_init(CsvSource_t* self, CsvSource_config_t config)
     }
   }
 
-  // Calculate capacity exponents from sizes
-  size_t batch_capacity_expo = 0;
-  size_t temp = config.batch_size;
-  while (temp > 1) {
-    batch_capacity_expo++;
-    temp >>= 1;
-  }
-
-  size_t ring_capacity_expo = 0;
-  temp = config.ring_capacity;
-  while (temp > 1) {
-    ring_capacity_expo++;
-    temp >>= 1;
-  }
+  // Create dummy buffer config for unused input buffers
+  // Since this is a source filter (n_inputs = 0), this config is never used
+  BatchBuffer_config dummy_buff_config = {
+      .dtype = DTYPE_FLOAT,      // Dummy value
+      .batch_capacity_expo = 6,  // Dummy value (64 samples)
+      .ring_capacity_expo = 8,   // Dummy value (256 batches)
+      .overflow_behaviour = OVERFLOW_BLOCK};
 
   Core_filt_config_t filter_config = {
       .name = config.name,
@@ -134,10 +122,8 @@ Bp_EC csvsource_init(CsvSource_t* self, CsvSource_config_t config)
       .size = sizeof(CsvSource_t),
       .n_inputs = 0,
       .max_supported_sinks = self->n_data_columns,  // One sink per data column
-      .buff_config = {.dtype = config.output_dtype,
-                      .batch_capacity_expo = batch_capacity_expo,
-                      .ring_capacity_expo = ring_capacity_expo,
-                      .overflow_behaviour = OVERFLOW_BLOCK},
+      .buff_config =
+          dummy_buff_config,  // Required by API but unused for source filters
       .timeout_us = config.timeout_us,
       .worker = csvsource_worker};
 
@@ -298,8 +284,9 @@ static bool need_new_batches(const CsvSource_t* self, const BatchState* state,
     return true;
   }
 
-  // Check if batch is full
-  if (current_samples >= self->batch_size) {
+  // Check if batch is full - get batch size from the sink
+  size_t batch_capacity = (1 << self->base.sinks[0]->batch_capacity_expo);
+  if (current_samples >= batch_capacity) {
     return true;
   }
 
@@ -552,8 +539,6 @@ static Bp_EC csvsource_describe(Filter_t* self, char* buffer, size_t size)
                         i < source->n_data_columns - 1 ? ", " : "\n");
   }
 
-  written += snprintf(buffer + written, size - written, "  Batch size: %zu\n",
-                      source->batch_size);
   written +=
       snprintf(buffer + written, size - written, "  Regular timing: %s\n",
                source->detect_regular_timing ? "enabled" : "disabled");

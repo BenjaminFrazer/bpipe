@@ -18,10 +18,6 @@ typedef struct _CsvSource_config_t {
   bool detect_regular_timing;
   uint64_t regular_threshold_ns;
 
-  SampleDtype_t output_dtype;
-  size_t batch_size;
-  size_t ring_capacity;
-
   bool loop;
   bool skip_invalid;
   long timeout_us;
@@ -60,7 +56,6 @@ typedef struct _CsvSource_t {
   uint64_t regular_threshold_ns;
   bool loop;
   bool skip_invalid;
-  size_t batch_size;
 
 } CsvSource_t;
 

@@ -150,9 +150,6 @@ int main(int argc, char* argv[])
       .ts_column_name = column_names[timestamp_col_idx],
       .detect_regular_timing = true,
       .regular_threshold_ns = 1000,
-      .batch_size = 64,
-      .ring_capacity = 256,
-      .output_dtype = DTYPE_FLOAT,
       .timeout_us = 100000,
       .loop = false,
       .skip_invalid = false

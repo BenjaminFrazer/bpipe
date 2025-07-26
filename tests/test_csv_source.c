@@ -21,13 +21,13 @@ static void create_test_csv(const char* filename, const char* content) {
 }
 
 // Helper to connect CSV source to a test sink
-static Batch_buff_t* create_test_sink(SampleDtype_t dtype, size_t batch_size, size_t n_channels) {
+static Batch_buff_t* create_test_sink(SampleDtype_t dtype, uint8_t batch_capacity_expo) {
     Batch_buff_t* sink = malloc(sizeof(Batch_buff_t));
     TEST_ASSERT_NOT_NULL(sink);
     
     BatchBuffer_config config = {
         .dtype = dtype,
-        .batch_capacity_expo = 6,  // 64 samples
+        .batch_capacity_expo = batch_capacity_expo,
         .ring_capacity_expo = 8,   // 256 batches
         .overflow_behaviour = OVERFLOW_BLOCK
     };
@@ -59,9 +59,6 @@ void test_csv_source_init_valid_config(void) {
         .data_column_names = {"value1", "value2", NULL},
         .detect_regular_timing = true,
         .regular_threshold_ns = 1000,
-        .output_dtype = DTYPE_FLOAT,
-        .batch_size = 64,
-        .ring_capacity = 256,
         .timeout_us = 1000000
     };
     
@@ -74,20 +71,10 @@ void test_csv_source_init_valid_config(void) {
     unlink(config.file_path);
 }
 
-void test_csv_source_init_invalid_batch_size(void) {
-    CsvSource_t source;
-    
-    CsvSource_config_t config = {
-        .name = "test_csv",
-        .file_path = TEST_DATA_DIR "test.csv",
-        .ts_column_name = "ts_ns",
-        .data_column_names = {"value", NULL},
-        .batch_size = 63,  // Not power of 2
-        .ring_capacity = 256
-    };
-    
-    Bp_EC err = csvsource_init(&source, config);
-    TEST_ASSERT_EQUAL(Bp_EC_INVALID_CONFIG, err);
+// This test is no longer applicable since batch_size was removed from config
+void test_csv_source_init_invalid_config_placeholder(void) {
+    // Placeholder test - batch_size validation removed from API
+    TEST_ASSERT_TRUE(true);
 }
 
 void test_csv_source_init_missing_file(void) {
@@ -98,8 +85,7 @@ void test_csv_source_init_missing_file(void) {
         .file_path = TEST_DATA_DIR "nonexistent.csv",
         .ts_column_name = "ts_ns",
         .data_column_names = {"value", NULL},
-        .batch_size = 64,
-        .ring_capacity = 256
+        .timeout_us = 1000000
     };
     
     Bp_EC err = csvsource_init(&source, config);
@@ -120,9 +106,6 @@ void test_csv_source_parse_header(void) {
         .has_header = true,
         .ts_column_name = "ts_ns",
         .data_column_names = {"sensor1", "sensor3", NULL},
-        .output_dtype = DTYPE_FLOAT,
-        .batch_size = 64,
-        .ring_capacity = 256,
         .timeout_us = 1000000
     };
     
@@ -153,9 +136,7 @@ void test_csv_source_missing_column(void) {
         .has_header = true,
         .ts_column_name = "ts_ns",
         .data_column_names = {"sensor1", "sensor3", NULL},  // sensor3 doesn't exist
-        .output_dtype = DTYPE_FLOAT,
-        .batch_size = 64,
-        .ring_capacity = 256
+        .timeout_us = 1000000
     };
     
     create_test_csv(config.file_path, csv_content);
@@ -186,9 +167,6 @@ void test_csv_source_regular_data(void) {
         .data_column_names = {"value", NULL},
         .detect_regular_timing = true,
         .regular_threshold_ns = 1000,
-        .output_dtype = DTYPE_FLOAT,
-        .batch_size = 4,
-        .ring_capacity = 256,
         .timeout_us = 1000000
     };
     
@@ -197,7 +175,7 @@ void test_csv_source_regular_data(void) {
     CHECK_ERR(csvsource_init(&source, config));
     
     // Create and connect sink
-    Batch_buff_t* sink = create_test_sink(DTYPE_FLOAT, 4, 1);
+    Batch_buff_t* sink = create_test_sink(DTYPE_FLOAT, 2);  // 2^2 = 4 samples
     CHECK_ERR(filt_sink_connect(&source.base, 0, sink));
     
     // Start filter
@@ -250,9 +228,6 @@ void test_csv_source_irregular_data(void) {
         .ts_column_name = "ts_ns",
         .data_column_names = {"event_value", NULL},
         .detect_regular_timing = false,  // Force irregular mode
-        .output_dtype = DTYPE_FLOAT,
-        .batch_size = 64,
-        .ring_capacity = 256,
         .timeout_us = 1000000
     };
     
@@ -261,7 +236,7 @@ void test_csv_source_irregular_data(void) {
     CHECK_ERR(csvsource_init(&source, config));
     
     // Create and connect sink
-    Batch_buff_t* sink = create_test_sink(DTYPE_FLOAT, 64, 1);
+    Batch_buff_t* sink = create_test_sink(DTYPE_FLOAT, 6);  // 2^6 = 64 samples
     CHECK_ERR(filt_sink_connect(&source.base, 0, sink));
     
     // Start filter
@@ -310,9 +285,6 @@ void test_csv_source_timing_gap(void) {
         .data_column_names = {"value", NULL},
         .detect_regular_timing = true,
         .regular_threshold_ns = 10000,  // 10μs tolerance
-        .output_dtype = DTYPE_FLOAT,
-        .batch_size = 8,
-        .ring_capacity = 256,
         .timeout_us = 1000000
     };
     
@@ -321,7 +293,7 @@ void test_csv_source_timing_gap(void) {
     CHECK_ERR(csvsource_init(&source, config));
     
     // Create and connect sink
-    Batch_buff_t* sink = create_test_sink(DTYPE_FLOAT, 8, 1);
+    Batch_buff_t* sink = create_test_sink(DTYPE_FLOAT, 3);  // 2^3 = 8 samples
     CHECK_ERR(filt_sink_connect(&source.base, 0, sink));
     
     // Start filter
@@ -369,9 +341,6 @@ void test_csv_source_loop_mode(void) {
         .ts_column_name = "ts_ns",
         .data_column_names = {"value", NULL},
         .detect_regular_timing = false,
-        .output_dtype = DTYPE_FLOAT,
-        .batch_size = 1,
-        .ring_capacity = 256,
         .loop = true,  // Enable looping
         .timeout_us = 100000  // 100ms timeout
     };
@@ -381,7 +350,7 @@ void test_csv_source_loop_mode(void) {
     CHECK_ERR(csvsource_init(&source, config));
     
     // Create and connect sink
-    Batch_buff_t* sink = create_test_sink(DTYPE_FLOAT, 1, 1);
+    Batch_buff_t* sink = create_test_sink(DTYPE_FLOAT, 0);  // 2^0 = 1 sample
     CHECK_ERR(filt_sink_connect(&source.base, 0, sink));
     
     // Start filter
@@ -428,9 +397,6 @@ void test_csv_source_skip_invalid_rows(void) {
         .ts_column_name = "ts_ns",
         .data_column_names = {"value", NULL},
         .detect_regular_timing = false,
-        .output_dtype = DTYPE_FLOAT,
-        .batch_size = 64,
-        .ring_capacity = 256,
         .skip_invalid = true,  // Skip invalid rows
         .timeout_us = 1000000
     };
@@ -440,7 +406,7 @@ void test_csv_source_skip_invalid_rows(void) {
     CHECK_ERR(csvsource_init(&source, config));
     
     // Create and connect sink
-    Batch_buff_t* sink = create_test_sink(DTYPE_FLOAT, 64, 1);
+    Batch_buff_t* sink = create_test_sink(DTYPE_FLOAT, 6);  // 2^6 = 64 samples
     CHECK_ERR(filt_sink_connect(&source.base, 0, sink));
     
     // Start filter
@@ -488,9 +454,6 @@ void test_csv_source_multi_channel(void) {
         .data_column_names = {"x", "y", "z", "temp", NULL},
         .detect_regular_timing = true,
         .regular_threshold_ns = 100,
-        .output_dtype = DTYPE_FLOAT,
-        .batch_size = 2,
-        .ring_capacity = 256,
         .timeout_us = 1000000
     };
     
@@ -502,7 +465,7 @@ void test_csv_source_multi_channel(void) {
     // Create and connect separate sinks for each data column (as per spec)
     Batch_buff_t* sinks[4];
     for (int i = 0; i < 4; i++) {
-        sinks[i] = create_test_sink(DTYPE_FLOAT, 2, 1);  // Each sink handles 1 column
+        sinks[i] = create_test_sink(DTYPE_FLOAT, 1);  // 2^1 = 2 samples
         CHECK_ERR(filt_sink_connect(&source.base, i, sinks[i]));
     }
     
@@ -575,9 +538,6 @@ void test_csv_source_line_too_long(void) {
         .has_header = true,
         .ts_column_name = "ts_ns",
         .data_column_names = {"value", NULL},
-        .output_dtype = DTYPE_FLOAT,
-        .batch_size = 64,
-        .ring_capacity = 256,
         .skip_invalid = false,
         .timeout_us = 100000
     };
@@ -588,7 +548,7 @@ void test_csv_source_line_too_long(void) {
     CHECK_ERR(csvsource_init(&source, config));
     
     // Create and connect sink
-    Batch_buff_t* sink = create_test_sink(DTYPE_FLOAT, 64, 1);
+    Batch_buff_t* sink = create_test_sink(DTYPE_FLOAT, 6);  // 2^6 = 64 samples
     CHECK_ERR(filt_sink_connect(&source.base, 0, sink));
     
     // Start filter
@@ -622,9 +582,6 @@ void test_csv_source_describe_operation(void) {
         .has_header = true,
         .ts_column_name = "ts_ns",
         .data_column_names = {"sensor1", "sensor2", NULL},
-        .output_dtype = DTYPE_FLOAT,
-        .batch_size = 64,
-        .ring_capacity = 256,
         .timeout_us = 1000000
     };
     
@@ -660,9 +617,6 @@ void test_csv_source_get_stats_operation(void) {
         .has_header = true,
         .ts_column_name = "ts_ns",
         .data_column_names = {"value", NULL},
-        .output_dtype = DTYPE_FLOAT,
-        .batch_size = 2,
-        .ring_capacity = 256,
         .timeout_us = 100000
     };
     
@@ -671,7 +625,7 @@ void test_csv_source_get_stats_operation(void) {
     CHECK_ERR(csvsource_init(&source, config));
     
     // Create and connect sink
-    Batch_buff_t* sink = create_test_sink(DTYPE_FLOAT, 2, 1);
+    Batch_buff_t* sink = create_test_sink(DTYPE_FLOAT, 1);  // 2^1 = 2 samples
     CHECK_ERR(filt_sink_connect(&source.base, 0, sink));
     
     // Start filter
@@ -713,9 +667,6 @@ void test_csv_source_concurrent_stop(void) {
         .has_header = true,
         .ts_column_name = "ts_ns",
         .data_column_names = {"value", NULL},
-        .output_dtype = DTYPE_FLOAT,
-        .batch_size = 64,
-        .ring_capacity = 256,
         .loop = true,  // Enable looping to ensure continuous processing
         .timeout_us = 100000
     };
@@ -732,7 +683,7 @@ void test_csv_source_concurrent_stop(void) {
     CHECK_ERR(csvsource_init(&source, config));
     
     // Create and connect sink
-    Batch_buff_t* sink = create_test_sink(DTYPE_FLOAT, 64, 1);
+    Batch_buff_t* sink = create_test_sink(DTYPE_FLOAT, 6);  // 2^6 = 64 samples
     CHECK_ERR(filt_sink_connect(&source.base, 0, sink));
     
     // Start filter
@@ -772,9 +723,6 @@ void test_csv_source_empty_file(void) {
         .has_header = true,
         .ts_column_name = "ts_ns",
         .data_column_names = {"value", NULL},
-        .output_dtype = DTYPE_FLOAT,
-        .batch_size = 64,
-        .ring_capacity = 256,
         .timeout_us = 100000
     };
     
@@ -783,7 +731,7 @@ void test_csv_source_empty_file(void) {
     CHECK_ERR(csvsource_init(&source, config));
     
     // Create and connect sink
-    Batch_buff_t* sink = create_test_sink(DTYPE_FLOAT, 64, 1);
+    Batch_buff_t* sink = create_test_sink(DTYPE_FLOAT, 6);  // 2^6 = 64 samples
     CHECK_ERR(filt_sink_connect(&source.base, 0, sink));
     
     // Start filter
@@ -819,9 +767,6 @@ void test_csv_source_worker_error_info(void) {
         .has_header = true,
         .ts_column_name = "ts_ns",
         .data_column_names = {"value", NULL},
-        .output_dtype = DTYPE_FLOAT,
-        .batch_size = 64,
-        .ring_capacity = 256,
         .skip_invalid = false,  // Will cause error on invalid data
         .timeout_us = 100000
     };
@@ -831,7 +776,7 @@ void test_csv_source_worker_error_info(void) {
     CHECK_ERR(csvsource_init(&source, config));
     
     // Create and connect sink
-    Batch_buff_t* sink = create_test_sink(DTYPE_FLOAT, 64, 1);
+    Batch_buff_t* sink = create_test_sink(DTYPE_FLOAT, 6);  // 2^6 = 64 samples
     CHECK_ERR(filt_sink_connect(&source.base, 0, sink));
     
     // Start filter
@@ -859,7 +804,7 @@ int main(void) {
     UNITY_BEGIN();
     
     RUN_TEST(test_csv_source_init_valid_config);
-    RUN_TEST(test_csv_source_init_invalid_batch_size);
+    RUN_TEST(test_csv_source_init_invalid_config_placeholder);
     RUN_TEST(test_csv_source_init_missing_file);
     RUN_TEST(test_csv_source_parse_header);
     RUN_TEST(test_csv_source_missing_column);
