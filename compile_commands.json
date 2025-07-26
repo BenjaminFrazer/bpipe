@@ -48,5 +48,10 @@
 		"directory": "/home/benf/repos/bpipe2/",
 		"command": "gcc -I./bpipe -I./tests -I./lib/Unity/src -std=c99 -Wall -Werror -pthread -save-temps=obj -g -c lib/Unity/src/unity.c -o build/unity.o",
 		"file": "lib/Unity/src/unity.c"
+	},
+	{
+		"directory": "/home/benf/repos/bpipe2/",
+		"command": "gcc -I. -I./lib/Unity/src -std=c99 -Wall -Werror -pthread -g -c examples/csv_to_debug_example.c -o examples/csv_to_debug_example.o",
+		"file": "examples/csv_to_debug_example.c"
 	}
 ]

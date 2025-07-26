@@ -6,6 +6,7 @@ CFLAGS += -I$(PROJECT_ROOT)/bpipe -I$(PROJECT_ROOT)/tests -I$(PROJECT_ROOT)/lib/
 LDFLAGS=-lm
 SRC_DIR=bpipe
 TEST_SRC_DIR=tests
+EXAMPLES_DIR=examples
 BUILD_DIR=build
 UNITY_SRC=lib/Unity/src/unity.c
 DEP_FLAGS = -MMD -MP
@@ -18,11 +19,16 @@ TEST_EXECUTABLES=$(patsubst $(TEST_SRC_DIR)/%.c,$(BUILD_DIR)/%,$(TEST_SOURCES))
 SRC_FILES=$(wildcard $(SRC_DIR)/*.c)
 # Generate object files from source files
 OBJ_FILES=$(patsubst $(SRC_DIR)/%.c,$(BUILD_DIR)/%.o,$(SRC_FILES))
+# List of working examples (add more as they are fixed)
+# To add a new example, just add its name (without .c extension) to this list
+WORKING_EXAMPLES=csv_to_debug_example csv_scale_simple
+# Generate full paths for working examples
+EXAMPLE_EXECUTABLES=$(addprefix $(EXAMPLES_DIR)/,$(WORKING_EXAMPLES))
 
-.PHONY: all clean run test test-c test-py lint lint-c lint-py lint-fix clang-format-check clang-format-fix clang-tidy-check cppcheck-check ruff-check ruff-format-check ruff-fix
+.PHONY: all clean run test test-c test-py lint lint-c lint-py lint-fix clang-format-check clang-format-fix clang-tidy-check cppcheck-check ruff-check ruff-format-check ruff-fix examples
 
 all: | $(BUILD_DIR)
-all: $(TEST_EXECUTABLES)
+all: $(TEST_EXECUTABLES) examples
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
@@ -41,8 +47,17 @@ $(BUILD_DIR)/unity.o: $(UNITY_SRC) | $(BUILD_DIR)
 $(BUILD_DIR)/test_%: $(BUILD_DIR)/test_%.o $(OBJ_FILES) $(BUILD_DIR)/unity.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
+# Examples target
+examples: $(EXAMPLE_EXECUTABLES)
+
+# Generic rule for building example executables
+# Adjust include paths for examples - support both "bpipe/header.h" and "header.h" styles
+$(EXAMPLES_DIR)/%: $(EXAMPLES_DIR)/%.c $(OBJ_FILES)
+	$(CC) -std=c99 -Wall -Werror -pthread -g -I$(PROJECT_ROOT) -I$(PROJECT_ROOT)/bpipe -I$(PROJECT_ROOT)/lib/Unity/src -o $@ $< $(OBJ_FILES) $(LDFLAGS)
+
 clean:
 	rm -rf $(BUILD_DIR)
+	rm -f $(EXAMPLE_EXECUTABLES)
 
 project_root:
 	echo $(PROJECT_ROOT)
