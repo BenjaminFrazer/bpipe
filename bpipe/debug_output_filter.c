@@ -14,9 +14,7 @@ static void* debug_output_worker(void* arg)
   DebugOutputFilter_t* filter = (DebugOutputFilter_t*) arg;
   Filter_t* base = &filter->base;
 
-  // Validate configuration
-  BP_WORKER_ASSERT(base, base->n_sinks > 0, Bp_EC_NO_SINK);
-  BP_WORKER_ASSERT(base, base->sinks[0] != NULL, Bp_EC_NO_SINK);
+  // Note: Output sink is optional - filter can work as a pure inspector
 
   while (atomic_load(&base->running)) {
     // Get input batch
@@ -155,28 +153,33 @@ static void* debug_output_worker(void* arg)
       pthread_mutex_unlock(&filter->file_mutex);
     }
 
-    // Get output buffer
-    Batch_t* out_batch = bb_get_head(base->sinks[0]);
+    // Pass through data if we have an output sink
+    if (base->n_sinks > 0 && base->sinks[0] != NULL) {
+      // Get output buffer
+      Batch_t* out_batch = bb_get_head(base->sinks[0]);
 
-    // Copy entire batch (passthrough)
-    out_batch->t_ns = in_batch->t_ns;
-    out_batch->period_ns = in_batch->period_ns;
-    out_batch->head = in_batch->head;
-    out_batch->tail = in_batch->tail;
-    out_batch->ec = in_batch->ec;
+      // Copy entire batch (passthrough)
+      out_batch->t_ns = in_batch->t_ns;
+      out_batch->period_ns = in_batch->period_ns;
+      out_batch->head = in_batch->head;
+      out_batch->tail = in_batch->tail;
+      out_batch->ec = in_batch->ec;
 
-    size_t data_size = (in_batch->tail - in_batch->head) *
-                       bb_getdatawidth(base->input_buffers[0].dtype);
-    if (data_size > 0) {
-      memcpy((char*) out_batch->data +
-                 in_batch->head * bb_getdatawidth(base->input_buffers[0].dtype),
-             (char*) in_batch->data +
-                 in_batch->head * bb_getdatawidth(base->input_buffers[0].dtype),
-             data_size);
+      size_t data_size = (in_batch->tail - in_batch->head) *
+                         bb_getdatawidth(base->input_buffers[0].dtype);
+      if (data_size > 0) {
+        memcpy((char*) out_batch->data +
+                   in_batch->head * bb_getdatawidth(base->input_buffers[0].dtype),
+               (char*) in_batch->data +
+                   in_batch->head * bb_getdatawidth(base->input_buffers[0].dtype),
+               data_size);
+      }
+
+      // Submit output
+      bb_submit(base->sinks[0], base->timeout_us);
     }
 
-    // Submit output and delete input
-    bb_submit(base->sinks[0], base->timeout_us);
+    // Always delete input batch
     bb_del_tail(&base->input_buffers[0]);
 
     // Handle completion
@@ -254,7 +257,7 @@ Bp_EC debug_output_filter_init(DebugOutputFilter_t* filter,
       .filt_type = FILT_T_MAP,
       .size = sizeof(DebugOutputFilter_t),
       .n_inputs = 1,
-      .max_supported_sinks = MAX_SINKS,
+      .max_supported_sinks = 1,  // Optional - can work with 0 or 1 sink
       .buff_config = {.dtype = DTYPE_FLOAT,
                       .batch_capacity_expo = 10,
                       .ring_capacity_expo = 12,
