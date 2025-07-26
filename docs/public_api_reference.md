@@ -28,20 +28,26 @@ if (!output) {  // This check is unnecessary
 }
 ```
 
-#### `bb_get_tail(Batch_buff_t *buff, uint64_t timeout_us)`
-**Returns**: `Batch_t*` - Pointer to tail batch or NULL on timeout  
-**Can return NULL**: Returns NULL if no batch is available within the timeout period
+#### `bb_get_tail(Batch_buff_t *buff, unsigned long timeout_us, Bp_EC *err)`
+**Returns**: `Batch_t*` - Pointer to tail batch or NULL on timeout/error  
+**Error parameter**: `err` is set to the error code (Bp_EC_OK, Bp_EC_TIMEOUT, Bp_EC_STOPPED, etc.)  
+**Can return NULL**: Returns NULL if no batch is available within the timeout period or on error
 
 ```c
-// CORRECT - Must check for NULL
-Batch_t* input = bb_get_tail(f->sources[0], TIMEOUT_US);
+// CORRECT - Must check for NULL and handle error codes
+Bp_EC err;
+Batch_t* input = bb_get_tail(f->sources[0], TIMEOUT_US, &err);
 if (!input) {
-    // Handle timeout - this is normal behavior
+    if (err == Bp_EC_STOPPED) {
+        break;  // Buffer was stopped
+    }
+    // Handle timeout or other error - this is normal behavior
     continue;
 }
 
 // INCORRECT - Missing NULL check
-Batch_t* input = bb_get_tail(f->sources[0], TIMEOUT_US);
+Bp_EC err;
+Batch_t* input = bb_get_tail(f->sources[0], TIMEOUT_US, &err);
 input->batch_size = 100;  // Potential segfault if timeout occurred
 ```
 

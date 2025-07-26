@@ -81,6 +81,10 @@ test-csv-sink: $(BUILD_DIR)/test_csv_sink
 	@echo "Running CSV sink tests..."
 	scripts/run_with_timeout.sh 30 $(BUILD_DIR)/test_csv_sink
 
+test-debug-output: $(BUILD_DIR)/test_debug_output_filter
+	@echo "Running debug output filter tests..."
+	scripts/run_with_timeout.sh 30 $(BUILD_DIR)/test_debug_output_filter
+
 # Linting targets
 lint: lint-c lint-py
 
