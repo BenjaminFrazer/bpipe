@@ -1,0 +1,10 @@
+---
+# Disable false positive warnings that cannot be fixed at the source
+# See clang_analyzer_false_positives.md for detailed analysis
+Checks: >
+  -*,
+  clang-analyzer-*,
+  -clang-analyzer-core.NullDereference,
+  -clang-analyzer-core.CallAndMessage
+
+WarningsAsErrors: ''
