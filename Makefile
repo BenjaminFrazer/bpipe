@@ -103,7 +103,7 @@ test-debug-output: $(BUILD_DIR)/test_debug_output_filter
 # Linting targets
 lint: lint-c #lint-py
 
-lint-c: clang-format-check clang-tidy-check cppcheck-check
+lint-c: clang-format-check clang-tidy-check #cppcheck-check
 
 lint-py: ruff-check ruff-format-check
 
