@@ -25,10 +25,11 @@ jobs:
       id-token: write
       actions: read # Required for Claude to read CI results on PRs
     steps:
-      - name: Checkout repository
+      - name: Checkout repository (with submodules)
         uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          submodules: true  # Recursively checkout submodules
+          fetch-depth: 0    # Needed for full history (useful for submodules with branches)
 
       - name: Run Claude Code
         id: claude
