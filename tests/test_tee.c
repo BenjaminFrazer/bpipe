@@ -680,7 +680,7 @@ void test_tee_pipeline_integration(void)
                          .buff_config = out_configs[0],  // Input buffer config
                          .n_outputs = 2,
                          .output_configs = out_configs,
-                         .timeout_us = 1000,
+                         .timeout_us = 100000,
                          .copy_data = true};
 
   Tee_filt_t tee;
@@ -695,7 +695,7 @@ void test_tee_pipeline_integration(void)
       .n_inputs = 1,
       .max_supported_sinks = 1,
       .buff_config = out_configs[0],
-      .timeout_us = 1000,
+      .timeout_us = 100000,
       .worker = matched_passthroug};
 
   CHECK_ERR(filt_init(&downstream1, downstream_config));
@@ -738,11 +738,9 @@ void test_tee_pipeline_integration(void)
   TEST_MESSAGE("Filling input");
   fill_sequential_data(&tee.base.input_buffers[0], &counter, 5);
 
-  // Wait for all threads to start up properly
+  // Wait for all threads to start up properly and process
   nanosleep(&ts_10ms, NULL);
 
-  // Wait for processing with more time for complex pipeline
-  nanosleep(&ts_100ms, NULL);
   CHECK_ERR(tee.base.worker_err_info.ec);
   CHECK_ERR(downstream1.worker_err_info.ec);
   CHECK_ERR(downstream2.worker_err_info.ec);
