@@ -79,7 +79,7 @@ static void* debug_output_worker(void* arg)
                   uint32_t bits = *(uint32_t*) &data[idx];
                   fprintf(filter->output_file, "0b");
                   for (int b = 31; b >= 0; b--) {
-                    fprintf(filter->output_file, "%d", (bits >> b) & 1);
+                    fprintf(filter->output_file, "%u", (bits >> b) & 1);
                   }
                   fprintf(filter->output_file, "\n");
                   break;
@@ -102,7 +102,7 @@ static void* debug_output_worker(void* arg)
                   uint32_t bits = (uint32_t) data[idx];
                   fprintf(filter->output_file, "0b");
                   for (int b = 31; b >= 0; b--) {
-                    fprintf(filter->output_file, "%d", (bits >> b) & 1);
+                    fprintf(filter->output_file, "%u", (bits >> b) & 1);
                   }
                   fprintf(filter->output_file, "\n");
                   break;
@@ -124,7 +124,7 @@ static void* debug_output_worker(void* arg)
                 case DEBUG_FMT_BINARY: {
                   fprintf(filter->output_file, "0b");
                   for (int b = 31; b >= 0; b--) {
-                    fprintf(filter->output_file, "%d", (data[idx] >> b) & 1);
+                    fprintf(filter->output_file, "%u", (data[idx] >> b) & 1);
                   }
                   fprintf(filter->output_file, "\n");
                   break;

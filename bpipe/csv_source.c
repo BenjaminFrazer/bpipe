@@ -441,10 +441,10 @@ static void* csvsource_worker(void* arg)
 
     // Check if we need new batches before writing this sample
     if (need_new_batches(self, &state, timestamp)) {
-      Bp_EC err = submit_and_get_new_batches(self, &state);
-      if (err != Bp_EC_OK) {
+      Bp_EC submit_err = submit_and_get_new_batches(self, &state);
+      if (submit_err != Bp_EC_OK) {
         free(value_buffer);
-        BP_WORKER_ASSERT(&self->base, false, err);
+        BP_WORKER_ASSERT(&self->base, false, submit_err);
       }
     }
 
@@ -458,11 +458,13 @@ static void* csvsource_worker(void* arg)
 
     for (size_t col = 0; col < self->n_data_columns; col++) {
       Batch_t* batch = state.batches[col];
-      batch->t_ns = state.batch_start_time;
-      batch->period_ns = period_ns;
-      // head is already set to the number of samples
-      batch->ec = Bp_EC_OK;
-      bb_submit(self->base.sinks[col], self->base.timeout_us);
+      if (batch) {
+        batch->t_ns = state.batch_start_time;
+        batch->period_ns = period_ns;
+        // head is already set to the number of samples
+        batch->ec = Bp_EC_OK;
+        bb_submit(self->base.sinks[col], self->base.timeout_us);
+      }
     }
 
     self->base.metrics.samples_processed += state.batches[0]->head;
