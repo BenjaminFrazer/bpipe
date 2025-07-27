@@ -277,7 +277,7 @@ static bool need_new_batches(const CsvSource_t* self, const BatchState* state,
     return true;
   }
 
-  size_t current_samples = state->batches[0]->tail;
+  size_t current_samples = state->batches[0]->head;
 
   // Force single-sample batches for irregular mode
   if (!self->detect_regular_timing && current_samples > 0) {
