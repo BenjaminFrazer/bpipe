@@ -61,8 +61,8 @@ void* map_worker(void* arg)
 
     size_t n = MIN(input->head - f->input_consumed, batch_size - output->head);
     if (n > 0) {
-      err = f->map_fcn(input->data + f->input_consumed * data_width,
-                       output->data + output->head * data_width, n);
+      err = f->map_fcn((char*) input->data + f->input_consumed * data_width,
+                       (char*) output->data + output->head * data_width, n);
       if (err != Bp_EC_OK) break;
 
       f->input_consumed += n;

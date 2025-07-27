@@ -71,12 +71,14 @@ static void* debug_output_worker(void* arg)
                 case DEBUG_FMT_SCIENTIFIC:
                   fprintf(filter->output_file, "%e\n", data[idx]);
                   break;
-                case DEBUG_FMT_HEX:
-                  fprintf(filter->output_file, "0x%08X\n",
-                          *(uint32_t*) &data[idx]);
-                  break;
+                case DEBUG_FMT_HEX: {
+                  uint32_t hex_val;
+                  memcpy(&hex_val, &data[idx], sizeof(uint32_t));
+                  fprintf(filter->output_file, "0x%08X\n", hex_val);
+                } break;
                 case DEBUG_FMT_BINARY: {
-                  uint32_t bits = *(uint32_t*) &data[idx];
+                  uint32_t bits;
+                  memcpy(&bits, &data[idx], sizeof(uint32_t));
                   fprintf(filter->output_file, "0b");
                   for (int b = 31; b >= 0; b--) {
                     fprintf(filter->output_file, "%u", (bits >> b) & 1);
