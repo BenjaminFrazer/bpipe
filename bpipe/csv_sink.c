@@ -297,9 +297,8 @@ static void format_csv_line(CSVSink_t* sink, uint64_t t_ns, void* data)
   }
 
   // Add line ending
-  size_t ending_len = strlen(sink->line_ending);
-  memcpy(line + len, sink->line_ending, ending_len);
-  len += ending_len;
+  strcpy(line + len, sink->line_ending);
+  len += strlen(sink->line_ending);
 
   // Write the line directly
   fwrite(line, 1, len, sink->file);

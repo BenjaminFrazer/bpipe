@@ -80,23 +80,16 @@ typedef struct _Batch {
   Bp_EC ec;
   void *meta;
   // SampleDtype_t dtype;
-
-  /* TECHNICAL DEBT: The 'data' field is declared as char* but is cast to
-   * float*, int32_t*, uint32_t* etc. throughout the codebase. This violates
-   * C strict aliasing rules and could cause undefined behavior with aggressive
-   * compiler optimizations.
+  
+  /* The 'data' field is a void* that points to the actual sample data.
+   * It can be cast to the appropriate type (float*, int32_t*, uint32_t*, etc.)
+   * based on the dtype of the batch buffer. Using void* is the standard C
+   * approach for generic data pointers and avoids strict aliasing violations.
    *
-   * Future refactoring should consider:
-   * - Using void* instead of char*
-   * - Using a union of all supported types
-   * - Using proper type-punning through memcpy
-   *
-   * Current approach works because:
-   * - Memory is properly aligned by batch buffer allocation
-   * - We compile without strict aliasing optimizations
-   * - Pattern is consistent throughout codebase
+   * The memory is properly aligned by batch buffer allocation to support
+   * all data types.
    */
-  char *data;
+  void *data;
 } Batch_t;
 
 #define BATCH_GET_SAMPLE_U32(batch, idx) (((uint32_t *) (batch)->data) + (idx))

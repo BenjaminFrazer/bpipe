@@ -26,6 +26,11 @@
  * - Multi-threaded parsing for large files
  */
 
+static inline bool is_power_of_two(size_t n)
+{
+  return n > 0 && (n & (n - 1)) == 0;
+}
+
 static Bp_EC parse_header(CsvSource_t* self);
 static Bp_EC parse_line(CsvSource_t* self, char* line, uint64_t* timestamp,
                         double* values);
@@ -164,17 +169,13 @@ static Bp_EC parse_header(CsvSource_t* self)
   }
 
   self->n_header_columns = n_columns;
-  if (n_columns > 0) {
-    self->header_names = calloc(n_columns, sizeof(char*));
-    if (!self->header_names) {
-      free(header_copy);
-      return Bp_EC_MALLOC_FAIL;
-    }
-  } else {
-    self->header_names = NULL;
+  self->header_names = calloc(n_columns, sizeof(char*));
+  if (!self->header_names) {
+    free(header_copy);
+    return Bp_EC_MALLOC_FAIL;
   }
 
-  memcpy(header_copy, self->line_buffer, len + 1);
+  strcpy(header_copy, self->line_buffer);
   token = strtok(header_copy, &self->delimiter);
   int col_idx = 0;
 
@@ -557,8 +558,8 @@ static Bp_EC csvsource_describe(Filter_t* self, char* buffer, size_t size)
   }
   written += snprintf(buffer + written, size - written, "  Loop mode: %s\n",
                       source->loop ? "enabled" : "disabled");
-  snprintf(buffer + written, size - written, "  Skip invalid: %s\n",
-           source->skip_invalid ? "yes" : "no");
+  written += snprintf(buffer + written, size - written, "  Skip invalid: %s\n",
+                      source->skip_invalid ? "yes" : "no");
 
   return Bp_EC_OK;
 }

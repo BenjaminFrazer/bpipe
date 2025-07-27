@@ -238,7 +238,8 @@ Bp_EC bb_submit(Batch_buff_t *buff, unsigned long timeout_us)
     }
 
     /* Re-read tail after waiting/dropping */
-    atomic_load_explicit(&buff->consumer.tail, memory_order_acquire);
+    current_tail =
+        atomic_load_explicit(&buff->consumer.tail, memory_order_acquire);
   }
 
   /* Fast path - we have space, update head */
