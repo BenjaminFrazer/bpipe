@@ -221,7 +221,7 @@ static Bp_EC sample_aligner_describe(Filter_t* self, char* buffer, size_t size)
 {
   SampleAligner_t* sa = (SampleAligner_t*) self;
 
-  const char* method_str = "UNKNOWN";
+  const char* method_str;
   switch (sa->method) {
     case INTERP_NEAREST:
       method_str = "NEAREST";
@@ -235,9 +235,12 @@ static Bp_EC sample_aligner_describe(Filter_t* self, char* buffer, size_t size)
     case INTERP_SINC:
       method_str = "SINC";
       break;
+    default:
+      method_str = "UNKNOWN";
+      break;
   }
 
-  const char* align_str = "UNKNOWN";
+  const char* align_str;
   switch (sa->alignment) {
     case ALIGN_NEAREST:
       align_str = "NEAREST";
@@ -247,6 +250,9 @@ static Bp_EC sample_aligner_describe(Filter_t* self, char* buffer, size_t size)
       break;
     case ALIGN_FORWARD:
       align_str = "FORWARD";
+      break;
+    default:
+      align_str = "UNKNOWN";
       break;
   }
 

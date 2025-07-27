@@ -29,8 +29,10 @@ void* map_worker(void* arg)
   while (atomic_load(&f->base.running)) {
     // Get new input batch if needed
     if (!input || f->input_consumed >= input->head) {
-      if (input && (err = bb_del_tail(&f->base.input_buffers[0])) != Bp_EC_OK)
-        break;
+      if (input) {
+        err = bb_del_tail(&f->base.input_buffers[0]);
+        if (err != Bp_EC_OK) break;
+      }
 
       input = bb_get_tail(&f->base.input_buffers[0], f->base.timeout_us, &err);
       if (!input) {
@@ -80,8 +82,8 @@ void* map_worker(void* arg)
 
     // Submit output if batch is full
     if (output->head >= batch_size) {
-      if ((err = bb_submit(f->base.sinks[0], f->base.timeout_us)) != Bp_EC_OK)
-        break;
+      err = bb_submit(f->base.sinks[0], f->base.timeout_us);
+      if (err != Bp_EC_OK) break;
       output = NULL;  // Force getting a new output batch
       f->base.metrics
           .n_batches++;  // Increment batch count only when submitting

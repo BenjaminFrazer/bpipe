@@ -166,7 +166,7 @@ static Bp_EC parse_header(CsvSource_t* self)
 
   self->n_header_columns = n_columns;
   if (n_columns > 0) {
-    self->header_names = calloc(n_columns, sizeof(char*));
+    self->header_names = (char**) calloc(n_columns, sizeof(char*));
     if (!self->header_names) {
       free(header_copy);
       return Bp_EC_MALLOC_FAIL;
@@ -528,7 +528,7 @@ void csvsource_destroy(CsvSource_t* self)
         free(self->header_names[i]);
       }
     }
-    free(self->header_names);
+    free((void*) self->header_names);
     self->header_names = NULL;
   }
 
