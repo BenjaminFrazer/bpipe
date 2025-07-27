@@ -1,5 +1,6 @@
 #define _GNU_SOURCE  // For strdup
 #include "csv_source.h"
+#include <assert.h>
 #include <errno.h>
 #include <math.h>
 #include <stdlib.h>
@@ -326,9 +327,8 @@ static Bp_EC submit_and_get_new_batches(CsvSource_t* self, BatchState* state)
   // Get new batches
   for (size_t col = 0; col < self->n_data_columns; col++) {
     state->batches[col] = bb_get_head(self->base.sinks[col]);
-    if (!state->batches[col]) {
-      return Bp_EC_TIMEOUT;  // bb_get_head should never return NULL
-    }
+    // bb_get_head returns a pointer to pre-allocated ring buffer element (never NULL)
+    assert(state->batches[col] != NULL);
     state->batches[col]->head = 0;
   }
 

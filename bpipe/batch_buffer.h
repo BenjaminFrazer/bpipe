@@ -235,7 +235,11 @@ Bp_EC bb_await_notfull(Batch_buff_t *buff, long long timeout);
 
 Bp_EC bb_await_notempty(Batch_buff_t *buff, long long timeout);
 
-/* Get the active batch. Doesn't change head or tail idx. */
+/* Get the active batch. Doesn't change head or tail idx. 
+ * This function NEVER returns NULL - it returns a pointer to an element
+ * in the pre-allocated ring buffer.
+ */
+__attribute__((returns_nonnull))
 static inline Batch_t *bb_get_head(Batch_buff_t *buff)
 {
   size_t idx = bb_get_head_idx(buff);
