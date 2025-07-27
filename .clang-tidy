@@ -1,10 +1,29 @@
 ---
-# Disable false positive warnings that cannot be fixed at the source
-# See clang_analyzer_false_positives.md for detailed analysis
+# Focus on important static analysis and bug detection
 Checks: >
-  -*,
   clang-analyzer-*,
-  -clang-analyzer-core.NullDereference,
-  -clang-analyzer-core.CallAndMessage
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-narrowing-conversions,
+  cert-err34-c,
+  cert-str34-c,
+  misc-misplaced-const,
+  misc-new-delete-overloads,
+  misc-no-recursion,
+  misc-non-copyable-objects,
+  misc-throw-by-value-catch-by-reference,
+  misc-unconventional-assign-operator,
+  misc-uniqueptr-reset-release,
+  performance-*,
+  -performance-no-int-to-ptr,
+  portability-*,
+  readability-duplicate-include,
+  readability-misleading-indentation,
+  readability-misplaced-array-index,
+  readability-non-const-parameter
 
 WarningsAsErrors: ''
+HeaderFilterRegex: '^bpipe/.*\.(h|c)$'
+
+# We use inline NOLINT comments for the 6 false positives in csv_source.c
+# This preserves the valuable null pointer analysis for the rest of the codebase
