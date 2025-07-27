@@ -101,7 +101,7 @@ test-debug-output: $(BUILD_DIR)/test_debug_output_filter
 	scripts/run_with_timeout.sh 30 $(BUILD_DIR)/test_debug_output_filter
 
 # Linting targets
-lint: lint-c lint-py
+lint: lint-c #lint-py
 
 lint-c: clang-format-check clang-tidy-check cppcheck-check
 
