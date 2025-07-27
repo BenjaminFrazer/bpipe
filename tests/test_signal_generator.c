@@ -94,9 +94,9 @@ void* test_sink_worker(void* arg)
 
     // Copy samples
     float* data = (float*) batch->data;
-    size_t n = batch->tail - batch->head;
+    size_t n = batch->head - batch->tail;
     if (sink->captured_samples + n <= sink->max_samples) {
-      memcpy(&sink->captured_data[sink->captured_samples], &data[batch->head],
+      memcpy(&sink->captured_data[sink->captured_samples], &data[batch->tail],
              n * sizeof(float));
       sink->captured_samples += n;
       sink->last_t_ns = batch->t_ns + (n - 1) * batch->period_ns;

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## MANDATORY: Before Starting ANY Work
 
-**YOU MUST READ THESE DOCUMENTS FIRST before writing or modifying ANY code:**
+**YOU MUST READ THESE DOCUMENTS FIRST:**
 
 1. **Core Concepts (REQUIRED READING)**:
    - `docs/core_data_model.md` - MUST understand data structures, filter types, and architecture
@@ -21,7 +21,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
    - Use `docs/debugging_guide.md` when issues arise
 
 
-3.  Once you've finished reading this file, Announce in terminal "I have read CLAUDE.md"
+3.  Once you've finished reading this file, Announce in terminal which documents you have read. 
 
 ## Development Commands
 

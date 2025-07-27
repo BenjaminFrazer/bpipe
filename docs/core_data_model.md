@@ -69,10 +69,23 @@ bb_submit(&filter.input_buffers[0], timeout_us);
 Batches are the unit of data transfer containing:
 - **Data pointer** - to the actual samples
 - **Metadata** - timestamps (t_ns), period between samples (period_ns)
-- **Head/tail indices** - for partial batch processing
+- **Head/tail indices** - for partial batch processing (head = end position, tail = start position)
 - **Error codes** - including completion signals
 - **Batch ID** - for tracking and debugging
 - **Optional metadata pointer** - for additional context
+
+**IMPORTANT: Head/Tail Convention**
+In bpipe2, the head/tail convention follows standard ring buffer terminology:
+- **`tail`** = start index (oldest data, where consumer reads from)
+- **`head`** = end index (newest data, where producer writes to)
+- **Number of samples** = `head - tail`
+- **Empty batch** = `head == tail`
+- **Full batch** = `tail == 0, head == batch_capacity`
+
+This follows standard ring buffer conventions where:
+- The producer advances the head when adding new data
+- The consumer advances the tail when consuming data
+- Head is always >= tail (head points to where the next sample will be written)
 
 #### Fixed-Rate Batch Design
 

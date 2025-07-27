@@ -270,10 +270,10 @@ void* batch_matcher_worker(void* arg)
     }
 
     // Process input batch
-    size_t input_samples = input_batch->tail - input_batch->head;
+    size_t input_samples = input_batch->head - input_batch->tail;
     size_t input_idx = 0;
     uint64_t current_timestamp =
-        input_batch->t_ns + (input_batch->head * bm->period_ns);
+        input_batch->t_ns + (input_batch->tail * bm->period_ns);
 
     while (input_idx < input_samples && f->running) {
       // Skip samples before next boundary
@@ -295,8 +295,8 @@ void* batch_matcher_worker(void* arg)
         // Set output batch metadata
         output_batch->t_ns = bm->next_boundary_ns;
         output_batch->period_ns = bm->period_ns;
-        output_batch->head = 0;
         output_batch->tail = 0;
+        output_batch->head = 0;
         output_batch->ec = Bp_EC_OK;
         bm->accumulated = 0;
       }
@@ -320,7 +320,7 @@ void* batch_matcher_worker(void* arg)
 
       // Copy data
       void* src = (char*) input_batch->data +
-                  ((input_batch->head + input_idx) * bm->data_width);
+                  ((input_batch->tail + input_idx) * bm->data_width);
       void* dst =
           (char*) output_batch->data + (bm->accumulated * bm->data_width);
       memcpy(dst, src, samples_to_copy * bm->data_width);
@@ -332,7 +332,7 @@ void* batch_matcher_worker(void* arg)
 
       // Submit output batch if full
       if (bm->accumulated == bm->output_batch_samples) {
-        output_batch->tail = bm->accumulated;
+        output_batch->head = bm->accumulated;
         output_batch->batch_id = bm->batches_matched++;
         bb_submit(f->sinks[0], f->timeout_us);
         output_batch = NULL;

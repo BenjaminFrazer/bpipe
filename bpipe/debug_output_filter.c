@@ -36,7 +36,7 @@ static void* debug_output_worker(void* arg)
         fprintf(filter->output_file,
                 "%s[Batch t=%lldns, period=%uns, samples=%zu, type=%s",
                 filter->formatted_prefix, (long long) in_batch->t_ns,
-                in_batch->period_ns, in_batch->tail - in_batch->head,
+                in_batch->period_ns, in_batch->head - in_batch->tail,
                 base->input_buffers[0].dtype == DTYPE_FLOAT ? "FLOAT"
                 : base->input_buffers[0].dtype == DTYPE_I32 ? "I32"
                                                             : "U32");
@@ -48,15 +48,15 @@ static void* debug_output_worker(void* arg)
       }
 
       // Print samples if enabled
-      if (filter->config.show_samples && in_batch->tail > in_batch->head) {
-        size_t num_samples = in_batch->tail - in_batch->head;
+      if (filter->config.show_samples && in_batch->head > in_batch->tail) {
+        size_t num_samples = in_batch->head - in_batch->tail;
         int samples_to_print = filter->config.max_samples_per_batch;
         if (samples_to_print < 0 || samples_to_print > (int) num_samples) {
           samples_to_print = (int) num_samples;
         }
 
         for (int i = 0; i < samples_to_print; i++) {
-          size_t idx = in_batch->head + i;
+          size_t idx = in_batch->tail + i;
           fprintf(filter->output_file, "%s  [%d] ", filter->formatted_prefix,
                   i);
 
@@ -165,14 +165,14 @@ static void* debug_output_worker(void* arg)
       out_batch->tail = in_batch->tail;
       out_batch->ec = in_batch->ec;
 
-      size_t data_size = (in_batch->tail - in_batch->head) *
+      size_t data_size = (in_batch->head - in_batch->tail) *
                          bb_getdatawidth(base->input_buffers[0].dtype);
       if (data_size > 0) {
         memcpy(
             (char*) out_batch->data +
-                in_batch->head * bb_getdatawidth(base->input_buffers[0].dtype),
+                in_batch->tail * bb_getdatawidth(base->input_buffers[0].dtype),
             (char*) in_batch->data +
-                in_batch->head * bb_getdatawidth(base->input_buffers[0].dtype),
+                in_batch->tail * bb_getdatawidth(base->input_buffers[0].dtype),
             data_size);
       }
 

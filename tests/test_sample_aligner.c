@@ -46,8 +46,8 @@ void* test_source_worker(void* arg) {
         // Fill batch with test data
         batch->t_ns = t_ns;
         batch->period_ns = fix->test_period_ns;
-        batch->head = 0;
-        batch->tail = fix->test_batch_size;
+        batch->tail = 0;
+        batch->head = fix->test_batch_size;
         batch->batch_id = batch_id++;
         batch->ec = Bp_EC_OK;
         
@@ -237,8 +237,8 @@ void test_various_phase_offsets(void) {
         
         batch->t_ns = phase_offsets[i];
         batch->period_ns = fixture.test_period_ns;
-        batch->head = 0;
-        batch->tail = 64;
+        batch->tail = 0;
+        batch->head = 64;
         batch->ec = Bp_EC_OK;
         
         // Fill with test data
@@ -336,8 +336,8 @@ void test_alignment_strategies(void) {
         
         batch->t_ns = fixture.test_phase_offset_ns;
         batch->period_ns = fixture.test_period_ns;
-        batch->head = 0;
-        batch->tail = 10;
+        batch->tail = 0;
+        batch->head = 10;
         batch->ec = Bp_EC_OK;
         CHECK_ERR(bb_submit(input_buf, 1000000));
         

@@ -68,6 +68,7 @@ static void fill_sequential_data(Batch_buff_t* buffer, uint32_t* counter,
     for (size_t i = 0; i < batch_size; i++) {
       data[i] = (float) (*counter)++;
     }
+    batch->tail = 0;
     batch->head = batch_size;
     batch->t_ns = 1000000 * b;
     batch->period_ns = 1000;

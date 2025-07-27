@@ -38,14 +38,14 @@ static void* test_source_worker(void* arg)
 
     batch->t_ns = offset * 1000000;  // 1ms per sample
     batch->period_ns = 1000000;
-    batch->head = 0;
+    batch->tail = 0;
 
     size_t samples_to_copy = MIN(filter->batch_size, filter->data_len - offset);
     float* out_data = (float*) batch->data;
     for (size_t i = 0; i < samples_to_copy; i++) {
       out_data[i] = filter->data[offset + i];
     }
-    batch->tail = samples_to_copy;
+    batch->head = samples_to_copy;
 
     offset += samples_to_copy;
 
@@ -114,12 +114,12 @@ static void* test_collector_worker(void* arg)
     }
 
     float* in_data = (float*) batch->data;
-    size_t count = batch->tail - batch->head;
+    size_t count = batch->head - batch->tail;
 
     if (filter->collected_count + count <= filter->max_count) {
       for (size_t i = 0; i < count; i++) {
         filter->collected_data[filter->collected_count++] =
-            in_data[batch->head + i];
+            in_data[batch->tail + i];
       }
     }
 
