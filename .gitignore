@@ -1,3 +1,4 @@
+!.*
 build/
 timeout.log
 .cache/
