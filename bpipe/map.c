@@ -81,7 +81,7 @@ void* map_worker(void* arg)
     }
 
     // Submit output if batch is full
-    if (output && output->head >= batch_size) {
+    if (output->head >= batch_size) {
       if ((err = bb_submit(f->base.sinks[0], f->base.timeout_us)) != Bp_EC_OK)
         break;
       output = NULL;  // Force getting a new output batch

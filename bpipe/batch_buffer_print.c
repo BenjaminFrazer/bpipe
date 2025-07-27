@@ -195,7 +195,7 @@ void bb_print(Batch_buff_t* buff)
       display_end = n_batches;
     } else {
       /* Show area around tail */
-      display_start = (tail_idx > 4) ? tail_idx - 4 : 0;
+      display_start = tail_idx - 4;
       display_end = display_start + 8;
       if (display_end > n_batches) {
         display_end = n_batches;

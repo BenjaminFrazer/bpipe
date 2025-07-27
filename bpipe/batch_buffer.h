@@ -80,7 +80,7 @@ typedef struct _Batch {
   Bp_EC ec;
   void *meta;
   // SampleDtype_t dtype;
-  
+
   /* The 'data' field is a void* that points to the actual sample data.
    * It can be cast to the appropriate type (float*, int32_t*, uint32_t*, etc.)
    * based on the dtype of the batch buffer. Using void* is the standard C
