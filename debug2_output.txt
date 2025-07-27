@@ -1,0 +1,1 @@
+DEBUG2 (after map): [Batch t=1000000000ns, period=1000000ns, samples=18446744073709550592, type=FLOAT]

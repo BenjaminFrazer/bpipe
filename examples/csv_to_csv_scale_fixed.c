@@ -1,9 +1,8 @@
 /*
- * CSV to CSV Scale Example
+ * CSV to CSV Scale Example (Fixed)
  * 
  * This example demonstrates scaling a single column from a CSV file.
- * Due to architectural constraints, processing multiple columns requires
- * separate pipelines and output files for each column.
+ * Based on the working csv_to_debug_auto.c pattern.
  */
 
 #define _GNU_SOURCE  // For usleep
@@ -11,19 +10,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include "../bpipe/csv_source.h"
-#include "../bpipe/csv_sink.h"
-#include "../bpipe/map.h"
-#include "../bpipe/core.h"
-#include "../bpipe/utils.h"
-#include "../bpipe/bperr.h"
-#include "../bpipe/debug_output_filter.h"
-
-// Example input CSV format:
-// timestamp_ns,sensor1,sensor2,sensor3
-// 1000000000,100.0,200.0,300.0
-// 1001000000,101.0,201.0,301.0
-// 1002000000,102.0,202.0,302.0
+#include "bpipe/csv_source.h"
+#include "bpipe/csv_sink.h"
+#include "bpipe/map.h"
+#include "bpipe/core.h"
+#include "bpipe/utils.h"
+#include "bpipe/bperr.h"
 
 // Global scale factor (accessed by map function)
 static float g_scale_factor = 1.0f;
@@ -36,8 +28,20 @@ static Bp_EC map_scale_f32(const void* in, void* out, size_t n_samples)
     const float* input = (const float*)in;
     float* output = (float*)out;
     
+    printf("Map function called with %zu samples, scale factor %.2f\n", n_samples, g_scale_factor);
+    
+    // Debug: Check if we're getting the right data
+    int non_zero_count = 0;
+    for (size_t i = 0; i < n_samples; i++) {
+        if (input[i] != 0.0f) non_zero_count++;
+    }
+    printf("  Non-zero input samples: %d/%zu\n", non_zero_count, n_samples);
+    
     for (size_t i = 0; i < n_samples; i++) {
         output[i] = input[i] * g_scale_factor;
+        if (i < 3 || input[i] != 0.0f) {  // Debug: print first few and non-zero values
+            printf("  [%zu] %.3f * %.2f = %.3f\n", i, input[i], g_scale_factor, output[i]);
+        }
     }
     
     return Bp_EC_OK;
@@ -59,8 +63,8 @@ int main(int argc, char* argv[])
     g_scale_factor = atof(argv[3]);
     const char* target_column = argv[4];
     
-    printf("CSV to CSV Scale Example\n");
-    printf("========================\n");
+    printf("CSV to CSV Scale Example (Fixed)\n");
+    printf("================================\n");
     printf("Input file: %s\n", input_file);
     printf("Output file: %s\n", output_file);
     printf("Scale factor: %.2f\n", g_scale_factor);
@@ -69,13 +73,13 @@ int main(int argc, char* argv[])
     
     // 1. Create CSV source filter
     CsvSource_t csv_source = {0};
+    
     CsvSource_config_t csv_config = {
         .name = "csv_reader",
         .file_path = input_file,
         .delimiter = ',',
         .has_header = true,
         .ts_column_name = "timestamp_ns",
-        .data_column_names = {target_column, NULL},  // Process only the specified column
         .detect_regular_timing = true,
         .regular_threshold_ns = 10000,  // 10μs tolerance
         .loop = false,
@@ -83,12 +87,11 @@ int main(int argc, char* argv[])
         .timeout_us = 1000000  // 1 second
     };
     
+    // Copy column names
+    csv_config.data_column_names[0] = target_column;
+    csv_config.data_column_names[1] = NULL;
     
     printf("Initializing CSV source...\n");
-    printf("  - file_path: %s\n", csv_config.file_path);
-    printf("  - ts_column_name: %s\n", csv_config.ts_column_name);
-    printf("  - data_column_names[0]: %s\n", csv_config.data_column_names[0]);
-    
     err = csvsource_init(&csv_source, csv_config);
     if (err != Bp_EC_OK) {
         printf("Failed to initialize CSV source: %d (%s)\n", err, 
@@ -125,50 +128,7 @@ int main(int argc, char* argv[])
         return 1;
     }
     
-    // 3. Create debug filters to help diagnose the issue
-    printf("Initializing debug filters...\n");
-    DebugOutputFilter_t debug1, debug2;
-    
-    DebugOutputConfig_t debug1_config = {
-        .prefix = "DEBUG1 (after CSV source): ",
-        .filename = "debug1_output.txt",
-        .append_mode = false,
-        .show_metadata = true,
-        .show_samples = true,
-        .max_samples_per_batch = 5,
-        .format = DEBUG_FMT_DECIMAL,
-        .flush_after_print = true
-    };
-    
-    DebugOutputConfig_t debug2_config = {
-        .prefix = "DEBUG2 (after map): ",
-        .filename = "debug2_output.txt",
-        .append_mode = false,
-        .show_metadata = true,
-        .show_samples = true,
-        .max_samples_per_batch = 5,
-        .format = DEBUG_FMT_DECIMAL,
-        .flush_after_print = true
-    };
-    
-    err = debug_output_filter_init(&debug1, &debug1_config);
-    if (err != Bp_EC_OK) {
-        printf("Failed to initialize debug1 filter: %d\n", err);
-        filt_deinit(&scaler.base);
-        csvsource_destroy(&csv_source);
-        return 1;
-    }
-    
-    err = debug_output_filter_init(&debug2, &debug2_config);
-    if (err != Bp_EC_OK) {
-        printf("Failed to initialize debug2 filter: %d\n", err);
-        filt_deinit(&debug1.base);
-        filt_deinit(&scaler.base);
-        csvsource_destroy(&csv_source);
-        return 1;
-    }
-    
-    // 4. Create CSV sink filter
+    // 3. Create CSV sink filter
     printf("Initializing CSV sink...\n");
     CSVSink_t csv_sink;
     
@@ -196,123 +156,84 @@ int main(int argc, char* argv[])
     err = csv_sink_init(&csv_sink, sink_config);
     if (err != Bp_EC_OK) {
         printf("Failed to initialize CSV sink: %d\n", err);
-        filt_deinit(&debug2.base);
-        filt_deinit(&debug1.base);
         filt_deinit(&scaler.base);
         csvsource_destroy(&csv_source);
         return 1;
     }
     
-    // 5. Connect the pipeline: CSV source -> Debug1 -> Map filter -> Debug2 -> CSV sink
+    // 4. Connect the pipeline: CSV source -> Map filter -> CSV sink
     printf("Connecting pipeline...\n");
     
-    // CSV source output 0 (first/only data column) -> Debug1 input
-    err = filt_sink_connect(&csv_source.base, 0, &debug1.base.input_buffers[0]);
+    // CSV source output 0 (first/only data column) -> Map input
+    err = filt_sink_connect(&csv_source.base, 0, &scaler.base.input_buffers[0]);
     if (err != Bp_EC_OK) {
-        printf("Failed to connect CSV source to debug1: %d\n", err);
+        printf("Failed to connect CSV source to map: %d\n", err);
         goto cleanup;
     }
+    printf("  Connected: CSV source -> Map filter\n");
     
-    // Debug1 output -> Map input
-    err = filt_sink_connect(&debug1.base, 0, &scaler.base.input_buffers[0]);
+    // Map output -> CSV sink input
+    err = filt_sink_connect(&scaler.base, 0, &csv_sink.base.input_buffers[0]);
     if (err != Bp_EC_OK) {
-        printf("Failed to connect debug1 to map: %d\n", err);
+        printf("Failed to connect map to CSV sink: %d\n", err);
         goto cleanup;
     }
+    printf("  Connected: Map filter -> CSV sink\n");
     
-    // Map output -> Debug2 input
-    err = filt_sink_connect(&scaler.base, 0, &debug2.base.input_buffers[0]);
-    if (err != Bp_EC_OK) {
-        printf("Failed to connect map to debug2: %d\n", err);
-        goto cleanup;
-    }
-    
-    // Debug2 output -> CSV sink input
-    err = filt_sink_connect(&debug2.base, 0, &csv_sink.base.input_buffers[0]);
-    if (err != Bp_EC_OK) {
-        printf("Failed to connect debug2 to CSV sink: %d\n", err);
-        goto cleanup;
-    }
-    
-    // 6. Start the pipeline (in reverse order)
-    printf("Starting pipeline...\n");
-    
-    err = filt_start(&csv_sink.base);
-    if (err != Bp_EC_OK) {
-        printf("Failed to start CSV sink: %d\n", err);
-        goto cleanup;
-    }
-    
-    err = filt_start(&debug2.base);
-    if (err != Bp_EC_OK) {
-        printf("Failed to start debug2 filter: %d\n", err);
-        filt_stop(&csv_sink.base);
-        goto cleanup;
-    }
-    
-    err = filt_start(&scaler.base);
-    if (err != Bp_EC_OK) {
-        printf("Failed to start map filter: %d\n", err);
-        filt_stop(&debug2.base);
-        filt_stop(&csv_sink.base);
-        goto cleanup;
-    }
-    
-    err = filt_start(&debug1.base);
-    if (err != Bp_EC_OK) {
-        printf("Failed to start debug1 filter: %d\n", err);
-        filt_stop(&scaler.base);
-        filt_stop(&debug2.base);
-        filt_stop(&csv_sink.base);
-        goto cleanup;
-    }
+    // 5. Start the pipeline
+    // Start source first (like in csv_to_debug_auto.c)
+    printf("\nStarting pipeline...\n");
     
     err = filt_start(&csv_source.base);
     if (err != Bp_EC_OK) {
         printf("Failed to start CSV source: %d\n", err);
-        filt_stop(&debug1.base);
+        goto cleanup;
+    }
+    
+    // Add small delay to ensure source is ready
+    usleep(10000);  // 10ms
+    
+    err = filt_start(&scaler.base);
+    if (err != Bp_EC_OK) {
+        printf("Failed to start map filter: %d\n", err);
+        filt_stop(&csv_source.base);
+        goto cleanup;
+    }
+    
+    err = filt_start(&csv_sink.base);
+    if (err != Bp_EC_OK) {
+        printf("Failed to start CSV sink: %d\n", err);
         filt_stop(&scaler.base);
-        filt_stop(&debug2.base);
-        filt_stop(&csv_sink.base);
+        filt_stop(&csv_source.base);
         goto cleanup;
     }
     
     printf("\nProcessing data...\n");
     
-    // 6. Wait for a moment to let pipeline process
+    // 6. Wait for pipeline to complete
     usleep(1000000);  // 1 second
     
-    // 8. Stop all filters (this will join threads)
-    printf("Stopping pipeline...\n");
+    // 7. Stop all filters (this will join threads)
+    printf("\nStopping pipeline...\n");
     filt_stop(&csv_source.base);
-    filt_stop(&debug1.base);
     filt_stop(&scaler.base);
-    filt_stop(&debug2.base);
     filt_stop(&csv_sink.base);
     
     // Check for errors
-    if (csv_source.base.worker_err_info.ec != Bp_EC_OK) {
+    printf("\nChecking for errors...\n");
+    if (csv_source.base.worker_err_info.ec != Bp_EC_OK && 
+        csv_source.base.worker_err_info.ec != Bp_EC_STOPPED) {
         printf("CSV source error: %d\n", csv_source.base.worker_err_info.ec);
         if (csv_source.base.worker_err_info.err_msg) {
             printf("  Message: %s\n", csv_source.base.worker_err_info.err_msg);
         }
     }
-    if (debug1.base.worker_err_info.ec != Bp_EC_OK) {
-        printf("Debug1 filter error: %d\n", debug1.base.worker_err_info.ec);
-        if (debug1.base.worker_err_info.err_msg) {
-            printf("  Message: %s\n", debug1.base.worker_err_info.err_msg);
-        }
-    }
     if (scaler.base.worker_err_info.ec != Bp_EC_OK) {
-        printf("Map filter error: %d\n", scaler.base.worker_err_info.ec);
+        printf("Map filter error: %d (%s)\n", scaler.base.worker_err_info.ec,
+               scaler.base.worker_err_info.ec < Bp_EC_MAX ? 
+               err_lut[scaler.base.worker_err_info.ec] : "Unknown");
         if (scaler.base.worker_err_info.err_msg) {
             printf("  Message: %s\n", scaler.base.worker_err_info.err_msg);
-        }
-    }
-    if (debug2.base.worker_err_info.ec != Bp_EC_OK) {
-        printf("Debug2 filter error: %d\n", debug2.base.worker_err_info.ec);
-        if (debug2.base.worker_err_info.err_msg) {
-            printf("  Message: %s\n", debug2.base.worker_err_info.err_msg);
         }
     }
     if (csv_sink.base.worker_err_info.ec != Bp_EC_OK) {
@@ -324,15 +245,15 @@ int main(int argc, char* argv[])
     
     // Print statistics
     printf("\nProcessing complete!\n");
-    printf("Samples processed: %lu\n", csv_sink.samples_written);
+    printf("CSV source samples read: %lu\n", csv_source.base.metrics.samples_processed);
+    printf("Map filter samples processed: %lu\n", scaler.base.metrics.samples_processed);
+    printf("CSV sink samples written: %lu\n", csv_sink.samples_written);
     printf("Output written to: %s\n", output_file);
     
 cleanup:
     // Destroy filters and free memory
     filt_deinit(&csv_sink.base);
-    filt_deinit(&debug2.base);
     filt_deinit(&scaler.base);
-    filt_deinit(&debug1.base);
     csvsource_destroy(&csv_source);
     
     return (err == Bp_EC_OK) ? 0 : 1;

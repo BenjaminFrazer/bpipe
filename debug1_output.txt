@@ -1,0 +1,9 @@
+DEBUG1 (after CSV source): [Batch t=1000000000ns, period=1000000ns, samples=10, type=FLOAT]
+DEBUG1 (after CSV source):   [0] 10.000000
+DEBUG1 (after CSV source):   [1] 11.000000
+DEBUG1 (after CSV source):   [2] 12.000000
+DEBUG1 (after CSV source):   [3] 13.000000
+DEBUG1 (after CSV source):   [4] 14.000000
+DEBUG1 (after CSV source):   ... (5 more samples)
+DEBUG1 (after CSV source): [Batch t=-1ns, period=0ns, samples=0, type=FLOAT, ec=1]
+DEBUG1 (after CSV source): [Stream completed]

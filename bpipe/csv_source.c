@@ -118,7 +118,7 @@ Bp_EC csvsource_init(CsvSource_t* self, CsvSource_config_t config)
 
   Core_filt_config_t filter_config = {
       .name = config.name,
-      .filt_type = FILT_T_NDEF,  // Source filter (no inputs)
+      .filt_type = FILT_T_MAP,  // Source filter (no inputs)
       .size = sizeof(CsvSource_t),
       .n_inputs = 0,
       .max_supported_sinks = self->n_data_columns,  // One sink per data column
@@ -306,21 +306,21 @@ static bool need_new_batches(const CsvSource_t* self, const BatchState* state,
 static Bp_EC submit_and_get_new_batches(CsvSource_t* self, BatchState* state)
 {
   // Submit current batches if they have data
-  if (state->batches[0] && state->batches[0]->tail > 0) {
+  if (state->batches[0] && state->batches[0]->head > 0) {
     uint64_t period_ns = state->delta_established ? state->expected_delta : 0;
 
     for (size_t col = 0; col < self->n_data_columns; col++) {
       Batch_t* batch = state->batches[col];
       batch->t_ns = state->batch_start_time;
       batch->period_ns = period_ns;
-      batch->head = 0;  // Data starts at index 0
-      // tail is already set to the number of samples
+      batch->tail = 0;  // Read starts at index 0
+      // head is already set to the number of samples
       batch->ec = Bp_EC_OK;
       bb_submit(self->base.sinks[col], self->base.timeout_us);
     }
 
     // Update metrics
-    self->base.metrics.samples_processed += state->batches[0]->tail;
+    self->base.metrics.samples_processed += state->batches[0]->head;
     self->base.metrics.n_batches++;
   }
 
@@ -342,7 +342,7 @@ static Bp_EC submit_and_get_new_batches(CsvSource_t* self, BatchState* state)
 static void write_sample_to_batches(CsvSource_t* self, BatchState* state,
                                     uint64_t timestamp, const double* values)
 {
-  size_t idx = state->batches[0]->tail;
+  size_t idx = state->batches[0]->head;
 
   // First sample in batch sets the start time
   if (idx == 0) {
@@ -372,8 +372,8 @@ static void write_sample_to_batches(CsvSource_t* self, BatchState* state,
         break;
     }
 
-    // Increment tail for this batch
-    batch->tail++;
+    // Increment head (write position) for this batch
+    batch->head++;
   }
 }
 
@@ -455,20 +455,20 @@ static void* csvsource_worker(void* arg)
   }
 
   // Submit any remaining samples
-  if (state.batches[0] && state.batches[0]->tail > 0) {
+  if (state.batches[0] && state.batches[0]->head > 0) {
     uint64_t period_ns = state.delta_established ? state.expected_delta : 0;
 
     for (size_t col = 0; col < self->n_data_columns; col++) {
       Batch_t* batch = state.batches[col];
       batch->t_ns = state.batch_start_time;
       batch->period_ns = period_ns;
-      batch->head = 0;  // Data starts at index 0
-      // tail is already set to the number of samples
+      batch->tail = 0;  // Read starts at index 0
+      // head is already set to the number of samples
       batch->ec = Bp_EC_OK;
       bb_submit(self->base.sinks[col], self->base.timeout_us);
     }
 
-    self->base.metrics.samples_processed += state.batches[0]->tail;
+    self->base.metrics.samples_processed += state.batches[0]->head;
     self->base.metrics.n_batches++;
   }
 
