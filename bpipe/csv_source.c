@@ -253,8 +253,11 @@ static Bp_EC parse_line(CsvSource_t* self, char* line, uint64_t* timestamp,
     col_idx++;
   }
 
+  // When n_data_columns == 0, values is NULL but loop doesn't execute
   for (size_t i = 0; i < self->n_data_columns; i++) {
-    values[i] = self->parse_buffer[self->data_column_indices[i]];
+    values[i] = self->parse_buffer
+                    [self->data_column_indices
+                         [i]];  // NOLINT(clang-analyzer-core.NullDereference)
   }
 
   free(line_copy);
@@ -327,7 +330,8 @@ static Bp_EC submit_and_get_new_batches(CsvSource_t* self, BatchState* state)
   // Get new batches
   for (size_t col = 0; col < self->n_data_columns; col++) {
     state->batches[col] = bb_get_head(self->base.sinks[col]);
-    // bb_get_head returns a pointer to pre-allocated ring buffer element (never NULL)
+    // bb_get_head returns a pointer to pre-allocated ring buffer element (never
+    // NULL)
     assert(state->batches[col] != NULL);
     state->batches[col]->head = 0;
   }
@@ -340,6 +344,8 @@ static Bp_EC submit_and_get_new_batches(CsvSource_t* self, BatchState* state)
 static void write_sample_to_batches(CsvSource_t* self, BatchState* state,
                                     uint64_t timestamp, const double* values)
 {
+  // bb_get_head() always returns valid pointer to pre-allocated buffer
+  // NOLINTNEXTLINE(clang-analyzer-core.NullDereference)
   size_t idx = state->batches[0]->head;
 
   // First sample in batch sets the start time
@@ -358,12 +364,15 @@ static void write_sample_to_batches(CsvSource_t* self, BatchState* state,
 
     switch (self->base.sinks[col]->dtype) {
       case DTYPE_FLOAT:
+        // NOLINTNEXTLINE(clang-analyzer-core.NullDereference)
         ((float*) batch->data)[idx] = (float) values[col];
         break;
       case DTYPE_I32:
+        // NOLINTNEXTLINE(clang-analyzer-core.NullDereference)
         ((int32_t*) batch->data)[idx] = (int32_t) values[col];
         break;
       case DTYPE_U32:
+        // NOLINTNEXTLINE(clang-analyzer-core.NullDereference)
         ((uint32_t*) batch->data)[idx] = (uint32_t) values[col];
         break;
       default:
@@ -443,6 +452,8 @@ static void* csvsource_worker(void* arg)
     }
 
     // Check if we need new batches before writing this sample
+    // timestamp initialized by parse_line on success
+    // NOLINTNEXTLINE(clang-analyzer-core.CallAndMessage)
     if (need_new_batches(self, &state, timestamp)) {
       Bp_EC submit_err = submit_and_get_new_batches(self, &state);
       if (submit_err != Bp_EC_OK) {
