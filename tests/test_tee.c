@@ -680,7 +680,7 @@ void test_tee_pipeline_integration(void)
                          .buff_config = out_configs[0],  // Input buffer config
                          .n_outputs = 2,
                          .output_configs = out_configs,
-                         .timeout_us = 1000,
+                         .timeout_us = 100000,
                          .copy_data = true};
 
   Tee_filt_t tee;
@@ -695,7 +695,7 @@ void test_tee_pipeline_integration(void)
       .n_inputs = 1,
       .max_supported_sinks = 1,
       .buff_config = out_configs[0],
-      .timeout_us = 1000,
+      .timeout_us = 100000,
       .worker = matched_passthroug};
 
   CHECK_ERR(filt_init(&downstream1, downstream_config));
@@ -714,10 +714,15 @@ void test_tee_pipeline_integration(void)
   CHECK_ERR(filt_sink_connect(&downstream1, 0, &final1));
   CHECK_ERR(filt_sink_connect(&downstream2, 0, &final2));
 
-  // Start pipeline
+  // Start pipeline - start filters first
   CHECK_ERR(filt_start(&tee.base));
   CHECK_ERR(filt_start(&downstream1));
   CHECK_ERR(filt_start(&downstream2));
+
+  // Give worker threads time to start
+  nanosleep(&ts_10ms, NULL);
+
+  // Then start buffers
   CHECK_ERR(bb_start(&tee.base.input_buffers[0]));  // Start input buffer
   CHECK_ERR(bb_start(
       &downstream1.input_buffers[0]));  // Start downstream input buffers
@@ -725,13 +730,17 @@ void test_tee_pipeline_integration(void)
   CHECK_ERR(bb_start(&final1));
   CHECK_ERR(bb_start(&final2));
 
+  // Give buffer startup time to propagate through pipeline
+  nanosleep(&ts_10ms, NULL);
+
   // Submit data
   uint32_t counter = 0;
   TEST_MESSAGE("Filling input");
   fill_sequential_data(&tee.base.input_buffers[0], &counter, 5);
 
-  // Wait for processing
-  nanosleep(&ts_1ms, NULL);
+  // Wait for all threads to start up properly and process
+  nanosleep(&ts_10ms, NULL);
+
   CHECK_ERR(tee.base.worker_err_info.ec);
   CHECK_ERR(downstream1.worker_err_info.ec);
   CHECK_ERR(downstream2.worker_err_info.ec);
@@ -787,8 +796,7 @@ int main(void)
   RUN_TEST(test_tee_graceful_shutdown);
   RUN_TEST(test_tee_invalid_config);
   RUN_TEST(test_tee_batch_size_validation);
-  // RUN_TEST(test_tee_pipeline_integration); // TODO: failing intermittently on
-  // timeout error
+  RUN_TEST(test_tee_pipeline_integration);
 
   return UNITY_END();
 }
