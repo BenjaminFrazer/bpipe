@@ -349,7 +349,6 @@ Bp_EC bb_init(Batch_buff_t *buff, const char *name, BatchBuffer_config config)
 
   /* Populate key batch data*/
   for (int i = 0; i < bb_n_batches(buff); i++) {
-    buff->batch_ring[i].tail = 0;
     buff->batch_ring[i].head = 0;
     buff->batch_ring[i].t_ns = -1;
     buff->batch_ring[i].data =

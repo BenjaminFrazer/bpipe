@@ -141,7 +141,6 @@ static void* sample_aligner_worker(void* arg)
       if (output) {
         output->ec = Bp_EC_COMPLETE;
         output->head = 0;
-        output->tail = 0;
         err = bb_submit(f->sinks[0], f->timeout_us);
         BP_WORKER_ASSERT(f, input->ec == Bp_EC_OK, input->ec);
       }
@@ -193,16 +192,12 @@ static void* sample_aligner_worker(void* arg)
     output->ec = Bp_EC_OK;
 
     // Copy data
-    size_t samples = input->head - input->tail;
+    size_t samples = input->head;
     size_t output_capacity = (1 << f->sinks[0]->batch_capacity_expo);
     size_t to_copy = MIN(samples, output_capacity);
 
-    memcpy(output->data,
-           (char*) input->data +
-               input->tail * bb_getdatawidth(f->input_buffers[0].dtype),
+    memcpy(output->data, input->data,
            to_copy * bb_getdatawidth(f->input_buffers[0].dtype));
-
-    output->tail = 0;
     output->head = to_copy;
 
     // Update state

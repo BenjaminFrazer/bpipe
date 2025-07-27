@@ -38,7 +38,6 @@ static void* test_source_worker(void* arg)
 
     batch->t_ns = offset * 1000000;  // 1ms per sample
     batch->period_ns = 1000000;
-    batch->tail = 0;
 
     size_t samples_to_copy = MIN(filter->batch_size, filter->data_len - offset);
     float* out_data = (float*) batch->data;
@@ -107,19 +106,19 @@ static void* test_collector_worker(void* arg)
 
   while (atomic_load(&base->running)) {
     Bp_EC err;
-    Batch_t* batch = bb_get_tail(&base->input_buffers[0], 10, &err);  // 10ms timeout
+    Batch_t* batch =
+        bb_get_tail(&base->input_buffers[0], 10, &err);  // 10ms timeout
     if (!batch) {
       if (err == Bp_EC_STOPPED) break;
       continue;
     }
 
     float* in_data = (float*) batch->data;
-    size_t count = batch->head - batch->tail;
+    size_t count = batch->head;
 
     if (filter->collected_count + count <= filter->max_count) {
       for (size_t i = 0; i < count; i++) {
-        filter->collected_data[filter->collected_count++] =
-            in_data[batch->tail + i];
+        filter->collected_data[filter->collected_count++] = in_data[i];
       }
     }
 

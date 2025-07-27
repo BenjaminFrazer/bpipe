@@ -313,7 +313,6 @@ static Bp_EC submit_and_get_new_batches(CsvSource_t* self, BatchState* state)
       Batch_t* batch = state->batches[col];
       batch->t_ns = state->batch_start_time;
       batch->period_ns = period_ns;
-      batch->tail = 0;  // Read starts at index 0
       // head is already set to the number of samples
       batch->ec = Bp_EC_OK;
       bb_submit(self->base.sinks[col], self->base.timeout_us);
@@ -330,7 +329,6 @@ static Bp_EC submit_and_get_new_batches(CsvSource_t* self, BatchState* state)
     if (!state->batches[col]) {
       return Bp_EC_TIMEOUT;  // bb_get_head should never return NULL
     }
-    state->batches[col]->tail = 0;
     state->batches[col]->head = 0;
   }
 
@@ -462,7 +460,6 @@ static void* csvsource_worker(void* arg)
       Batch_t* batch = state.batches[col];
       batch->t_ns = state.batch_start_time;
       batch->period_ns = period_ns;
-      batch->tail = 0;  // Read starts at index 0
       // head is already set to the number of samples
       batch->ec = Bp_EC_OK;
       bb_submit(self->base.sinks[col], self->base.timeout_us);
@@ -476,7 +473,6 @@ static void* csvsource_worker(void* arg)
   for (size_t col = 0; col < self->n_data_columns; col++) {
     Batch_t* completion_batch = bb_get_head(self->base.sinks[col]);
     if (completion_batch) {
-      completion_batch->tail = 0;
       completion_batch->head = 0;
       completion_batch->ec = Bp_EC_COMPLETE;
       bb_submit(self->base.sinks[col], self->base.timeout_us);

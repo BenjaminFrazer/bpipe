@@ -11,16 +11,18 @@
 #include <unistd.h>
 #include "../bpipe/batch_buffer.h"
 #include "../bpipe/core.h"
+#include "test_utils.h"
 #include "time.h"
 #include "unity.h"
-#include "test_utils.h"
 
 #define BATCH_CAPACITY_EXPO 4
 #define RING_CAPACITY_EXPO 4
 
 char buff[124];
 
-size_t ring_capacity = (1 << RING_CAPACITY_EXPO) - 1;  // One slot always kept empty to distinguish full/empty
+size_t ring_capacity =
+    (1 << RING_CAPACITY_EXPO) -
+    1;  // One slot always kept empty to distinguish full/empty
 size_t batch_capacity = (1 << BATCH_CAPACITY_EXPO);  //
                                                      //
                                                      //
@@ -48,7 +50,6 @@ Batch_buff_t output;
 struct timespec ts_1ms = {.tv_nsec = 1000000};  // 10ms
 
 Bp_EC _ec;
-
 
 void setUp(void)
 {

@@ -141,6 +141,31 @@ Bp_EC yourfilter_init(YourFilter_t* f, YourFilter_config_t config) {
 4. **Error Handling**: Use WORKER_ASSERT in workers, proper cleanup
 5. **Thread Safety**: Filter runs in single worker thread, mutex protects sink array
 
+## Batch Processing
+
+### Head Index Semantics
+Filters work with a simplified batch model:
+- **Input batches**: Data always starts at index 0
+- **Output batches**: Must set `head` to number of valid samples
+- **Sample count**: Always use `head` for number of samples
+
+### Filter Obligations
+```c
+// CORRECT: Process valid samples from 0 to head
+for (size_t i = 0; i < input->head; i++) {
+    output->data[i] = process_sample(input->data[i]);
+}
+
+// When submitting output:
+output->head = samples_written;  // Number of samples written
+```
+
+### Common Scenarios
+1. **Full batch passthrough**: Copy data and preserve head
+2. **Partial consumption**: Filters must track their own state internally
+3. **Accumulation**: May need multiple input batches for one output
+4. **Decimation**: Output fewer samples than input
+
 ## Common Patterns
 
 ### Input/Output Management
@@ -151,7 +176,7 @@ if (NEEDS_NEW_BATCH(batch)) {
 }
 
 // Get available samples to process
-size_t n = MIN(input->head - input->tail, output_space);
+size_t n = MIN(input->head, output_space);
 
 // Check if batch is full
 if (BATCH_FULL(output, batch_size)) {

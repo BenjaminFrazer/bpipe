@@ -3,8 +3,8 @@
 #include <time.h>
 #include "batch_matcher.h"
 #include "core.h"
-#include "unity.h"
 #include "test_utils.h"
+#include "unity.h"
 
 // Test fixture
 typedef struct {
@@ -48,7 +48,6 @@ void* test_source_worker(void* arg)
     // Fill batch with test data
     batch->t_ns = t_ns;
     batch->period_ns = period_ns;
-    batch->tail = 0;
     batch->head = 64;  // 64 samples per batch
     batch->batch_id = batch_id++;
     batch->ec = Bp_EC_OK;
@@ -70,7 +69,6 @@ void* test_source_worker(void* arg)
     TEST_FAIL_MESSAGE("bb_get_head returned NULL when sending completion");
   }
   batch->ec = Bp_EC_COMPLETE;
-  batch->tail = 0;
   batch->head = 0;
   CHECK_ERR(bb_submit(f->sinks[0], 1000000));
 
@@ -153,9 +151,8 @@ void test_basic_batch_matching(void)
 
   // Start filters
   fixture.source_running = true;
-  TEST_ASSERT_EQUAL(
-      0, pthread_create(&fixture.source_thread, NULL, test_source_worker,
-                         &fixture.source));
+  TEST_ASSERT_EQUAL(0, pthread_create(&fixture.source_thread, NULL,
+                                      test_source_worker, &fixture.source));
   CHECK_ERR(filt_start(&fixture.matcher.base));
   CHECK_ERR(filt_start(&fixture.sink));
 
@@ -167,7 +164,7 @@ void test_basic_batch_matching(void)
   Bp_EC err;
   Batch_t* output = bb_get_tail(&fixture.sink.input_buffers[0], 1000000, &err);
   if (err == Bp_EC_OK) {
-    TEST_ASSERT_EQUAL(128, output->head - output->tail);
+    TEST_ASSERT_EQUAL(128, output->head);
     TEST_ASSERT_EQUAL(
         0, output->t_ns % (128 * 1000000));  // Aligned to batch period
     bb_del_tail(&fixture.sink.input_buffers[0]);
@@ -282,12 +279,12 @@ void test_phase_validation(void)
   // Push a batch with non-aligned timestamp
   Batch_t* batch = bb_get_head(&fixture.matcher.base.input_buffers[0]);
   if (batch == NULL) {
-    TEST_FAIL_MESSAGE("bb_get_head returned NULL - unable to get buffer for phase test");
+    TEST_FAIL_MESSAGE(
+        "bb_get_head returned NULL - unable to get buffer for phase test");
   }
 
   batch->t_ns = 12345000;      // 12.345ms - phase offset of 345us
   batch->period_ns = 1000000;  // 1ms period
-  batch->tail = 0;
   batch->head = 64;
   batch->ec = Bp_EC_OK;
 

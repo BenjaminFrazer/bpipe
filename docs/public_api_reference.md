@@ -2,7 +2,16 @@
 
 This document provides a comprehensive reference for the public APIs in the bpipe2 framework, focusing on batch buffer operations and filter lifecycle management.
 
+## Breaking Changes
+
+### Removal of tail field from Batch_t (v2.0)
+The `tail` field has been removed from the `Batch_t` structure to simplify the architecture:
+- **Before**: Batches had both `head` and `tail` indices for partial consumption tracking
+- **After**: Batches only have a `head` index; data always starts at index 0
+- **Migration**: Filters that need partial consumption tracking must maintain internal state
+
 ## Table of Contents
+- [Breaking Changes](#breaking-changes)
 - [Batch Buffer API](#batch-buffer-api)
 - [Filter API](#filter-api)
 - [Common Pitfalls](#common-pitfalls)

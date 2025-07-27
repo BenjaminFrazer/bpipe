@@ -100,7 +100,6 @@ static void send_completion_to_sinks(Filter_t* filter)
       Batch_t* batch = bb_get_head(filter->sinks[i]);
       if (batch) {
         batch->ec = Bp_EC_COMPLETE;
-        batch->tail = 0;
         batch->head = 0;
         bb_submit(filter->sinks[i], 0);  // No timeout for completion
       }
@@ -146,7 +145,6 @@ void* signal_generator_worker(void* arg)
     // Set batch metadata
     output->t_ns = sg->next_t_ns;
     output->period_ns = sg->period_ns;
-    output->tail = 0;
     output->head = n_samples;
     output->ec = Bp_EC_OK;
 

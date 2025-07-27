@@ -131,13 +131,13 @@ static void* csv_sink_worker(void* arg)
     BP_WORKER_ASSERT(&sink->base, data_width > 0, Bp_EC_UNSUPPORTED_TYPE);
 
     // Process batch data
-    size_t samples = input->head - input->tail;
+    size_t samples = input->head;
     for (size_t i = 0; i < samples; i++) {
       // Calculate timestamp for this sample
       uint64_t sample_time_ns = input->t_ns + i * input->period_ns;
 
       // Calculate data pointer
-      char* data_ptr = ((char*) input->data) + (input->tail + i) * data_width;
+      char* data_ptr = ((char*) input->data) + i * data_width;
 
       // Format and write the CSV line
       format_csv_line(sink, sample_time_ns, data_ptr);

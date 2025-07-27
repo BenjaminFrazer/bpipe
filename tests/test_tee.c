@@ -54,7 +54,6 @@ static void verify_sequence(Batch_buff_t* buffer, uint32_t start_value,
   }
 }
 
-
 // Helper function to fill buffer with sequential data
 static void fill_sequential_data(Batch_buff_t* buffer, uint32_t* counter,
                                  size_t n_batches)
@@ -68,7 +67,6 @@ static void fill_sequential_data(Batch_buff_t* buffer, uint32_t* counter,
     for (size_t i = 0; i < batch_size; i++) {
       data[i] = (float) (*counter)++;
     }
-    batch->tail = 0;
     batch->head = batch_size;
     batch->t_ns = 1000000 * b;
     batch->period_ns = 1000;
@@ -568,7 +566,7 @@ void test_tee_invalid_config(void)
 void test_tee_batch_size_validation(void)
 {
   printf("\n=== Testing Batch Size Validation ===\n");
-  
+
   Tee_filt_t tee;
   Bp_EC err;
 
@@ -626,7 +624,7 @@ void test_tee_batch_size_validation(void)
   err = tee_init(&tee, config2);
   TEST_ASSERT_EQUAL(Bp_EC_OK, err);
   printf("  ✓ Successfully initialized with matching batch sizes\n");
-  
+
   // Clean up the successful initialization
   filt_deinit(&tee.base);
 

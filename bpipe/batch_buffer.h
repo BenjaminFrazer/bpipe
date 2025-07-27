@@ -71,7 +71,6 @@ static inline struct timespec future_ts(long long time_ns, clockid_t clock)
 
 typedef struct _Batch {
   size_t head;
-  size_t tail;
   // int capacity;
   long long t_ns;
   unsigned period_ns;

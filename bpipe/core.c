@@ -412,7 +412,6 @@ void* matched_passthroug(void* arg)
 
     // Copy batch metadata
     output->head = input->head;
-    output->tail = input->tail;
     output->t_ns = input->t_ns;
     output->period_ns = input->period_ns;
     output->batch_id = input->batch_id;

@@ -78,7 +78,7 @@ void* test_sink_worker(void* arg)
     }
     if (ts_next > 0) {
       BP_WORKER_ASSERT(&sink->base, batch->t_ns == ts_next, err);
-      ts_next = batch->t_ns + 1 + batch->head - batch->tail;
+      ts_next = batch->t_ns + 1 + batch->head;
     }
 
     if (batch->ec == Bp_EC_COMPLETE) {
@@ -94,9 +94,9 @@ void* test_sink_worker(void* arg)
 
     // Copy samples
     float* data = (float*) batch->data;
-    size_t n = batch->head - batch->tail;
+    size_t n = batch->head;
     if (sink->captured_samples + n <= sink->max_samples) {
-      memcpy(&sink->captured_data[sink->captured_samples], &data[batch->tail],
+      memcpy(&sink->captured_data[sink->captured_samples], data,
              n * sizeof(float));
       sink->captured_samples += n;
       sink->last_t_ns = batch->t_ns + (n - 1) * batch->period_ns;

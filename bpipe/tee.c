@@ -30,14 +30,12 @@ static void* tee_worker(void* arg)
       }
 
       // Copy metadata
-      output->tail = 0;  // Always start from beginning of output batch
-      output->head = input->head - input->tail;  // Number of samples
+      output->head = input->head;  // Number of samples
 
       // Deep copy data
       size_t data_width = bb_getdatawidth(f->input_buffers[0].dtype);
-      size_t data_size = (input->head - input->tail) * data_width;
-      memcpy(output->data, (char*) input->data + input->tail * data_width,
-             data_size);
+      size_t data_size = input->head * data_width;
+      memcpy(output->data, input->data, data_size);
       output->t_ns = input->t_ns;
       output->period_ns = input->period_ns;
       output->batch_id = input->batch_id;
@@ -53,7 +51,7 @@ static void* tee_worker(void* arg)
 
     // Update metrics
     f->metrics.n_batches++;
-    f->metrics.samples_processed += (input->head - input->tail);
+    f->metrics.samples_processed += input->head;
   }
 
   // Shutdown: wait for all outputs to flush

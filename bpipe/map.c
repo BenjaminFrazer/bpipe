@@ -28,7 +28,7 @@ void* map_worker(void* arg)
   // Main processing loop
   while (atomic_load(&f->base.running)) {
     // Get new input batch if needed
-    if (NEEDS_NEW_BATCH(input)) {
+    if (!input || f->input_consumed >= input->head) {
       if (input && (err = bb_del_tail(&f->base.input_buffers[0])) != Bp_EC_OK)
         break;
 
@@ -42,6 +42,11 @@ void* map_worker(void* arg)
           break;  // Real error, exit
         }
       }
+
+      // Reset consumption tracking for new batch
+      f->input_consumed = 0;
+      f->input_t_ns = input->t_ns;
+      f->input_period_ns = input->period_ns;
     }
 
     // Get new output batch if needed
@@ -54,13 +59,13 @@ void* map_worker(void* arg)
     // Process available data if we have both input and output
     if (!input || !output) continue;  // Wait for both buffers
 
-    size_t n = MIN(input->head - input->tail, batch_size - output->head);
+    size_t n = MIN(input->head - f->input_consumed, batch_size - output->head);
     if (n > 0) {
-      err = f->map_fcn(input->data + input->tail * data_width,
+      err = f->map_fcn(input->data + f->input_consumed * data_width,
                        output->data + output->head * data_width, n);
       if (err != Bp_EC_OK) break;
 
-      input->tail += n;
+      f->input_consumed += n;
       output->head += n;
 
       // Update samples processed metric
@@ -68,8 +73,10 @@ void* map_worker(void* arg)
 
       // Preserve timing information
       if (output->head == n) {  // First samples in this batch
-        output->t_ns = input->t_ns;
-        output->period_ns = input->period_ns;
+        // Calculate timestamp for the first consumed sample
+        output->t_ns =
+            f->input_t_ns + (f->input_consumed - n) * f->input_period_ns;
+        output->period_ns = f->input_period_ns;
       }
     }
 
@@ -196,6 +203,11 @@ Bp_EC map_init(Map_filt_t* f, Map_config_t config)
     return Bp_EC_INVALID_CONFIG;
   }
   f->map_fcn = config.map_fcn;
+
+  // Initialize partial consumption tracking
+  f->input_consumed = 0;
+  f->input_t_ns = 0;
+  f->input_period_ns = 0;
 
   // Override specific operations with map-specific implementations
   f->base.ops.flush = map_flush;

@@ -10,7 +10,7 @@
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 
 /* Batch processing utilities */
-#define NEEDS_NEW_BATCH(batch) (!batch || batch->tail >= batch->head)
+#define NEEDS_NEW_BATCH(batch) (!batch || batch->head == 0)
 #define BATCH_FULL(batch, size) (batch->head >= size)
 
 /* Worker thread assertion macro for error handling

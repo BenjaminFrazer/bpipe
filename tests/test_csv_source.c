@@ -193,7 +193,7 @@ void test_csv_source_regular_data(void)
   TEST_ASSERT_NOT_NULL(batch);
 
   // Check batch metadata
-  TEST_ASSERT_EQUAL(4, batch->head - batch->tail);  // Number of samples
+  TEST_ASSERT_EQUAL(4, batch->head);  // Number of samples
   TEST_ASSERT_EQUAL(1000000, batch->t_ns);
   TEST_ASSERT_EQUAL(1000000, batch->period_ns);  // 1ms period
 
@@ -256,8 +256,8 @@ void test_csv_source_irregular_data(void)
     TEST_ASSERT_NOT_NULL(batch);
 
     // Each batch should have exactly 1 sample
-    TEST_ASSERT_EQUAL(1, batch->head - batch->tail);  // Number of samples
-    TEST_ASSERT_EQUAL(0, batch->period_ns);           // Irregular data
+    TEST_ASSERT_EQUAL(1, batch->head);       // Number of samples
+    TEST_ASSERT_EQUAL(0, batch->period_ns);  // Irregular data
 
     bb_del_tail(sink);
   }
@@ -310,7 +310,7 @@ void test_csv_source_timing_gap(void)
   Batch_t* batch1 = bb_get_tail(sink, 1000000, &read_err);
   TEST_ASSERT_EQUAL(Bp_EC_OK, read_err);
   TEST_ASSERT_NOT_NULL(batch1);
-  TEST_ASSERT_EQUAL(3, batch1->head - batch1->tail);  // Number of samples
+  TEST_ASSERT_EQUAL(3, batch1->head);  // Number of samples
   TEST_ASSERT_EQUAL(1000000, batch1->t_ns);
   TEST_ASSERT_EQUAL(1000000, batch1->period_ns);
   bb_del_tail(sink);
@@ -489,8 +489,7 @@ void test_csv_source_multi_channel(void)
     batches[i] = bb_get_tail(sinks[i], 1000000, &read_err);
     TEST_ASSERT_EQUAL(Bp_EC_OK, read_err);
     TEST_ASSERT_NOT_NULL(batches[i]);
-    TEST_ASSERT_EQUAL(
-        2, batches[i]->head - batches[i]->tail);     // Number of samples
+    TEST_ASSERT_EQUAL(2, batches[i]->head);          // Number of samples
     TEST_ASSERT_EQUAL(1000, batches[i]->period_ns);  // Regular timing detected
   }
 
