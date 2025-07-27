@@ -423,7 +423,6 @@ void* matched_passthroug(void* arg)
     BP_WORKER_ASSERT(f, err == Bp_EC_OK, err);
 
     f->metrics.n_batches++;
-    input = bb_get_tail(&f->input_buffers[0], f->timeout_us, &err);
   }
   return NULL;
 }

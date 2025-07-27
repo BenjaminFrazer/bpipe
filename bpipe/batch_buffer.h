@@ -80,6 +80,22 @@ typedef struct _Batch {
   Bp_EC ec;
   void *meta;
   // SampleDtype_t dtype;
+
+  /* TECHNICAL DEBT: The 'data' field is declared as char* but is cast to
+   * float*, int32_t*, uint32_t* etc. throughout the codebase. This violates
+   * C strict aliasing rules and could cause undefined behavior with aggressive
+   * compiler optimizations.
+   *
+   * Future refactoring should consider:
+   * - Using void* instead of char*
+   * - Using a union of all supported types
+   * - Using proper type-punning through memcpy
+   *
+   * Current approach works because:
+   * - Memory is properly aligned by batch buffer allocation
+   * - We compile without strict aliasing optimizations
+   * - Pattern is consistent throughout codebase
+   */
   char *data;
 } Batch_t;
 
