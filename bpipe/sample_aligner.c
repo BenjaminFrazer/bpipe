@@ -30,9 +30,8 @@ static size_t get_history_size_for_method(InterpolationMethod_e method)
 {
   switch (method) {
     case INTERP_NEAREST:
-      return 2;  // Current and next sample
     case INTERP_LINEAR:
-      return 2;  // For linear interpolation between two points
+      return 2;  // Both methods need 2 points
     case INTERP_CUBIC:
       return 4;  // 4 points for cubic interpolation
     case INTERP_SINC:

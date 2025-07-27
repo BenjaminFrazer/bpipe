@@ -36,11 +36,9 @@ void* map_worker(void* arg)
       if (!input) {
         if (err == Bp_EC_TIMEOUT) {
           continue;  // Normal timeout, keep waiting for data
-        } else if (err == Bp_EC_STOPPED) {
-          break;  // Buffer was stopped, exit gracefully
-        } else {
-          break;  // Real error, exit
         }
+        // STOPPED or other error - exit
+        break;
       }
 
       // Reset consumption tracking for new batch

@@ -54,11 +54,8 @@ Bp_EC bb_await_notfull(Batch_buff_t *buff, long long timeout_us)
     } else {
       int ret =
           pthread_cond_timedwait(&buff->not_full, &buff->mutex, &abs_timeout);
-      if (ret == ETIMEDOUT) {
-        ec = Bp_EC_TIMEOUT;
-        break;
-      } else if (ret != 0) {
-        /* Some other error occurred - treat as timeout for safety */
+      if (ret != 0) {
+        /* ETIMEDOUT or other error - treat as timeout for safety */
         ec = Bp_EC_TIMEOUT;
         break;
       }

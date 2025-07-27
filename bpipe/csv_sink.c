@@ -1,4 +1,4 @@
-#define _GNU_SOURCE  // For strdup
+#define _GNU_SOURCE  // For strdup // NOLINT(bugprone-reserved-identifier)
 #include "csv_sink.h"
 #include <errno.h>
 #include <stdlib.h>
@@ -180,9 +180,9 @@ static Bp_EC open_output_file(CSVSink_t* sink)
     // Provide specific error message based on errno
     if (errno == EACCES) {
       return Bp_EC_PERMISSION_DENIED;
-    } else if (errno == ENOSPC) {
+    } else if (errno == ENOSPC) {  // NOLINT(bugprone-branch-clone)
       return Bp_EC_DISK_FULL;
-    } else if (errno == ENOENT) {
+    } else if (errno == ENOENT) {  // NOLINT(bugprone-branch-clone)
       return Bp_EC_FILE_NOT_FOUND;
     }
     return Bp_EC_FILE_ERROR;

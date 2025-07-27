@@ -1,4 +1,4 @@
-#define _GNU_SOURCE  // For strdup
+#define _GNU_SOURCE  // For strdup // NOLINT(bugprone-reserved-identifier)
 #include "csv_source.h"
 #include <assert.h>
 #include <errno.h>
@@ -79,7 +79,7 @@ Bp_EC csvsource_init(CsvSource_t* self, CsvSource_config_t config)
     free(self->file_path);
     if (errno == ENOENT) {
       return Bp_EC_FILE_NOT_FOUND;
-    } else if (errno == EACCES) {
+    } else if (errno == EACCES) {  // NOLINT(bugprone-branch-clone)
       return Bp_EC_PERMISSION_DENIED;
     }
     return Bp_EC_IO_ERROR;
@@ -255,7 +255,8 @@ static Bp_EC parse_line(CsvSource_t* self, char* line, uint64_t* timestamp,
 
   // When n_data_columns == 0, values is NULL but loop doesn't execute
   for (size_t i = 0; i < self->n_data_columns; i++) {
-    values[i] = self->parse_buffer[self->data_column_indices[i]];  // NOLINT(clang-analyzer-core.NullDereference) - false positive: loop guard ensures values is non-NULL
+    // NOLINTNEXTLINE(clang-analyzer-core.NullDereference)
+    values[i] = self->parse_buffer[self->data_column_indices[i]];
   }
 
   free(line_copy);
@@ -340,8 +341,9 @@ static Bp_EC submit_and_get_new_batches(CsvSource_t* self, BatchState* state)
 static void write_sample_to_batches(CsvSource_t* self, BatchState* state,
                                     uint64_t timestamp, const double* values)
 {
-  // NOLINTNEXTLINE(clang-analyzer-core.NullDereference) - false positive: bb_get_head() returns pointer to pre-allocated buffer
-  size_t idx = state->batches[0]->head;
+  // bb_get_head() returns pointer to pre-allocated buffer
+  size_t idx =
+      state->batches[0]->head;  // NOLINT(clang-analyzer-core.NullDereference)
 
   // First sample in batch sets the start time
   if (idx == 0) {
@@ -359,16 +361,16 @@ static void write_sample_to_batches(CsvSource_t* self, BatchState* state,
 
     switch (self->base.sinks[col]->dtype) {
       case DTYPE_FLOAT:
-        // NOLINTNEXTLINE(clang-analyzer-core.NullDereference) - false positive: batch->data and values are validated
-        ((float*) batch->data)[idx] = (float) values[col];
+        ((float*) batch->data)[idx] =
+            (float) values[col];  // NOLINT(clang-analyzer-core.NullDereference)
         break;
       case DTYPE_I32:
-        // NOLINTNEXTLINE(clang-analyzer-core.NullDereference) - false positive: batch->data and values are validated
-        ((int32_t*) batch->data)[idx] = (int32_t) values[col];
+        ((int32_t*) batch->data)[idx] = (int32_t)
+            values[col];  // NOLINT(clang-analyzer-core.NullDereference)
         break;
       case DTYPE_U32:
-        // NOLINTNEXTLINE(clang-analyzer-core.NullDereference) - false positive: batch->data and values are validated
-        ((uint32_t*) batch->data)[idx] = (uint32_t) values[col];
+        ((uint32_t*) batch->data)[idx] = (uint32_t)
+            values[col];  // NOLINT(clang-analyzer-core.NullDereference)
         break;
       default:
         break;
@@ -447,7 +449,7 @@ static void* csvsource_worker(void* arg)
     }
 
     // Check if we need new batches before writing this sample
-    // NOLINTNEXTLINE(clang-analyzer-core.CallAndMessage) - false positive: timestamp is initialized by parse_line() on success path
+    // NOLINTNEXTLINE(clang-analyzer-core.CallAndMessage)
     if (need_new_batches(self, &state, timestamp)) {
       Bp_EC submit_err = submit_and_get_new_batches(self, &state);
       if (submit_err != Bp_EC_OK) {

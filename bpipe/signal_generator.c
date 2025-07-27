@@ -1,4 +1,4 @@
-#define _GNU_SOURCE  // For usleep
+#define _GNU_SOURCE  // For usleep // NOLINT(bugprone-reserved-identifier)
 #include "signal_generator.h"
 #include <math.h>
 #include <stdatomic.h>

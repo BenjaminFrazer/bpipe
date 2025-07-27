@@ -1,4 +1,4 @@
-#define _GNU_SOURCE  // For strdup
+#define _GNU_SOURCE  // For strdup // NOLINT(bugprone-reserved-identifier)
 #include "debug_output_filter.h"
 #include <pthread.h>
 #include <stdatomic.h>

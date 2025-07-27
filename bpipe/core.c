@@ -4,7 +4,7 @@
 #include "batch_buffer.h"
 #include "batch_matcher.h"
 #include "bperr.h"
-#define _GNU_SOURCE /* See feature_test_macros(7) */
+#define _GNU_SOURCE /* See feature_test_macros(7) */  // NOLINT(bugprone-reserved-identifier)
 #include <pthread.h>
 
 /* Forward declarations */
