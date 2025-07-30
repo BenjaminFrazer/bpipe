@@ -49,6 +49,7 @@ typedef enum _CORE_FILT_T {
                             ops */
   FILT_T_SAMPLE_ALIGNER, /* Corrects phase offset in regular data to align to
                             sample grid */
+  FILT_T_PIPELINE,       /* Container for filter DAGs */
   FILT_T_MAX,            /* Overflow guard. */
 } CORE_FILT_T;
 
