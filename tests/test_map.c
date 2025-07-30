@@ -169,7 +169,7 @@ void test_single_threaded_linear_ramp(void)
   // Main test loop - multiple batches across ring buffer
   for (int i = 0; i < (RING_CAPACITY * 2); i++) {
     // Get input batch and populate with incrementing data
-    Batch_t* input_batch = bb_get_head(&filter.base.input_buffers[0]);
+    Batch_t* input_batch = bb_get_head(filter.base.input_buffers[0]);
     TEST_ASSERT_NOT_NULL(input_batch);
 
     // Fill batch with incrementing float values
@@ -182,7 +182,7 @@ void test_single_threaded_linear_ramp(void)
     input_batch->period_ns = 1000;
 
     // Submit input batch
-    CHECK_ERR(bb_submit(&filter.base.input_buffers[0], 10000));
+    CHECK_ERR(bb_submit(filter.base.input_buffers[0], 10000));
 
     // Try to get any available output batches (non-blocking check first)
     Batch_t* output_batch;
@@ -246,7 +246,7 @@ void test_multi_stage_single_threaded(void)
 
   // Connect filters: filter1 -> filter2 -> output
   CHECK_ERR(
-      filt_sink_connect(&filter1.base, 0, &filter2.base.input_buffers[0]));
+      filt_sink_connect(&filter1.base, 0, filter2.base.input_buffers[0]));
   CHECK_ERR(filt_sink_connect(&filter2.base, 0, &output_buffer));
 
   // Start all components
@@ -262,7 +262,7 @@ void test_multi_stage_single_threaded(void)
   // Main test loop - test cascade with multiple batches
   for (int i = 0; i < (RING_CAPACITY * 2); i++) {
     // Get input batch and populate
-    Batch_t* input_batch = bb_get_head(&filter1.base.input_buffers[0]);
+    Batch_t* input_batch = bb_get_head(filter1.base.input_buffers[0]);
     TEST_ASSERT_NOT_NULL(input_batch);
 
     // Fill batch with incrementing values
@@ -275,7 +275,7 @@ void test_multi_stage_single_threaded(void)
     input_batch->period_ns = 1000;
 
     // Submit to first filter
-    CHECK_ERR(bb_submit(&filter1.base.input_buffers[0], 10000));
+    CHECK_ERR(bb_submit(filter1.base.input_buffers[0], 10000));
 
     // Try to get any available output batches (non-blocking)
     Batch_t* output_batch;
@@ -401,7 +401,7 @@ void test_multi_threaded_slow_consumer(void)
 
   // Connect cascade
   CHECK_ERR(filt_sink_connect(&scale_filter.base, 0,
-                              &offset_filter.base.input_buffers[0]));
+                              offset_filter.base.input_buffers[0]));
   CHECK_ERR(filt_sink_connect(&offset_filter.base, 0, &output_buffer));
 
   // Start all components
@@ -412,7 +412,7 @@ void test_multi_threaded_slow_consumer(void)
   // Setup producer thread
   volatile bool should_stop = false;
   producer_context_t producer_ctx = {
-      .target_buffer = &scale_filter.base.input_buffers[0],
+      .target_buffer = scale_filter.base.input_buffers[0],
       .n_batches_to_produce = 5,  // Reduced for faster test
       .batch_size = 1 << SMALL_BATCH_CAPACITY_EXPO,
       .should_stop = &should_stop,
@@ -504,7 +504,7 @@ void test_map_error_handling(void)
   CHECK_ERR(filt_start(&filter.base));
 
   // Submit data that will trigger error
-  Batch_t* input_batch = bb_get_head(&filter.base.input_buffers[0]);
+  Batch_t* input_batch = bb_get_head(filter.base.input_buffers[0]);
   TEST_ASSERT_NOT_NULL(input_batch);
 
   // Fill batch with data
@@ -513,7 +513,7 @@ void test_map_error_handling(void)
   }
   input_batch->head = BATCH_CAPACITY;
 
-  CHECK_ERR(bb_submit(&filter.base.input_buffers[0], 10000));
+  CHECK_ERR(bb_submit(filter.base.input_buffers[0], 10000));
 
   // Wait for processing - should encounter error
   nanosleep(&ts_10ms, NULL);
@@ -547,7 +547,7 @@ void test_scale_transform(void)
   CHECK_ERR(filt_start(&filter.base));
 
   // Submit test data
-  Batch_t* input_batch = bb_get_head(&filter.base.input_buffers[0]);
+  Batch_t* input_batch = bb_get_head(filter.base.input_buffers[0]);
   TEST_ASSERT_NOT_NULL(input_batch);
 
   // Fill with test values
@@ -556,7 +556,7 @@ void test_scale_transform(void)
   }
   input_batch->head = BATCH_CAPACITY;
 
-  CHECK_ERR(bb_submit(&filter.base.input_buffers[0], 10000));
+  CHECK_ERR(bb_submit(filter.base.input_buffers[0], 10000));
   nanosleep(&ts_10ms, NULL);
 
   // Get output
@@ -600,7 +600,7 @@ void test_chained_transforms(void)
 
   // Connect: scale -> offset -> output
   CHECK_ERR(filt_sink_connect(&scale_filter.base, 0,
-                              &offset_filter.base.input_buffers[0]));
+                              offset_filter.base.input_buffers[0]));
   CHECK_ERR(filt_sink_connect(&offset_filter.base, 0, &output_buffer));
 
   CHECK_ERR(filt_start(&scale_filter.base));
@@ -608,7 +608,7 @@ void test_chained_transforms(void)
   CHECK_ERR(bb_start(&output_buffer));
 
   // Submit test data
-  Batch_t* input_batch = bb_get_head(&scale_filter.base.input_buffers[0]);
+  Batch_t* input_batch = bb_get_head(scale_filter.base.input_buffers[0]);
   TEST_ASSERT_NOT_NULL(input_batch);
 
   for (int i = 0; i < BATCH_CAPACITY; i++) {
@@ -616,7 +616,7 @@ void test_chained_transforms(void)
   }
   input_batch->head = BATCH_CAPACITY;
 
-  CHECK_ERR(bb_submit(&scale_filter.base.input_buffers[0], 10000));
+  CHECK_ERR(bb_submit(scale_filter.base.input_buffers[0], 10000));
   nanosleep(&ts_10ms, NULL);
 
   // Get output
@@ -670,7 +670,7 @@ void test_buffer_wraparound(void)
 
   // Submit exactly enough batches to wrap the ring buffer once
   for (size_t batch = 0; batch < small_ring_size + 2; batch++) {
-    Batch_t* input_batch = bb_get_head(&filter.base.input_buffers[0]);
+    Batch_t* input_batch = bb_get_head(filter.base.input_buffers[0]);
     TEST_ASSERT_NOT_NULL(input_batch);
 
     // Fill with known pattern
@@ -679,7 +679,7 @@ void test_buffer_wraparound(void)
     }
     input_batch->head = small_batch_size;
 
-    CHECK_ERR(bb_submit(&filter.base.input_buffers[0], 10000));
+    CHECK_ERR(bb_submit(filter.base.input_buffers[0], 10000));
 
     // Give filter time to process
     nanosleep(&ts_10ms, NULL);
@@ -823,7 +823,7 @@ void test_large_to_small_batch_cascade(void)
 
   // Submit test data - 3 large batches = 768 samples
   uint32_t counter = 0;
-  fill_sequential_batches(&filter.base.input_buffers[0], &counter, 3, 256);
+  fill_sequential_batches(filter.base.input_buffers[0], &counter, 3, 256);
 
   // Wait for processing
   nanosleep(&ts_10ms, NULL);
@@ -885,7 +885,7 @@ void test_small_to_large_batch_cascade(void)
 
   // Submit 8 small batches = 512 samples (should fill 2 large batches)
   uint32_t counter = 0;
-  fill_sequential_batches(&filter.base.input_buffers[0], &counter, 8, 64);
+  fill_sequential_batches(filter.base.input_buffers[0], &counter, 8, 64);
 
   // Wait for processing
   nanosleep(&ts_10ms, NULL);
@@ -938,7 +938,7 @@ void test_mismatched_ring_capacity(void)
 
   // Connect cascade
   CHECK_ERR(
-      filt_sink_connect(&filter1.base, 0, &filter2.base.input_buffers[0]));
+      filt_sink_connect(&filter1.base, 0, filter2.base.input_buffers[0]));
   CHECK_ERR(filt_sink_connect(&filter2.base, 0, &output));
 
   CHECK_ERR(filt_start(&filter1.base));
@@ -950,7 +950,7 @@ void test_mismatched_ring_capacity(void)
   printf("Submitting burst of 10 batches to small ring buffer (capacity 7)\n");
 
   for (int i = 0; i < 10; i++) {
-    Batch_t* batch = bb_get_head(&filter1.base.input_buffers[0]);
+    Batch_t* batch = bb_get_head(filter1.base.input_buffers[0]);
     if (!batch) {
       printf("Buffer full at batch %d\n", i);
       break;
@@ -962,7 +962,7 @@ void test_mismatched_ring_capacity(void)
     }
     batch->head = 128;
 
-    CHECK_ERR(bb_submit(&filter1.base.input_buffers[0], 10000));
+    CHECK_ERR(bb_submit(filter1.base.input_buffers[0], 10000));
   }
 
   // Consume output slowly to test buffering

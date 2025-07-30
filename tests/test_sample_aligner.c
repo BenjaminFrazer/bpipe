@@ -174,9 +174,9 @@ void test_basic_phase_correction(void)
 
   // Connect pipeline: source -> aligner -> sink
   CHECK_ERR(filt_sink_connect(&fixture.source, 0,
-                              &fixture.aligner.base.input_buffers[0]));
+                              fixture.aligner.base.input_buffers[0]));
   CHECK_ERR(filt_sink_connect(&fixture.aligner.base, 0,
-                              &fixture.sink.input_buffers[0]));
+                              fixture.sink.input_buffers[0]));
 
   // Start filters
   fixture.source_running = true;
@@ -190,12 +190,12 @@ void test_basic_phase_correction(void)
 
   // Check output has aligned timestamps
   Bp_EC err;
-  Batch_t* output = bb_get_tail(&fixture.sink.input_buffers[0], 1000000, &err);
+  Batch_t* output = bb_get_tail(fixture.sink.input_buffers[0], 1000000, &err);
   if (err == Bp_EC_OK && output != NULL) {
     // Verify alignment: t_ns % period_ns == 0
     TEST_ASSERT_EQUAL(0, output->t_ns % output->period_ns);
     TEST_ASSERT_EQUAL(fixture.test_period_ns, output->period_ns);
-    bb_del_tail(&fixture.sink.input_buffers[0]);
+    bb_del_tail(fixture.sink.input_buffers[0]);
   }
 
   // Check statistics
@@ -228,7 +228,7 @@ void test_various_phase_offsets(void)
     CHECK_ERR(sample_aligner_init(&fixture.aligner, config));
 
     // Manually push a batch with phase offset
-    Batch_buff_t* input_buf = &fixture.aligner.base.input_buffers[0];
+    Batch_buff_t* input_buf = fixture.aligner.base.input_buffers[0];
     CHECK_ERR(bb_start(input_buf));
 
     Batch_t* batch = bb_get_head(input_buf);
@@ -264,7 +264,7 @@ void test_various_phase_offsets(void)
         .worker = matched_passthroug};
     CHECK_ERR(filt_init(&fixture.sink, sink_config));
     CHECK_ERR(filt_sink_connect(&fixture.aligner.base, 0,
-                                &fixture.sink.input_buffers[0]));
+                                fixture.sink.input_buffers[0]));
 
     // Start aligner
     CHECK_ERR(filt_start(&fixture.aligner.base));
@@ -321,14 +321,14 @@ void test_alignment_strategies(void)
         .worker = matched_passthroug};
     CHECK_ERR(filt_init(&fixture.sink, sink_config));
     CHECK_ERR(filt_sink_connect(&fixture.aligner.base, 0,
-                                &fixture.sink.input_buffers[0]));
+                                fixture.sink.input_buffers[0]));
 
     // Start filters
     CHECK_ERR(filt_start(&fixture.aligner.base));
     CHECK_ERR(filt_start(&fixture.sink));
 
     // Push test batch
-    Batch_buff_t* input_buf = &fixture.aligner.base.input_buffers[0];
+    Batch_buff_t* input_buf = fixture.aligner.base.input_buffers[0];
     Batch_t* batch = bb_get_head(input_buf);
     if (batch == NULL) {
       TEST_FAIL_MESSAGE("bb_get_head returned NULL");
@@ -412,7 +412,7 @@ void test_with_batch_matcher(void)
 
   // Connect source -> aligner
   CHECK_ERR(filt_sink_connect(&fixture.source, 0,
-                              &fixture.aligner.base.input_buffers[0]));
+                              fixture.aligner.base.input_buffers[0]));
 
   // Create a sink for the aligner output
   Core_filt_config_t sink_config = {
@@ -429,7 +429,7 @@ void test_with_batch_matcher(void)
       .worker = matched_passthroug};
   CHECK_ERR(filt_init(&fixture.sink, sink_config));
   CHECK_ERR(filt_sink_connect(&fixture.aligner.base, 0,
-                              &fixture.sink.input_buffers[0]));
+                              fixture.sink.input_buffers[0]));
 
   // Start filters
   fixture.source_running = true;

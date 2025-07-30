@@ -207,28 +207,28 @@ int main(int argc, char* argv[])
     printf("Connecting pipeline...\n");
     
     // CSV source output 0 (first/only data column) -> Debug1 input
-    err = filt_sink_connect(&csv_source.base, 0, &debug1.base.input_buffers[0]);
+    err = filt_sink_connect(&csv_source.base, 0, debug1.base.input_buffers[0]);
     if (err != Bp_EC_OK) {
         printf("Failed to connect CSV source to debug1: %d\n", err);
         goto cleanup;
     }
     
     // Debug1 output -> Map input
-    err = filt_sink_connect(&debug1.base, 0, &scaler.base.input_buffers[0]);
+    err = filt_sink_connect(&debug1.base, 0, scaler.base.input_buffers[0]);
     if (err != Bp_EC_OK) {
         printf("Failed to connect debug1 to map: %d\n", err);
         goto cleanup;
     }
     
     // Map output -> Debug2 input
-    err = filt_sink_connect(&scaler.base, 0, &debug2.base.input_buffers[0]);
+    err = filt_sink_connect(&scaler.base, 0, debug2.base.input_buffers[0]);
     if (err != Bp_EC_OK) {
         printf("Failed to connect map to debug2: %d\n", err);
         goto cleanup;
     }
     
     // Debug2 output -> CSV sink input
-    err = filt_sink_connect(&debug2.base, 0, &csv_sink.base.input_buffers[0]);
+    err = filt_sink_connect(&debug2.base, 0, csv_sink.base.input_buffers[0]);
     if (err != Bp_EC_OK) {
         printf("Failed to connect debug2 to CSV sink: %d\n", err);
         goto cleanup;

@@ -70,7 +70,7 @@ void* test_sink_worker(void* arg)
   long long ts_next = 0;
   while (atomic_load(&sink->base.running)) {
     Batch_t* batch =
-        bb_get_tail(&sink->base.input_buffers[0], sink->base.timeout_us, &err);
+        bb_get_tail(sink->base.input_buffers[0], sink->base.timeout_us, &err);
     if (!batch) {
       if (err == Bp_EC_TIMEOUT) continue;
       if (err == Bp_EC_STOPPED) break;
@@ -82,7 +82,7 @@ void* test_sink_worker(void* arg)
     }
 
     if (batch->ec == Bp_EC_COMPLETE) {
-      bb_del_tail(&sink->base.input_buffers[0]);
+      bb_del_tail(sink->base.input_buffers[0]);
       break;
     }
 
@@ -102,7 +102,7 @@ void* test_sink_worker(void* arg)
       sink->last_t_ns = batch->t_ns + (n - 1) * batch->period_ns;
     }
 
-    bb_del_tail(&sink->base.input_buffers[0]);
+    bb_del_tail(sink->base.input_buffers[0]);
   }
 
   return NULL;
@@ -266,7 +266,7 @@ void test_sine_wave_generation(void)
   CHECK_ERR(test_sink_init(&sink, "test_sink", 4800));
 
   // Connect generator to sink
-  CHECK_ERR(filt_sink_connect(&sg.base, 0, &sink.base.input_buffers[0]));
+  CHECK_ERR(filt_sink_connect(&sg.base, 0, sink.base.input_buffers[0]));
 
   // Start processing
   CHECK_ERR(filt_start(&sg.base));
@@ -331,7 +331,7 @@ void test_square_wave_generation(void)
 
   CHECK_ERR(signal_generator_init(&sg, config));
   CHECK_ERR(test_sink_init(&sink, "test_sink", 1000));
-  CHECK_ERR(filt_sink_connect(&sg.base, 0, &sink.base.input_buffers[0]));
+  CHECK_ERR(filt_sink_connect(&sg.base, 0, sink.base.input_buffers[0]));
 
   CHECK_ERR(filt_start(&sg.base));
   CHECK_ERR(filt_start(&sink.base));
@@ -403,7 +403,7 @@ void test_phase_continuity(void)
 
   CHECK_ERR(signal_generator_init(&sg, config));
   CHECK_ERR(test_sink_init(&sink, "test_sink", 128));
-  CHECK_ERR(filt_sink_connect(&sg.base, 0, &sink.base.input_buffers[0]));
+  CHECK_ERR(filt_sink_connect(&sg.base, 0, sink.base.input_buffers[0]));
 
   CHECK_ERR(filt_start(&sg.base));
   CHECK_ERR(filt_start(&sink.base));
@@ -493,7 +493,7 @@ void test_nyquist_validation(void)
   // Create sink but don't expect data
   TestSink_t sink;
   CHECK_ERR(test_sink_init(&sink, "test_sink", 100));
-  CHECK_ERR(filt_sink_connect(&sg.base, 0, &sink.base.input_buffers[0]));
+  CHECK_ERR(filt_sink_connect(&sg.base, 0, sink.base.input_buffers[0]));
 
   // Start should succeed but worker should detect error
   CHECK_ERR(filt_start(&sg.base));
@@ -554,7 +554,7 @@ void test_all_waveforms(void)
 
     CHECK_ERR(signal_generator_init(&sg, config));
     CHECK_ERR(test_sink_init(&sink, "test_sink", 400));
-    CHECK_ERR(filt_sink_connect(&sg.base, 0, &sink.base.input_buffers[0]));
+    CHECK_ERR(filt_sink_connect(&sg.base, 0, sink.base.input_buffers[0]));
 
     CHECK_ERR(filt_start(&sg.base));
     CHECK_ERR(filt_start(&sink.base));

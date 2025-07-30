@@ -11,7 +11,7 @@ static void* simple_map_worker(void* arg)
     Bp_EC err;
     
     while (f->base.running) {
-        input = bb_get_tail(&f->base.input_buffers[0], f->base.timeout_us, &err);
+        input = bb_get_tail(f->base.input_buffers[0], f->base.timeout_us, &err);
         if (!input || err != Bp_EC_OK) break;
         
         output = bb_get_head(f->base.sinks[0]);
@@ -38,7 +38,7 @@ static void* simple_map_worker(void* arg)
         
         /* Delete input if consumed */
         if (input->tail >= input->head) {
-            bb_del_tail(&f->base.input_buffers[0]);
+            bb_del_tail(f->base.input_buffers[0]);
         }
     }
     
@@ -102,7 +102,7 @@ static void* stateful_map_worker(void* arg)
     }
     
     while (f->base.running) {
-        input = bb_get_tail(&f->base.input_buffers[0], f->base.timeout_us, &err);
+        input = bb_get_tail(f->base.input_buffers[0], f->base.timeout_us, &err);
         if (!input || err != Bp_EC_OK) break;
         
         output = bb_get_head(f->base.sinks[0]);
@@ -127,7 +127,7 @@ static void* stateful_map_worker(void* arg)
             bb_submit(f->base.sinks[0], f->base.timeout_us);
         }
         if (input->tail >= input->head) {
-            bb_del_tail(&f->base.input_buffers[0]);
+            bb_del_tail(f->base.input_buffers[0]);
         }
     }
     
@@ -209,7 +209,7 @@ static void* mimo_sync_worker(void* arg)
         
         /* Check all inputs */
         for (int i = 0; i < f->base.n_input_buffers; i++) {
-            inputs[i] = bb_get_tail(&f->base.input_buffers[i], 0, &err);
+            inputs[i] = bb_get_tail(f->base.input_buffers[i], 0, &err);
             if (inputs[i] && err == Bp_EC_OK) {
                 f->input_state[i].has_data = true;
                 f->input_state[i].last_timestamp = inputs[i]->t_ns;
@@ -244,7 +244,7 @@ static void* mimo_sync_worker(void* arg)
         /* Submit outputs and consume inputs */
         for (int i = 0; i < f->base.n_input_buffers; i++) {
             if (f->input_state[i].has_data) {
-                bb_del_tail(&f->base.input_buffers[i]);
+                bb_del_tail(f->base.input_buffers[i]);
             }
         }
         
@@ -274,7 +274,7 @@ static void* tee_worker(void* arg)
     Bp_EC err;
     
     while (f->base.running) {
-        input = bb_get_tail(&f->base.input_buffers[0], f->base.timeout_us, &err);
+        input = bb_get_tail(f->base.input_buffers[0], f->base.timeout_us, &err);
         if (!input || err != Bp_EC_OK) break;
         
         switch (f->mode) {
@@ -330,7 +330,7 @@ static void* tee_worker(void* arg)
                 break;
         }
         
-        bb_del_tail(&f->base.input_buffers[0]);
+        bb_del_tail(f->base.input_buffers[0]);
     }
     
     return NULL;

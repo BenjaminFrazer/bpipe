@@ -9,7 +9,7 @@ static void* tee_worker(void* arg)
   while (f->running) {
     // Get input batch
     Bp_EC err;
-    Batch_t* input = bb_get_tail(&f->input_buffers[0], f->timeout_us, &err);
+    Batch_t* input = bb_get_tail(f->input_buffers[0], f->timeout_us, &err);
     if (!input) {
       if (err == Bp_EC_TIMEOUT) continue;
       // Handle completion or error
@@ -33,7 +33,7 @@ static void* tee_worker(void* arg)
       output->head = input->head;  // Number of samples
 
       // Deep copy data
-      size_t data_width = bb_getdatawidth(f->input_buffers[0].dtype);
+      size_t data_width = bb_getdatawidth(f->input_buffers[0]->dtype);
       size_t data_size = input->head * data_width;
       memcpy(output->data, input->data, data_size);
       output->t_ns = input->t_ns;
@@ -47,7 +47,7 @@ static void* tee_worker(void* arg)
     }
 
     // Remove input batch after distribution
-    bb_del_tail(&f->input_buffers[0]);
+    bb_del_tail(f->input_buffers[0]);
 
     // Update metrics
     f->metrics.n_batches++;

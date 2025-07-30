@@ -14,15 +14,15 @@ void* map_worker(void* arg)
 
   // Validate all configuration at once
   if (!f->base.sinks[0] || !f->map_fcn ||
-      f->base.input_buffers[0].dtype != f->base.sinks[0]->dtype ||
-      f->base.input_buffers[0].dtype == DTYPE_NDEF ||
-      f->base.input_buffers[0].dtype >= DTYPE_MAX) {
+      f->base.input_buffers[0]->dtype != f->base.sinks[0]->dtype ||
+      f->base.input_buffers[0]->dtype == DTYPE_NDEF ||
+      f->base.input_buffers[0]->dtype >= DTYPE_MAX) {
     f->base.worker_err_info.ec = Bp_EC_INVALID_CONFIG;
     return NULL;
   }
 
   // Cache frequently used values
-  const size_t data_width = bb_getdatawidth(f->base.input_buffers[0].dtype);
+  const size_t data_width = bb_getdatawidth(f->base.input_buffers[0]->dtype);
   const size_t batch_size = bb_batch_size(f->base.sinks[0]);
 
   // Main processing loop
@@ -30,11 +30,11 @@ void* map_worker(void* arg)
     // Get new input batch if needed
     if (!input || f->input_consumed >= input->head) {
       if (input) {
-        err = bb_del_tail(&f->base.input_buffers[0]);
+        err = bb_del_tail(f->base.input_buffers[0]);
         if (err != Bp_EC_OK) break;
       }
 
-      input = bb_get_tail(&f->base.input_buffers[0], f->base.timeout_us, &err);
+      input = bb_get_tail(f->base.input_buffers[0], f->base.timeout_us, &err);
       if (!input) {
         if (err == Bp_EC_TIMEOUT) {
           continue;  // Normal timeout, keep waiting for data
@@ -130,7 +130,7 @@ static Bp_EC map_describe(Filter_t* self, char* buffer, size_t buffer_size)
            "  Map function: %p\n"
            "  Running: %s\n"
            "  Batches processed: %zu",
-           self->name, self->input_buffers[0].dtype, (void*) map->map_fcn,
+           self->name, self->input_buffers[0]->dtype, (void*) map->map_fcn,
            self->running ? "true" : "false", self->metrics.n_batches);
 
   return Bp_EC_OK;
@@ -168,7 +168,7 @@ static Bp_EC map_dump_state(Filter_t* self, char* buffer, size_t buffer_size)
            "  Data width: %zu bytes\n"
            "  Timeout: %lu us",
            self->name, self->filt_type, self->running ? "true" : "false",
-           self->metrics.n_batches, bb_occupancy(&self->input_buffers[0]),
+           self->metrics.n_batches, bb_occupancy(self->input_buffers[0]),
            self->sinks[0] ? bb_occupancy(self->sinks[0]) : 0,
            (void*) map->map_fcn, self->data_width, self->timeout_us);
 

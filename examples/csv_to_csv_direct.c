@@ -86,7 +86,7 @@ int main(int argc, char* argv[])
     }
     
     // Connect directly
-    err = filt_sink_connect(&csv_source.base, 0, &csv_sink.base.input_buffers[0]);
+    err = filt_sink_connect(&csv_source.base, 0, csv_sink.base.input_buffers[0]);
     if (err != Bp_EC_OK) {
         printf("Failed to connect: %d\n", err);
         goto cleanup;

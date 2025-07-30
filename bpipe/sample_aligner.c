@@ -56,7 +56,7 @@ static Bp_EC sample_aligner_start(Filter_t* self)
   }
 
   // Check if input data type supports interpolation
-  SampleDtype_t input_dtype = self->input_buffers[0].dtype;
+  SampleDtype_t input_dtype = self->input_buffers[0]->dtype;
   if (!dtype_supports_interpolation(input_dtype)) {
     self->worker_err_info.ec = Bp_EC_TYPE_ERROR;
     self->worker_err_info.err_msg = "SampleAligner requires numeric data type";
@@ -104,7 +104,7 @@ static Bp_EC sample_aligner_deinit(Filter_t* self)
 
   // Deinit input buffers
   for (int i = 0; i < self->n_input_buffers; i++) {
-    Bp_EC rc = bb_deinit(&self->input_buffers[i]);
+    Bp_EC rc = bb_deinit(self->input_buffers[i]);
     if (rc != Bp_EC_OK) {
       return rc;
     }
@@ -125,7 +125,7 @@ static void* sample_aligner_worker(void* arg)
 
   while (f->running) {
     // Get input batch
-    Batch_t* input = bb_get_tail(&f->input_buffers[0], f->timeout_us, &err);
+    Batch_t* input = bb_get_tail(f->input_buffers[0], f->timeout_us, &err);
     if (!input) {
       if (err == Bp_EC_TIMEOUT) continue;
       if (err == Bp_EC_STOPPED) break;
@@ -134,7 +134,7 @@ static void* sample_aligner_worker(void* arg)
 
     // Check for completion
     if (input->ec == Bp_EC_COMPLETE) {
-      bb_del_tail(&f->input_buffers[0]);
+      bb_del_tail(f->input_buffers[0]);
       // Propagate completion to sink
       Batch_t* output = bb_get_head(f->sinks[0]);
       if (output) {
@@ -196,7 +196,7 @@ static void* sample_aligner_worker(void* arg)
     size_t to_copy = MIN(samples, output_capacity);
 
     memcpy(output->data, input->data,
-           to_copy * bb_getdatawidth(f->input_buffers[0].dtype));
+           to_copy * bb_getdatawidth(f->input_buffers[0]->dtype));
     output->head = to_copy;
 
     // Update state
@@ -209,7 +209,7 @@ static void* sample_aligner_worker(void* arg)
     err = bb_submit(f->sinks[0], f->timeout_us);
     BP_WORKER_ASSERT(f, err == Bp_EC_OK, err);
 
-    err = bb_del_tail(&f->input_buffers[0]);
+    err = bb_del_tail(f->input_buffers[0]);
     BP_WORKER_ASSERT(f, err == Bp_EC_OK, err);
   }
 

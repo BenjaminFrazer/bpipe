@@ -133,7 +133,7 @@ typedef struct _Filter_t {
   size_t data_width;
   pthread_t worker_thread;
   pthread_mutex_t filter_mutex;  // Protects sinks arrays
-  Batch_buff_t input_buffers[MAX_INPUTS];
+  Batch_buff_t *input_buffers[MAX_INPUTS];
   Batch_buff_t *sinks[MAX_SINKS];
   FilterOps ops;  // Embedded operations interface
 } Filter_t;

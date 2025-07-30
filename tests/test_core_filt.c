@@ -94,14 +94,14 @@ void test_data_passthrough_single_thread(void)
 
   /* Main */
   for (int i = 0; i < (ring_capacity * 2); i++) {
-    batch_in = bb_get_head(&filt1.input_buffers[0]);
+    batch_in = bb_get_head(filt1.input_buffers[0]);
     for (int ii = 0; ii < batch_capacity; ii++) {
       *((uint32_t*) batch_in->data + ii) = count_in;
       count_in++;
     }
     // TEST_MESSAGE("Submitting batch to input");
     CHECK_ERR(
-        bb_submit(&filt1.input_buffers[0], 10000));  // should always be space
+        bb_submit(filt1.input_buffers[0], 10000));  // should always be space
     // wait a bit and check if there has been a worker error
     nanosleep(&ts_1ms, NULL);
     CHECK_ERR(filt1.worker_err_info.ec);  //
@@ -131,8 +131,8 @@ void test_filter_cascade(void)
   /* Setup */
   count_out = 0;
   count_in = 0;
-  CHECK_ERR(filt_sink_connect(&filt1, 0, &filt2.input_buffers[0]));
-  CHECK_ERR(filt_sink_connect(&filt2, 0, &filt3.input_buffers[0]));
+  CHECK_ERR(filt_sink_connect(&filt1, 0, filt2.input_buffers[0]));
+  CHECK_ERR(filt_sink_connect(&filt2, 0, filt3.input_buffers[0]));
   CHECK_ERR(filt_sink_connect(&filt3, 0, &output));
   CHECK_ERR(filt_start(&filt1));
   CHECK_ERR(filt_start(&filt2));
@@ -144,17 +144,17 @@ void test_filter_cascade(void)
 
   /* Main */
   for (int i = 0; i < (ring_capacity * 4); i++) {
-    batch_in = bb_get_head(&filt1.input_buffers[0]);
+    batch_in = bb_get_head(filt1.input_buffers[0]);
     for (int ii = 0; ii < batch_capacity; ii++) {
       *((uint32_t*) batch_in->data + ii) = count_in;
       count_in++;
     }
     // TEST_MESSAGE("Submitting batch to input");
-    CHECK_ERR(bb_submit(&filt1.input_buffers[0], 1000));  //
+    CHECK_ERR(bb_submit(filt1.input_buffers[0], 1000));  //
   }
 
   TEST_ASSERT_EQUAL_INT_MESSAGE(Bp_EC_TIMEOUT,
-                                bb_submit(&filt1.input_buffers[0], 1000),
+                                bb_submit(filt1.input_buffers[0], 1000),
                                 "Expected timeout");
 
   for (int i = 0; i < (ring_capacity * 4); i++) {
@@ -178,8 +178,8 @@ void test_cascading_complete(void)
   /* Setup */
   count_out = 0;
   count_in = 0;
-  CHECK_ERR(filt_sink_connect(&filt1, 0, &filt2.input_buffers[0]));
-  CHECK_ERR(filt_sink_connect(&filt2, 0, &filt3.input_buffers[0]));
+  CHECK_ERR(filt_sink_connect(&filt1, 0, filt2.input_buffers[0]));
+  CHECK_ERR(filt_sink_connect(&filt2, 0, filt3.input_buffers[0]));
   CHECK_ERR(filt_sink_connect(&filt3, 0, &output));
   CHECK_ERR(filt_start(&filt1));
   CHECK_ERR(filt_start(&filt2));
@@ -190,12 +190,12 @@ void test_cascading_complete(void)
   CHECK_ERR(filt3.worker_err_info.ec);
 
   for (int i = 0; i < 3; i++) {
-    CHECK_ERR(bb_submit(&filt1.input_buffers[0], 1000));
+    CHECK_ERR(bb_submit(filt1.input_buffers[0], 1000));
   }
 
-  batch_in = bb_get_head(&filt1.input_buffers[0]);
+  batch_in = bb_get_head(filt1.input_buffers[0]);
   batch_in->ec = Bp_EC_COMPLETE;
-  CHECK_ERR(bb_submit(&filt1.input_buffers[0], 1000));
+  CHECK_ERR(bb_submit(filt1.input_buffers[0], 1000));
 
   for (int i = 0; i < 3; i++) {
     batch_out = bb_get_tail(&output, 1000, &err);

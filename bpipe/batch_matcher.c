@@ -36,8 +36,8 @@ static Bp_EC batch_matcher_stop(Filter_t* self)
 
   // Stop all input buffers to wake up any waiting threads
   for (int i = 0; i < self->n_input_buffers; i++) {
-    if (self->input_buffers[i].data_ring != NULL) {
-      bb_stop(&self->input_buffers[i]);
+    if (self->input_buffers[i] && self->input_buffers[i]->data_ring != NULL) {
+      bb_stop(self->input_buffers[i]);
     }
   }
 
@@ -60,7 +60,7 @@ static Bp_EC batch_matcher_deinit(Filter_t* self)
 
   // Do default deinit actions
   for (int i = 0; i < self->n_input_buffers; i++) {
-    Bp_EC rc = bb_deinit(&self->input_buffers[i]);
+    Bp_EC rc = bb_deinit(self->input_buffers[i]);
     if (rc != Bp_EC_OK) {
       return rc;
     }
@@ -186,7 +186,7 @@ void* batch_matcher_worker(void* arg)
 
   while (f->running) {
     // Get input batch
-    input_batch = bb_get_tail(&f->input_buffers[0], f->timeout_us, &err);
+    input_batch = bb_get_tail(f->input_buffers[0], f->timeout_us, &err);
     if (err != Bp_EC_OK) {
       if (err == Bp_EC_TIMEOUT) {
         continue;
@@ -217,7 +217,7 @@ void* batch_matcher_worker(void* arg)
 
       // Validate period_ns
       if (bm->period_ns == 0) {
-        bb_del_tail(&f->input_buffers[0]);
+        bb_del_tail(f->input_buffers[0]);
         f->worker_err_info.ec = Bp_EC_INVALID_CONFIG;
         f->worker_err_info.err_msg =
             "BatchMatcher requires regular sampling (period_ns > 0)";
@@ -231,7 +231,7 @@ void* batch_matcher_worker(void* arg)
       // Validate phase alignment
       uint64_t phase_offset = input_batch->t_ns % bm->period_ns;
       if (phase_offset != 0) {
-        bb_del_tail(&f->input_buffers[0]);
+        bb_del_tail(f->input_buffers[0]);
         f->worker_err_info.ec = Bp_EC_PHASE_ERROR;
         f->worker_err_info.err_msg =
             "Input has non-integer sample phase. "
@@ -255,7 +255,7 @@ void* batch_matcher_worker(void* arg)
       bm->accumulator_capacity = bm->output_batch_samples * bm->data_width;
       bm->accumulator = malloc(bm->accumulator_capacity);
       if (bm->accumulator == NULL) {
-        bb_del_tail(&f->input_buffers[0]);
+        bb_del_tail(f->input_buffers[0]);
         f->worker_err_info.ec = Bp_EC_MALLOC_FAIL;
         f->worker_err_info.function = __FUNCTION__;
         f->worker_err_info.filename = __FILE__;
@@ -285,7 +285,7 @@ void* batch_matcher_worker(void* arg)
       if (output_batch == NULL) {
         output_batch = bb_get_head(f->sinks[0]);
         if (output_batch == NULL) {
-          bb_del_tail(&f->input_buffers[0]);
+          bb_del_tail(f->input_buffers[0]);
           BP_WORKER_ASSERT(f, false, Bp_EC_NOSPACE);
         }
 
@@ -336,7 +336,7 @@ void* batch_matcher_worker(void* arg)
     }
 
     // Release input batch
-    bb_del_tail(&f->input_buffers[0]);
+    bb_del_tail(f->input_buffers[0]);
   }
 
   // Cleanup

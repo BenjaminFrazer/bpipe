@@ -87,7 +87,7 @@ void test_basic_csv_write(void)
   CHECK_ERR(csv_sink_init(&sink, sink_cfg));
 
   // Connect source -> sink
-  CHECK_ERR(filt_sink_connect(&source.base, 0, &sink.base.input_buffers[0]));
+  CHECK_ERR(filt_sink_connect(&source.base, 0, sink.base.input_buffers[0]));
 
   // Start filters
   CHECK_ERR(filt_start(&source.base));
@@ -168,7 +168,7 @@ void test_file_size_limit(void)
   CHECK_ERR(csv_sink_init(&sink, sink_cfg));
 
   // Connect and run
-  CHECK_ERR(filt_sink_connect(&source.base, 0, &sink.base.input_buffers[0]));
+  CHECK_ERR(filt_sink_connect(&source.base, 0, sink.base.input_buffers[0]));
   CHECK_ERR(filt_start(&source.base));
   CHECK_ERR(filt_start(&sink.base));
 
@@ -268,7 +268,7 @@ void test_completion_handling(void)
   CHECK_ERR(csv_sink_init(&sink, sink_cfg));
 
   // Connect and run
-  CHECK_ERR(filt_sink_connect(&source.base, 0, &sink.base.input_buffers[0]));
+  CHECK_ERR(filt_sink_connect(&source.base, 0, sink.base.input_buffers[0]));
   CHECK_ERR(filt_start(&source.base));
   CHECK_ERR(filt_start(&sink.base));
 

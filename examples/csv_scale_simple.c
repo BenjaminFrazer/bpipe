@@ -148,14 +148,14 @@ int main(int argc, char* argv[])
     printf("Connecting pipeline...\n");
     
     // CSV source output 0 (first/only data column) -> Map input
-    err = filt_sink_connect(&csv_source.base, 0, &scaler.base.input_buffers[0]);
+    err = filt_sink_connect(&csv_source.base, 0, scaler.base.input_buffers[0]);
     if (err != Bp_EC_OK) {
         printf("Failed to connect CSV source to map: %d\n", err);
         goto cleanup;
     }
     
     // Map output -> CSV sink input
-    err = filt_sink_connect(&scaler.base, 0, &csv_sink.base.input_buffers[0]);
+    err = filt_sink_connect(&scaler.base, 0, csv_sink.base.input_buffers[0]);
     if (err != Bp_EC_OK) {
         printf("Failed to connect map to CSV sink: %d\n", err);
         goto cleanup;

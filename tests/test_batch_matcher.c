@@ -141,9 +141,9 @@ void test_basic_batch_matching(void)
 
   // Connect pipeline: source -> matcher -> sink
   CHECK_ERR(filt_sink_connect(&fixture.source, 0,
-                              &fixture.matcher.base.input_buffers[0]));
+                              fixture.matcher.base.input_buffers[0]));
   CHECK_ERR(filt_sink_connect(&fixture.matcher.base, 0,
-                              &fixture.sink.input_buffers[0]));
+                              fixture.sink.input_buffers[0]));
 
   // Verify auto-detection worked
   TEST_ASSERT_TRUE(fixture.matcher.size_detected);
@@ -162,12 +162,12 @@ void test_basic_batch_matching(void)
 
   // Check output has 128-sample batches aligned to t=0
   Bp_EC err;
-  Batch_t* output = bb_get_tail(&fixture.sink.input_buffers[0], 1000000, &err);
+  Batch_t* output = bb_get_tail(fixture.sink.input_buffers[0], 1000000, &err);
   if (err == Bp_EC_OK) {
     TEST_ASSERT_EQUAL(128, output->head);
     TEST_ASSERT_EQUAL(
         0, output->t_ns % (128 * 1000000));  // Aligned to batch period
-    bb_del_tail(&fixture.sink.input_buffers[0]);
+    bb_del_tail(fixture.sink.input_buffers[0]);
   }
 }
 
@@ -203,7 +203,7 @@ void test_auto_detection(void)
 
   // Connect sink
   CHECK_ERR(filt_sink_connect(&fixture.matcher.base, 0,
-                              &fixture.sink.input_buffers[0]));
+                              fixture.sink.input_buffers[0]));
 
   // Now size should be detected
   TEST_ASSERT_TRUE(fixture.matcher.size_detected);
@@ -268,16 +268,16 @@ void test_phase_validation(void)
 
   // Connect pipeline
   CHECK_ERR(filt_sink_connect(&fixture.source, 0,
-                              &fixture.matcher.base.input_buffers[0]));
+                              fixture.matcher.base.input_buffers[0]));
   CHECK_ERR(filt_sink_connect(&fixture.matcher.base, 0,
-                              &fixture.sink.input_buffers[0]));
+                              fixture.sink.input_buffers[0]));
 
   // Start source and matcher
   CHECK_ERR(filt_start(&fixture.source));
   CHECK_ERR(filt_start(&fixture.matcher.base));
 
   // Push a batch with non-aligned timestamp
-  Batch_t* batch = bb_get_head(&fixture.matcher.base.input_buffers[0]);
+  Batch_t* batch = bb_get_head(fixture.matcher.base.input_buffers[0]);
   if (batch == NULL) {
     TEST_FAIL_MESSAGE(
         "bb_get_head returned NULL - unable to get buffer for phase test");
@@ -288,7 +288,7 @@ void test_phase_validation(void)
   batch->head = 64;
   batch->ec = Bp_EC_OK;
 
-  CHECK_ERR(bb_submit(&fixture.matcher.base.input_buffers[0], 1000000));
+  CHECK_ERR(bb_submit(fixture.matcher.base.input_buffers[0], 1000000));
 
   // Wait for worker to process
   struct timespec sleep_time = {0, 100000000};  // 100ms
@@ -329,7 +329,7 @@ void test_input_already_matched(void)
 
   // Connect
   CHECK_ERR(filt_sink_connect(&fixture.matcher.base, 0,
-                              &fixture.sink.input_buffers[0]));
+                              fixture.sink.input_buffers[0]));
 
   // Both should have same size
   TEST_ASSERT_EQUAL(64, fixture.matcher.output_batch_samples);

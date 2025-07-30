@@ -59,7 +59,9 @@ static size_t default_get_backlog(Filter_t* self)
 {
   size_t total_backlog = 0;
   for (int i = 0; i < self->n_input_buffers; i++) {
-    total_backlog += bb_occupancy(&self->input_buffers[i]);
+    if (self->input_buffers[i]) {
+      total_backlog += bb_occupancy(self->input_buffers[i]);
+    }
   }
   return total_backlog;
 }
@@ -175,11 +177,33 @@ Bp_EC filt_init(Filter_t* f, Core_filt_config_t config)
   }
   f->worker = config.worker;
 
+  // Allocate and initialize input buffers
   for (int i = 0; i < config.n_inputs; i++) {
-    Bp_EC rc = bb_init(&f->input_buffers[i], "NDEF", config.buff_config);
+    f->input_buffers[i] = malloc(sizeof(Batch_buff_t));
+    if (!f->input_buffers[i]) {
+      // Cleanup already allocated buffers
+      for (int j = 0; j < i; j++) {
+        bb_deinit(f->input_buffers[j]);
+        free(f->input_buffers[j]);
+      }
+      return Bp_EC_ALLOC;
+    }
+
+    Bp_EC rc = bb_init(f->input_buffers[i], "NDEF", config.buff_config);
     if (rc != Bp_EC_OK) {
+      // Cleanup
+      free(f->input_buffers[i]);
+      for (int j = 0; j < i; j++) {
+        bb_deinit(f->input_buffers[j]);
+        free(f->input_buffers[j]);
+      }
       return rc;
     }
+  }
+
+  // Initialize remaining pointers to NULL
+  for (int i = config.n_inputs; i < MAX_INPUTS; i++) {
+    f->input_buffers[i] = NULL;
   }
 
   if (config.name != NULL) {
@@ -196,7 +220,8 @@ Bp_EC filt_init(Filter_t* f, Core_filt_config_t config)
   if (pthread_mutex_init(&f->filter_mutex, NULL) != 0) {
     // Clean up already allocated buffers
     for (int i = 0; i < config.n_inputs; i++) {
-      bb_deinit(&f->input_buffers[i]);
+      bb_deinit(f->input_buffers[i]);
+      free(f->input_buffers[i]);
     }
     return Bp_EC_MUTEX_INIT_FAIL;
   }
@@ -227,11 +252,12 @@ Bp_EC filt_deinit(Filter_t* f)
     return f->ops.deinit(f);
   }
 
-  // Deinitialize all input buffers
+  // Free allocated input buffers
   for (int i = 0; i < f->n_input_buffers; i++) {
-    Bp_EC rc = bb_deinit(&f->input_buffers[i]);
-    if (rc != Bp_EC_OK) {
-      return rc;
+    if (f->input_buffers[i]) {
+      bb_deinit(f->input_buffers[i]);
+      free(f->input_buffers[i]);
+      f->input_buffers[i] = NULL;
     }
   }
 
@@ -345,8 +371,8 @@ Bp_EC filt_stop(Filter_t* f)
 
   // Force return on input buffers to wake up upstream writers
   for (int i = 0; i < f->n_input_buffers; i++) {
-    if (f->input_buffers[i].data_ring != NULL) {
-      bb_force_return_head(&f->input_buffers[i], Bp_EC_FILTER_STOPPING);
+    if (f->input_buffers[i] && f->input_buffers[i]->data_ring != NULL) {
+      bb_force_return_head(f->input_buffers[i], Bp_EC_FILTER_STOPPING);
     }
   }
 
@@ -359,8 +385,8 @@ Bp_EC filt_stop(Filter_t* f)
 
   // Also force return on our own input buffers if we're blocked reading
   for (int i = 0; i < f->n_input_buffers; i++) {
-    if (f->input_buffers[i].data_ring != NULL) {
-      bb_force_return_tail(&f->input_buffers[i], Bp_EC_FILTER_STOPPING);
+    if (f->input_buffers[i] && f->input_buffers[i]->data_ring != NULL) {
+      bb_force_return_tail(f->input_buffers[i], Bp_EC_FILTER_STOPPING);
     }
   }
 
@@ -379,11 +405,11 @@ void* matched_passthroug(void* arg)
   Bp_EC err;
   BP_WORKER_ASSERT(f, f->n_input_buffers == 1, Bp_EC_INVALID_CONFIG_MAX_INPUTS);
   BP_WORKER_ASSERT(f, f->sinks[0] != NULL, Bp_EC_NULL_BUFF);
-  BP_WORKER_ASSERT(f, f->sinks[0]->dtype == f->input_buffers[0].dtype,
+  BP_WORKER_ASSERT(f, f->sinks[0]->dtype == f->input_buffers[0]->dtype,
                    Bp_EC_DTYPE_MISMATCH);
   BP_WORKER_ASSERT(f,
                    f->sinks[0]->batch_capacity_expo ==
-                       f->input_buffers[0].batch_capacity_expo,
+                       f->input_buffers[0]->batch_capacity_expo,
                    Bp_EC_CAPACITY_MISMATCH);
   BP_WORKER_ASSERT(f, f->sinks[0]->dtype < DTYPE_MAX, Bp_EC_DTYPE_INVALID);
 
@@ -391,7 +417,7 @@ void* matched_passthroug(void* arg)
       bb_batch_size(f->sinks[0]) * _data_size_lut[f->sinks[0]->dtype];
 
   while (f->running) {
-    input = bb_get_tail(&f->input_buffers[0], f->timeout_us, &err);
+    input = bb_get_tail(f->input_buffers[0], f->timeout_us, &err);
     BP_WORKER_ASSERT(f, input != NULL, err);
 
     if (input->ec == Bp_EC_COMPLETE) {
@@ -419,7 +445,7 @@ void* matched_passthroug(void* arg)
     err = bb_submit(f->sinks[0], f->timeout_us);
     BP_WORKER_ASSERT(f, err == Bp_EC_OK, err);
 
-    err = bb_del_tail(&f->input_buffers[0]);
+    err = bb_del_tail(f->input_buffers[0]);
     BP_WORKER_ASSERT(f, err == Bp_EC_OK, err);
 
     f->metrics.n_batches++;

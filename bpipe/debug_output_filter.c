@@ -19,7 +19,7 @@ static void* debug_output_worker(void* arg)
   while (atomic_load(&base->running)) {
     // Get input batch
     Bp_EC err;
-    Batch_t* in_batch = bb_get_tail(&base->input_buffers[0], 100, &err);
+    Batch_t* in_batch = bb_get_tail(base->input_buffers[0], 100, &err);
     if (!in_batch) {
       if (err == Bp_EC_STOPPED) {
         break;  // Graceful shutdown
@@ -37,9 +37,9 @@ static void* debug_output_worker(void* arg)
                 "%s[Batch t=%lldns, period=%uns, samples=%zu, type=%s",
                 filter->formatted_prefix, (long long) in_batch->t_ns,
                 in_batch->period_ns, in_batch->head,
-                base->input_buffers[0].dtype == DTYPE_FLOAT ? "FLOAT"
-                : base->input_buffers[0].dtype == DTYPE_I32 ? "I32"
-                                                            : "U32");
+                base->input_buffers[0]->dtype == DTYPE_FLOAT ? "FLOAT"
+                : base->input_buffers[0]->dtype == DTYPE_I32 ? "I32"
+                                                             : "U32");
 
         if (in_batch->ec != Bp_EC_OK) {
           fprintf(filter->output_file, ", ec=%d", in_batch->ec);
@@ -60,7 +60,7 @@ static void* debug_output_worker(void* arg)
           fprintf(filter->output_file, "%s  [%d] ", filter->formatted_prefix,
                   i);
 
-          switch (base->input_buffers[0].dtype) {
+          switch (base->input_buffers[0]->dtype) {
             case DTYPE_NDEF:
             case DTYPE_MAX:
               // Should not happen
@@ -167,7 +167,7 @@ static void* debug_output_worker(void* arg)
       out_batch->ec = in_batch->ec;
 
       size_t data_size =
-          in_batch->head * bb_getdatawidth(base->input_buffers[0].dtype);
+          in_batch->head * bb_getdatawidth(base->input_buffers[0]->dtype);
       if (data_size > 0) {
         memcpy(out_batch->data, in_batch->data, data_size);
       }
@@ -177,7 +177,7 @@ static void* debug_output_worker(void* arg)
     }
 
     // Always delete input batch
-    bb_del_tail(&base->input_buffers[0]);
+    bb_del_tail(base->input_buffers[0]);
 
     // Handle completion
     if (in_batch->ec == Bp_EC_COMPLETE) {

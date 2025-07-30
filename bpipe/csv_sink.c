@@ -109,7 +109,7 @@ static void* csv_sink_worker(void* arg)
   while (atomic_load(&sink->base.running)) {
     // Get input batch
     Batch_t* input =
-        bb_get_tail(&sink->base.input_buffers[0], sink->base.timeout_us, &err);
+        bb_get_tail(sink->base.input_buffers[0], sink->base.timeout_us, &err);
     if (!input) {
       if (err == Bp_EC_TIMEOUT) continue;
       if (err == Bp_EC_STOPPED) break;
@@ -118,7 +118,7 @@ static void* csv_sink_worker(void* arg)
 
     // Check for completion
     if (input->ec == Bp_EC_COMPLETE) {
-      bb_del_tail(&sink->base.input_buffers[0]);
+      bb_del_tail(sink->base.input_buffers[0]);
       atomic_store(&sink->base.running, false);  // Stop the filter
       break;
     }
@@ -127,7 +127,7 @@ static void* csv_sink_worker(void* arg)
     BP_WORKER_ASSERT(&sink->base, input->ec == Bp_EC_OK, input->ec);
 
     // Get data type info
-    size_t data_width = bb_getdatawidth(sink->base.input_buffers[0].dtype);
+    size_t data_width = bb_getdatawidth(sink->base.input_buffers[0]->dtype);
     BP_WORKER_ASSERT(&sink->base, data_width > 0, Bp_EC_UNSUPPORTED_TYPE);
 
     // Process batch data
@@ -145,7 +145,7 @@ static void* csv_sink_worker(void* arg)
       // Check file size limit
       if (sink->max_file_size_bytes > 0 &&
           sink->bytes_written >= sink->max_file_size_bytes) {
-        bb_del_tail(&sink->base.input_buffers[0]);
+        bb_del_tail(sink->base.input_buffers[0]);
         BP_WORKER_ASSERT(&sink->base, false, Bp_EC_FILE_FULL);
       }
     }
@@ -160,7 +160,7 @@ static void* csv_sink_worker(void* arg)
     sink->base.metrics.n_batches++;
 
     // Release input batch
-    bb_del_tail(&sink->base.input_buffers[0]);
+    bb_del_tail(sink->base.input_buffers[0]);
   }
 
   // Close output file
@@ -248,7 +248,7 @@ static void format_csv_line(CSVSink_t* sink, uint64_t t_ns, void* data)
   line[len++] = sink->delimiter[0];
 
   // Format data value(s)
-  SampleDtype_t dtype = sink->base.input_buffers[0].dtype;
+  SampleDtype_t dtype = sink->base.input_buffers[0]->dtype;
 
   if (sink->format == CSV_FORMAT_SIMPLE) {
     // Single value

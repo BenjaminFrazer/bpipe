@@ -150,7 +150,7 @@ void test_tee_dual_output(void)
   // Need to start the input buffer too!
   printf("Starting input buffer...\n");
   fflush(stdout);
-  CHECK_ERR(bb_start(&tee.base.input_buffers[0]));
+  CHECK_ERR(bb_start(tee.base.input_buffers[0]));
   printf("Input buffer started\n");
   fflush(stdout);
 
@@ -158,7 +158,7 @@ void test_tee_dual_output(void)
   uint32_t counter = 0;
   printf("Submitting test data...\n");
   fflush(stdout);
-  fill_sequential_data(&tee.base.input_buffers[0], &counter, 5);
+  fill_sequential_data(tee.base.input_buffers[0], &counter, 5);
   printf("Test data submitted\n");
   fflush(stdout);
 
@@ -237,7 +237,7 @@ void test_tee_max_outputs(void)
 
   // Submit test data
   uint32_t counter = 0;
-  fill_sequential_data(&tee.base.input_buffers[0], &counter, 3);
+  fill_sequential_data(tee.base.input_buffers[0], &counter, 3);
 
   // Wait for processing
   nanosleep(&ts_10ms, NULL);
@@ -328,7 +328,7 @@ void test_tee_mixed_overflow_behavior(void)
 
   // Submit more data than buffers can hold
   uint32_t counter = 0;
-  fill_sequential_data(&tee.base.input_buffers[0], &counter,
+  fill_sequential_data(tee.base.input_buffers[0], &counter,
                        10);  // Overflow condition
 
   // Let some processing happen
@@ -412,7 +412,7 @@ void test_tee_priority_output_latency(void)
 
   // Submit data
   uint32_t counter = 0;
-  fill_sequential_data(&tee.base.input_buffers[0], &counter, 20);
+  fill_sequential_data(tee.base.input_buffers[0], &counter, 20);
 
   // Wait briefly
   nanosleep(&ts_10ms, NULL);
@@ -475,7 +475,7 @@ void test_tee_graceful_shutdown(void)
 
   // Submit data but don't consume it
   uint32_t counter = 0;
-  fill_sequential_data(&tee.base.input_buffers[0], &counter, 10);
+  fill_sequential_data(tee.base.input_buffers[0], &counter, 10);
 
   // Brief wait
   nanosleep(&ts_10ms, NULL);
@@ -703,8 +703,8 @@ void test_tee_pipeline_integration(void)
   CHECK_ERR(filt_init(&downstream2, downstream_config));
 
   // Connect: tee → [downstream1, downstream2]
-  CHECK_ERR(filt_sink_connect(&tee.base, 0, &downstream1.input_buffers[0]));
-  CHECK_ERR(filt_sink_connect(&tee.base, 1, &downstream2.input_buffers[0]));
+  CHECK_ERR(filt_sink_connect(&tee.base, 0, downstream1.input_buffers[0]));
+  CHECK_ERR(filt_sink_connect(&tee.base, 1, downstream2.input_buffers[0]));
 
   // Create final outputs
   Batch_buff_t final1, final2;
@@ -723,10 +723,10 @@ void test_tee_pipeline_integration(void)
   nanosleep(&ts_10ms, NULL);
 
   // Then start buffers
-  CHECK_ERR(bb_start(&tee.base.input_buffers[0]));  // Start input buffer
+  CHECK_ERR(bb_start(tee.base.input_buffers[0]));  // Start input buffer
   CHECK_ERR(bb_start(
-      &downstream1.input_buffers[0]));  // Start downstream input buffers
-  CHECK_ERR(bb_start(&downstream2.input_buffers[0]));
+      downstream1.input_buffers[0]));  // Start downstream input buffers
+  CHECK_ERR(bb_start(downstream2.input_buffers[0]));
   CHECK_ERR(bb_start(&final1));
   CHECK_ERR(bb_start(&final2));
 
@@ -736,7 +736,7 @@ void test_tee_pipeline_integration(void)
   // Submit data
   uint32_t counter = 0;
   TEST_MESSAGE("Filling input");
-  fill_sequential_data(&tee.base.input_buffers[0], &counter, 5);
+  fill_sequential_data(tee.base.input_buffers[0], &counter, 5);
 
   // Wait for all threads to start up properly and process
   nanosleep(&ts_10ms, NULL);

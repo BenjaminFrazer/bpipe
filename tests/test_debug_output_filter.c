@@ -107,7 +107,7 @@ static void* test_collector_worker(void* arg)
   while (atomic_load(&base->running)) {
     Bp_EC err;
     Batch_t* batch =
-        bb_get_tail(&base->input_buffers[0], 10, &err);  // 10ms timeout
+        bb_get_tail(base->input_buffers[0], 10, &err);  // 10ms timeout
     if (!batch) {
       if (err == Bp_EC_STOPPED) break;
       continue;
@@ -126,7 +126,7 @@ static void* test_collector_worker(void* arg)
       filter->got_complete = true;
     }
 
-    bb_del_tail(&base->input_buffers[0]);
+    bb_del_tail(base->input_buffers[0]);
   }
 
   return NULL;
@@ -188,9 +188,9 @@ void test_debug_output_passthrough(void)
   TestCollectorFilter_t* collector = create_test_collector(10);
 
   // Connect pipeline
-  CHECK_ERR(filt_sink_connect(&source->base, 0, &debug.base.input_buffers[0]));
+  CHECK_ERR(filt_sink_connect(&source->base, 0, debug.base.input_buffers[0]));
   CHECK_ERR(
-      filt_sink_connect(&debug.base, 0, &collector->base.input_buffers[0]));
+      filt_sink_connect(&debug.base, 0, collector->base.input_buffers[0]));
 
   // Set output buffer sizes
   // Set output buffer sizes using bb_set_sz
@@ -264,9 +264,9 @@ void test_debug_output_to_file(void)
   TestCollectorFilter_t* collector = create_test_collector(10);
 
   // Connect pipeline
-  CHECK_ERR(filt_sink_connect(&source->base, 0, &debug.base.input_buffers[0]));
+  CHECK_ERR(filt_sink_connect(&source->base, 0, debug.base.input_buffers[0]));
   CHECK_ERR(
-      filt_sink_connect(&debug.base, 0, &collector->base.input_buffers[0]));
+      filt_sink_connect(&debug.base, 0, collector->base.input_buffers[0]));
 
   // Set output buffer sizes
   // Set output buffer sizes using bb_set_sz
@@ -398,9 +398,9 @@ void test_debug_output_formats(void)
   TEST_ASSERT_EQUAL_INT(Bp_EC_OK, ec);
 
   // Connect pipeline
-  CHECK_ERR(filt_sink_connect(&source->base, 0, &debug.base.input_buffers[0]));
+  CHECK_ERR(filt_sink_connect(&source->base, 0, debug.base.input_buffers[0]));
   CHECK_ERR(
-      filt_sink_connect(&debug.base, 0, &collector->base.input_buffers[0]));
+      filt_sink_connect(&debug.base, 0, collector->base.input_buffers[0]));
 
   // Set output buffer sizes for U32
   // Buffers are already sized by filter initialization
@@ -500,9 +500,9 @@ void test_debug_output_sample_limiting(void)
   TestCollectorFilter_t* collector = create_test_collector(30);
 
   // Connect pipeline
-  CHECK_ERR(filt_sink_connect(&source->base, 0, &debug.base.input_buffers[0]));
+  CHECK_ERR(filt_sink_connect(&source->base, 0, debug.base.input_buffers[0]));
   CHECK_ERR(
-      filt_sink_connect(&debug.base, 0, &collector->base.input_buffers[0]));
+      filt_sink_connect(&debug.base, 0, collector->base.input_buffers[0]));
 
   // Set output buffer sizes
   // Buffers are already sized by filter initialization

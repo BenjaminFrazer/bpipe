@@ -217,7 +217,7 @@ int main(int argc, char* argv[])
 
   // Connect filters: CSV source -> Debug output filters
   for (int i = 0; i < n_data_columns; i++) {
-    err = filt_sink_connect(&csv_source.base, i, &debug_filters[i].base.input_buffers[0]);
+    err = filt_sink_connect(&csv_source.base, i, debug_filters[i].base.input_buffers[0]);
     if (err != Bp_EC_OK) {
       fprintf(stderr, "Failed to connect CSV source output %d to debug filter: %d\n", i, err);
       // Clean up
