@@ -59,9 +59,9 @@ Buffers are self-contained ring buffers that:
 
 ```c
 // Direct buffer operations
-Batch_t *batch = bb_get_head(&filter.input_buffers[0]);
+Batch_t *batch = bb_get_head(filter.input_buffers[0]);
 // Process batch...
-bb_submit(&filter.input_buffers[0], timeout_us);
+bb_submit(filter.input_buffers[0], timeout_us);
 ```
 
 ### 3. Batches (`Batch_t`)
@@ -154,11 +154,11 @@ A key architectural decision in bpipe is the **unidirectional reference model** 
 **Rationale:**
 ```c
 // Simple connection model
-filt_sink_connect(&source, 0, &sink.input_buffers[0]);  // Source stores reference to sink's input buffer
+filt_sink_connect(&source, 0, sink.input_buffers[0]);  // Source stores reference to sink's input buffer
 
 // Worker thread only needs buffer count, not source references
 for (int i = 0; i < filter->n_input_buffers; i++) {
-    input_batches[i] = bb_get_tail(&filter->input_buffers[i], timeout_us, &err);
+    input_batches[i] = bb_get_tail(filter->input_buffers[i], timeout_us, &err);
 }
 ```
 
@@ -190,8 +190,8 @@ filt_init(&transform, transform_config);
 filt_init(&sink, sink_config);
 
 // Connect: sources get references to sink input buffers
-filt_sink_connect(&source, 0, &transform.input_buffers[0]);      // source pushes to transform.input_buffers[0]
-filt_sink_connect(&transform, 0, &sink.input_buffers[0]);        // transform pushes to sink.input_buffers[0]
+filt_sink_connect(&source, 0, transform.input_buffers[0]);      // source pushes to transform.input_buffers[0]
+filt_sink_connect(&transform, 0, sink.input_buffers[0]);        // transform pushes to sink.input_buffers[0]
 
 // Start processing
 filt_start(&source);

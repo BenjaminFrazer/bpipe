@@ -66,9 +66,9 @@ Bp_EC filter_stop(Filter_t* filter) {
     // This ensures the worker thread can exit cleanly
     for (int i = 0; i < filter->n_input_buffers; i++) {
         // Unblock upstream filters writing to our input
-        bb_force_return_head(&filter->input_buffers[i], Bp_EC_FILTER_STOPPING);
+        bb_force_return_head(filter->input_buffers[i], Bp_EC_FILTER_STOPPING);
         // Unblock our worker if reading from input
-        bb_force_return_tail(&filter->input_buffers[i], Bp_EC_FILTER_STOPPING);
+        bb_force_return_tail(filter->input_buffers[i], Bp_EC_FILTER_STOPPING);
     }
     
     // Unblock our worker if writing to output buffers

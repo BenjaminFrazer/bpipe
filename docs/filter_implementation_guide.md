@@ -48,7 +48,7 @@ void* yourfilter_worker(void* arg) {
     // 2. Main processing loop
     while (atomic_load(&f->base.running)) {
         // Get input batch
-        Batch_t* input = bb_get_tail(&f->base.input_buffers[0], 
+        Batch_t* input = bb_get_tail(f->base.input_buffers[0], 
                                      f->base.timeout_us, &err);
         if (!input) {
             if (err == Bp_EC_TIMEOUT) continue;
@@ -58,7 +58,7 @@ void* yourfilter_worker(void* arg) {
         
         // Check for completion
         if (input->ec == Bp_EC_COMPLETE) {
-            bb_del_tail(&f->base.input_buffers[0]);
+            bb_del_tail(f->base.input_buffers[0]);
             break;
         }
         
@@ -256,7 +256,7 @@ WORKER_ASSERT(&f->base, config->timeout_us >= 0, Bp_EC_INVALID_CONFIG,
 
 // In processing loop
 if (NEEDS_NEW_BATCH(input)) {
-    input = bb_get_tail(&filter->input_buffers[0], timeout, &err);
+    input = bb_get_tail(filter->input_buffers[0], timeout, &err);
 }
 
 size_t samples_to_process = MIN(available_input, available_output);
