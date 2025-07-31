@@ -71,6 +71,10 @@ typedef struct _FilterOps {
   Bp_EC (*stop)(struct _Filter_t *self);
   Bp_EC (*deinit)(struct _Filter_t *self);
 
+  /* Connection Management */
+  Bp_EC (*sink_connect)(struct _Filter_t *self, size_t output_port,
+                        Batch_buff_t *sink);
+
   /* Data flow operations */
   Bp_EC (*flush)(struct _Filter_t *self);
   Bp_EC (*drain)(struct _Filter_t *self);

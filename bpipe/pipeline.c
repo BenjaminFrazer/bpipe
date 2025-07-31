@@ -6,6 +6,8 @@
 static Bp_EC pipeline_start(Filter_t* self);
 static Bp_EC pipeline_stop(Filter_t* self);
 static Bp_EC pipeline_deinit(Filter_t* self);
+static Bp_EC pipeline_sink_connect(Filter_t* self, size_t output_port,
+                                   Batch_buff_t* sink);
 static Bp_EC pipeline_describe(Filter_t* self, char* buffer, size_t size);
 static bool pipeline_contains_filter(Pipeline_t* pipe, Filter_t* filter);
 static void* pipeline_worker(void* arg);
@@ -25,8 +27,7 @@ Bp_EC pipeline_init(Pipeline_t* pipe, Pipeline_config_t config)
       .max_supported_sinks = 1, /* Pipeline has single output */
       .buff_config = config.buff_config,
       .timeout_us = config.timeout_us,
-      .worker = pipeline_worker /* Dummy worker - pipeline uses component filter
-                                   workers */
+      .worker = pipeline_worker /* Dummy worker - required by filt_init */
   };
 
   Bp_EC err = filt_init(&pipe->base, core_config);
@@ -116,7 +117,11 @@ Bp_EC pipeline_init(Pipeline_t* pipe, Pipeline_config_t config)
   pipe->base.ops.start = pipeline_start;
   pipe->base.ops.stop = pipeline_stop;
   pipe->base.ops.deinit = pipeline_deinit;
+  pipe->base.ops.sink_connect = pipeline_sink_connect;
   pipe->base.ops.describe = pipeline_describe;
+
+  /* Set worker to NULL - pipeline doesn't need its own worker thread */
+  pipe->base.worker = NULL;
 
   return Bp_EC_OK;
 }
@@ -168,6 +173,20 @@ static Bp_EC pipeline_stop(Filter_t* self)
   }
 
   return Bp_EC_OK;
+}
+
+static Bp_EC pipeline_sink_connect(Filter_t* self, size_t output_port,
+                                   Batch_buff_t* sink)
+{
+  Pipeline_t* pipe = (Pipeline_t*) self;
+
+  /* Validate output port - pipeline has single output */
+  if (output_port != 0) {
+    return Bp_EC_INVALID_SINK_IDX;
+  }
+
+  /* Forward connection to the designated output filter */
+  return filt_sink_connect(pipe->output_filter, pipe->output_port, sink);
 }
 
 static Bp_EC pipeline_deinit(Filter_t* self)

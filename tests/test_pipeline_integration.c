@@ -559,6 +559,133 @@ void test_pipeline_nested(void)
   filt_deinit(&outer_map.base);
 }
 
+/**
+ * @test test_pipeline_external_output_connection
+ * @brief Verify that external filters can connect to pipeline outputs
+ *
+ * This test validates the sink_connect virtualization feature by connecting
+ * a sink to the pipeline's output AFTER the pipeline is created.
+ */
+void test_pipeline_external_output_connection(void)
+{
+  /* Create signal generator as source */
+  SignalGenerator_t sig_gen;
+  SignalGenerator_config_t sig_config = {
+      .name = "test_signal",
+      .buff_config = default_buffer_config(),
+      .frequency_hz = 10.0,  // 10 Hz sine wave
+      .amplitude = 1.0,
+      .offset = 0.0,
+      .phase_rad = 0.0,
+      .sample_period_ns = 10000000,  // 10ms = 100 Hz sample rate
+      .timeout_us = 1000000,
+      .max_samples = 200,  // 2 seconds of data
+      .waveform_type = WAVEFORM_SINE,
+      .allow_aliasing = false,
+      .start_time_ns = 0};
+  CHECK_ERR(signal_generator_init(&sig_gen, sig_config));
+
+  /* Create transformation filters */
+  Map_filt_t scaler, offset;
+  Map_config_t scaler_config = {.name = "scaler",
+                                .buff_config = default_buffer_config(),
+                                .map_fcn = scale_by_2,
+                                .timeout_us = 1000000};
+  Map_config_t offset_config = {.name = "offset",
+                                .buff_config = default_buffer_config(),
+                                .map_fcn = offset_by_10,
+                                .timeout_us = 1000000};
+  CHECK_ERR(map_init(&scaler, scaler_config));
+  CHECK_ERR(map_init(&offset, offset_config));
+
+  /* Create pipeline FIRST (before connecting external sink) */
+  Filter_t* filters[] = {&scaler.base, &offset.base};
+  Connection_t connections[] = {{&scaler.base, 0, &offset.base, 0}};
+
+  Pipeline_config_t pipeline_config = {.name = "test_pipeline",
+                                       .buff_config = default_buffer_config(),
+                                       .timeout_us = 1000000,
+                                       .filters = filters,
+                                       .n_filters = 2,
+                                       .connections = connections,
+                                       .n_connections = 1,
+                                       .input_filter = &scaler.base,
+                                       .input_port = 0,
+                                       .output_filter = &offset.base,
+                                       .output_port = 0};
+
+  Pipeline_t pipeline;
+  CHECK_ERR(pipeline_init(&pipeline, pipeline_config));
+
+  /* Create test sink */
+  TestSink_t sink;
+  CHECK_ERR(test_sink_init(&sink, "test_sink", 200));
+
+  /* NOW connect sink to pipeline output (not internal filter) */
+  /* This tests the sink_connect virtualization */
+  CHECK_ERR(filt_sink_connect(&pipeline.base, 0, sink.base.input_buffers[0]));
+
+  /* Verify that the connection was forwarded to the internal output filter */
+  TEST_ASSERT_EQUAL(1, offset.base.n_sinks);
+  TEST_ASSERT_EQUAL_PTR(sink.base.input_buffers[0], offset.base.sinks[0]);
+  
+  /* Verify pipeline itself has no direct sinks */
+  TEST_ASSERT_EQUAL(0, pipeline.base.n_sinks);
+
+  /* Connect signal generator to pipeline input */
+  CHECK_ERR(
+      filt_sink_connect(&sig_gen.base, 0, pipeline.base.input_buffers[0]));
+
+  /* Start buffer lifecycle */
+  CHECK_ERR(bb_start(pipeline.base.input_buffers[0]));
+  CHECK_ERR(bb_start(sink.base.input_buffers[0]));
+
+  /* Start all filters */
+  CHECK_ERR(filt_start(&pipeline.base));
+  CHECK_ERR(filt_start(&sink.base));
+  CHECK_ERR(filt_start(&sig_gen.base));
+
+  /* Wait for data to flow */
+  while (atomic_load(&sig_gen.base.running)) {
+    usleep(10000);
+  }
+  usleep(50000);  // Allow propagation
+
+  /* Stop filters */
+  filt_stop(&sig_gen.base);
+  filt_stop(&pipeline.base);
+  filt_stop(&sink.base);
+
+  /* Verify data flow */
+  pthread_mutex_lock(&sink.mutex);
+  size_t samples_received = sink.count;
+  pthread_mutex_unlock(&sink.mutex);
+
+  TEST_ASSERT_GREATER_THAN(50, samples_received);
+
+  /* Verify transformations: input * 2 + 10 */
+  pthread_mutex_lock(&sink.mutex);
+  int samples_to_verify = (samples_received < 50) ? samples_received : 50;
+  for (int i = 0; i < samples_to_verify; i++) {
+    float t = i * 0.01f;  // 100Hz sample rate
+    float expected_input = sinf(2 * M_PI * 10.0f * t);
+    float expected_output = expected_input * 2.0f + 10.0f;
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, expected_output, sink.buffer[i]);
+  }
+  pthread_mutex_unlock(&sink.mutex);
+
+  /* Stop buffer lifecycle */
+  CHECK_ERR(bb_stop(pipeline.base.input_buffers[0]));
+  CHECK_ERR(bb_stop(sink.base.input_buffers[0]));
+
+  /* Cleanup */
+  test_sink_deinit(&sink);
+  filt_deinit(&sig_gen.base);
+  filt_deinit(&pipeline.base);
+  filt_deinit(&scaler.base);
+  filt_deinit(&offset.base);
+}
+
 /* Unity test runner */
 int main(void)
 {
@@ -566,5 +693,6 @@ int main(void)
   RUN_TEST(test_pipeline_linear_data_flow);
   RUN_TEST(test_pipeline_dag_data_flow);
   RUN_TEST(test_pipeline_nested);
+  RUN_TEST(test_pipeline_external_output_connection);
   return UNITY_END();
 }
