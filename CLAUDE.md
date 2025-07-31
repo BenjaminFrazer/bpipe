@@ -46,6 +46,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Individual tools**: `make clang-format-check`, `make clang-tidy-check`, `make cppcheck-check`, `make ruff-check`
 - **IMPORTANT**: Always run `make lint` before committing changes
 
+### Linter Version Consistency
+To ensure your local linters match CI versions:
+1. **Run setup script**: `./scripts/setup-linters.sh` (installs clang-format-14 and clang-tidy-14)
+2. **CI uses**: Ubuntu latest with clang-format-14 and clang-tidy-14
+3. **Config file**: `.clang-format` ensures consistent formatting rules across environments
+
 ## Project Architecture
 
 This is a **modular real-time telemetry data processing framework** built in C with Python bindings. The system implements a push-based data processing pipeline using directed acyclic graphs (DAGs).

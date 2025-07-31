@@ -1,0 +1,4 @@
+# Tool versions for consistent linting across environments
+# CI uses ubuntu-latest which currently provides these versions
+CLANG_FORMAT_VERSION=14
+CLANG_TIDY_VERSION=14
