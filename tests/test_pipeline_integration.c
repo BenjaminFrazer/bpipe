@@ -6,6 +6,7 @@
  * and that transformations are applied as expected.
  */
 
+#include "bperr.h"
 #define _DEFAULT_SOURCE
 #include <math.h>
 #include <pthread.h>
@@ -407,10 +408,10 @@ void test_pipeline_dag_data_flow(void)
   CHECK_ERR(sink_offset.base.worker_err_info.ec);
 
   /* Stop filters */
-  filt_stop(&pipeline.base);
-  filt_stop(&sink_scaler.base);
-  filt_stop(&sink_offset.base);
-  filt_stop(&sig_gen.base);
+  CHECK_ERR(filt_stop(&pipeline.base));
+  CHECK_ERR(filt_stop(&sink_scaler.base));
+  CHECK_ERR(filt_stop(&sink_offset.base));
+  CHECK_ERR(filt_stop(&sig_gen.base));
 
   /* Verify both branches received data */
   pthread_mutex_lock(&sink_scaler.mutex);
