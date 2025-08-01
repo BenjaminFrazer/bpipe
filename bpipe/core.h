@@ -49,6 +49,7 @@ typedef enum _CORE_FILT_T {
                             ops */
   FILT_T_SAMPLE_ALIGNER, /* Corrects phase offset in regular data to align to
                             sample grid */
+  FILT_T_PIPELINE,       /* Container for filter DAGs */
   FILT_T_MAX,            /* Overflow guard. */
 } CORE_FILT_T;
 
@@ -69,6 +70,10 @@ typedef struct _FilterOps {
   Bp_EC (*start)(struct _Filter_t *self);
   Bp_EC (*stop)(struct _Filter_t *self);
   Bp_EC (*deinit)(struct _Filter_t *self);
+
+  /* Connection Management */
+  Bp_EC (*sink_connect)(struct _Filter_t *self, size_t output_port,
+                        Batch_buff_t *sink);
 
   /* Data flow operations */
   Bp_EC (*flush)(struct _Filter_t *self);

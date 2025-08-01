@@ -11,6 +11,8 @@
 static Bp_EC default_start(Filter_t* self);
 static Bp_EC default_stop(Filter_t* self);
 static Bp_EC default_deinit(Filter_t* self);
+static Bp_EC default_sink_connect(Filter_t* self, size_t output_port,
+                                  Batch_buff_t* sink);
 static Bp_EC default_flush(Filter_t* self);
 static Bp_EC default_drain(Filter_t* self);
 static Bp_EC default_reset(Filter_t* self);
@@ -31,6 +33,41 @@ static Bp_EC default_start(Filter_t* self) { return filt_start(self); }
 static Bp_EC default_stop(Filter_t* self) { return filt_stop(self); }
 
 static Bp_EC default_deinit(Filter_t* self) { return filt_deinit(self); }
+
+static Bp_EC default_sink_connect(Filter_t* self, size_t output_port,
+                                  Batch_buff_t* sink)
+{
+  if (self == NULL) {
+    return Bp_EC_NULL_FILTER;
+  }
+  if (sink == NULL) {
+    return Bp_EC_NULL_BUFF;
+  }
+  if (output_port >= MAX_SINKS) {
+    return Bp_EC_INVALID_SINK_IDX;
+  }
+
+  pthread_mutex_lock(&self->filter_mutex);
+
+  if (self->sinks[output_port] != NULL) {
+    pthread_mutex_unlock(&self->filter_mutex);
+    return Bp_EC_CONNECTION_OCCUPIED;
+  }
+
+  self->sinks[output_port] = sink;
+  self->n_sinks++;
+
+  // Special handling for BatchMatcher auto-detection
+  if (self->filt_type == FILT_T_BATCH_MATCHER && output_port == 0) {
+    BatchMatcher_t* matcher = (BatchMatcher_t*) self;
+    matcher->output_batch_samples = 1 << sink->batch_capacity_expo;
+    matcher->size_detected = true;
+  }
+
+  pthread_mutex_unlock(&self->filter_mutex);
+
+  return Bp_EC_OK;
+}
 
 static Bp_EC default_flush(Filter_t* self) { return Bp_EC_OK; }
 
@@ -123,6 +160,7 @@ static const FilterOps default_ops = {
     .start = default_start,
     .stop = default_stop,
     .deinit = default_deinit,
+    .sink_connect = default_sink_connect,
     .flush = default_flush,
     .drain = default_drain,
     .reset = default_reset,
@@ -273,33 +311,9 @@ Bp_EC filt_sink_connect(Filter_t* f, size_t sink_idx, Batch_buff_t* dest_buffer)
   if (f == NULL) {
     return Bp_EC_NULL_FILTER;
   }
-  if (dest_buffer == NULL) {
-    return Bp_EC_NULL_BUFF;
-  }
-  if (sink_idx >= MAX_SINKS) {
-    return Bp_EC_INVALID_SINK_IDX;
-  }
 
-  pthread_mutex_lock(&f->filter_mutex);
-
-  if (f->sinks[sink_idx] != NULL) {
-    pthread_mutex_unlock(&f->filter_mutex);
-    return Bp_EC_CONNECTION_OCCUPIED;
-  }
-
-  f->sinks[sink_idx] = dest_buffer;
-  f->n_sinks++;
-
-  // Special handling for BatchMatcher auto-detection
-  if (f->filt_type == FILT_T_BATCH_MATCHER && sink_idx == 0) {
-    BatchMatcher_t* matcher = (BatchMatcher_t*) f;
-    matcher->output_batch_samples = 1 << dest_buffer->batch_capacity_expo;
-    matcher->size_detected = true;
-  }
-
-  pthread_mutex_unlock(&f->filter_mutex);
-
-  return Bp_EC_OK;
+  // Call the virtual sink_connect operation
+  return f->ops.sink_connect(f, sink_idx, dest_buffer);
 }
 
 Bp_EC filt_sink_disconnect(Filter_t* f, size_t sink_idx)

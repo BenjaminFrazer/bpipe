@@ -245,8 +245,7 @@ void test_multi_stage_single_threaded(void)
   CHECK_ERR(bb_init(&output_buffer, "test_output", config.buff_config));
 
   // Connect filters: filter1 -> filter2 -> output
-  CHECK_ERR(
-      filt_sink_connect(&filter1.base, 0, filter2.base.input_buffers[0]));
+  CHECK_ERR(filt_sink_connect(&filter1.base, 0, filter2.base.input_buffers[0]));
   CHECK_ERR(filt_sink_connect(&filter2.base, 0, &output_buffer));
 
   // Start all components
@@ -937,8 +936,7 @@ void test_mismatched_ring_capacity(void)
   CHECK_ERR(bb_init(&output, "output", many_buffers));
 
   // Connect cascade
-  CHECK_ERR(
-      filt_sink_connect(&filter1.base, 0, filter2.base.input_buffers[0]));
+  CHECK_ERR(filt_sink_connect(&filter1.base, 0, filter2.base.input_buffers[0]));
   CHECK_ERR(filt_sink_connect(&filter2.base, 0, &output));
 
   CHECK_ERR(filt_start(&filter1.base));

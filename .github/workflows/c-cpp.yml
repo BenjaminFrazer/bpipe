@@ -17,6 +17,18 @@ jobs:
       with:
         submodules: true  # Recursively checkout submodules
         fetch-depth: 0    # Needed for full history (useful for submodules with branches)
+    
+    - name: Install specific linter versions
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang-format-14 clang-tidy-14
+        # Create symlinks to use versioned tools
+        sudo update-alternatives --install /usr/bin/clang-format clang-format /usr/bin/clang-format-14 100
+        sudo update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-14 100
+        # Verify versions
+        clang-format --version
+        clang-tidy --version
+    
     - name: make test-c
       run: make test-c
     - name: make lint
