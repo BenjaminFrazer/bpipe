@@ -628,7 +628,7 @@ void test_pipeline_external_output_connection(void)
   /* Verify that the connection was forwarded to the internal output filter */
   TEST_ASSERT_EQUAL(1, offset.base.n_sinks);
   TEST_ASSERT_EQUAL_PTR(sink.base.input_buffers[0], offset.base.sinks[0]);
-  
+
   /* Verify pipeline itself has no direct sinks */
   TEST_ASSERT_EQUAL(0, pipeline.base.n_sinks);
 

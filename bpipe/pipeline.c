@@ -109,6 +109,7 @@ Bp_EC pipeline_init(Pipeline_t* pipe, Pipeline_config_t config)
   if (pipe->base.input_buffers[0]) {
     bb_deinit(pipe->base.input_buffers[0]);
     free(pipe->base.input_buffers[0]);
+    /* Important: set to shared buffer before filt_deinit can access it */
   }
   pipe->base.input_buffers[0] =
       pipe->input_filter->input_buffers[pipe->input_port];
@@ -148,8 +149,8 @@ static Bp_EC pipeline_start(Filter_t* self)
     Bp_EC err = filt_start(pipe->filters[i]);
     if (err != Bp_EC_OK) {
       /* Stop already started filters on failure */
-      for (int j = i - 1; j >= 0; j--) {
-        filt_stop(pipe->filters[j]);
+      for (size_t j = i; j > 0; j--) {
+        filt_stop(pipe->filters[j - 1]);
       }
       return err;
     }
@@ -168,8 +169,8 @@ static Bp_EC pipeline_stop(Filter_t* self)
   atomic_store(&pipe->base.running, false);
 
   /* Stop internal filters in reverse order (for clean shutdown) */
-  for (int i = pipe->n_filters - 1; i >= 0; i--) {
-    filt_stop(pipe->filters[i]);
+  for (size_t i = pipe->n_filters; i > 0; i--) {
+    filt_stop(pipe->filters[i - 1]);
   }
 
   return Bp_EC_OK;
@@ -203,6 +204,10 @@ static Bp_EC pipeline_deinit(Filter_t* self)
     free(pipe->connections);
     pipe->connections = NULL;
   }
+
+  /* Important: Set input buffer to NULL to prevent double-free
+   * The buffer is shared with input_filter and will be freed there */
+  pipe->base.input_buffers[0] = NULL;
 
   /* Base filter cleanup is handled by caller (filt_deinit) */
   return Bp_EC_OK;
