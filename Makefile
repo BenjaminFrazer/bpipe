@@ -47,6 +47,10 @@ $(BUILD_DIR)/unity.o: $(UNITY_SRC) | $(BUILD_DIR)
 $(BUILD_DIR)/test_%: $(BUILD_DIR)/test_%.o $(OBJ_FILES) $(BUILD_DIR)/unity.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
+# Special rule for test_filter_bench that needs additional object files
+$(BUILD_DIR)/test_filter_bench: $(BUILD_DIR)/test_filter_bench.o $(BUILD_DIR)/mock_filters.o $(BUILD_DIR)/test_bench_utils.o $(OBJ_FILES) $(BUILD_DIR)/unity.o
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+
 # Examples target
 examples: $(EXAMPLE_EXECUTABLES)
 
@@ -99,6 +103,10 @@ test-csv-sink: $(BUILD_DIR)/test_csv_sink
 test-debug-output: $(BUILD_DIR)/test_debug_output_filter
 	@echo "Running debug output filter tests..."
 	scripts/run_with_timeout.sh 30 $(BUILD_DIR)/test_debug_output_filter
+
+test-filter-bench: $(BUILD_DIR)/test_filter_bench
+	@echo "Running filter test bench..."
+	scripts/run_with_timeout.sh 60 $(BUILD_DIR)/test_filter_bench
 
 # Linting targets
 lint: lint-c #lint-py
