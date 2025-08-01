@@ -2,207 +2,492 @@
 
 ## Overview
 
-The Filter Test Bench is a comprehensive testing framework designed to exercise all aspects of the bpipe2 filter public API. It provides systematic validation of filter lifecycle, connections, data flow patterns, error handling, and performance characteristics.
+The Filter Test Bench is a comprehensive testing framework designed to validate all aspects of the bpipe2 filter public API. It provides a generic compliance test suite that can be applied to any filter implementation, reducing code repetition and ensuring consistent API behavior.
 
-## Goals
+## Design Principles
 
-1. **Comprehensive API Coverage**: Exercise every public API function under various conditions
-2. **Behavioral Validation**: Verify correct behavior under normal and edge cases
-3. **Performance Characterization**: Measure and validate performance metrics
-4. **Error Resilience**: Ensure graceful handling of error conditions
-5. **Thread Safety**: Validate concurrent operations and synchronization
+1. **Generic Compliance Testing** - Single test suite applicable to all filter types
+2. **Clean Separation** - Test context (input) separate from test results (output)
+3. **Rich Error Context** - Capture file, line, function for debugging
+4. **Performance Metrics** - Extract KPIs like throughput and latency
+5. **Flexible Results** - Support pass/fail/skip/performance outcomes
 
-## Architecture
+## Test Framework Architecture
 
-### Test Infrastructure Components
+### Core Types
 
-#### 1. Mock Filters
-
-**Controllable Producer Filter**
-- Configurable data generation rate (samples/second)
-- Configurable batch size
-- Pattern generation (sequential, random, sine wave)
-- Burst mode support
-- Error injection capability
-- Metrics: batches produced, samples generated, timestamp accuracy
-
-**Controllable Consumer Filter**
-- Configurable processing delay per batch
-- Data validation (sequence checking, checksum)
-- Configurable consumption patterns (steady, bursty)
-- Metrics: batches consumed, processing latency, data integrity
-
-**Passthrough Filter with Metrics**
-- Zero-copy passthrough
-- Latency measurement
-- Throughput measurement
-- Queue depth monitoring
-
-**Error Injection Filter**
-- Configurable error scenarios
-- Controlled failure modes
-- Error propagation testing
-
-#### 2. Test Harness
-
-**Pipeline Builder**
 ```c
-typedef struct {
-    Filter_t** filters;
-    size_t n_filters;
-    Connection_t* connections;
-    size_t n_connections;
-} TestPipeline_t;
+// Test result status
+typedef enum {
+    TEST_RESULT_PASS,
+    TEST_RESULT_FAIL,
+    TEST_RESULT_SKIP,      // Test not applicable to this filter
+    TEST_RESULT_TIMEOUT,   // Test exceeded time limit
+    TEST_RESULT_PERF,      // Performance test completed (check metrics)
+    TEST_RESULT_BASELINE   // Baseline measurement captured
+} TestResultStatus_t;
 
-// Helper functions
-TestPipeline_t* test_pipeline_create(void);
-Bp_EC test_pipeline_add_filter(TestPipeline_t* p, Filter_t* f);
-Bp_EC test_pipeline_connect(TestPipeline_t* p, 
-                           Filter_t* src, int src_port,
-                           Filter_t* dst, int dst_port);
-Bp_EC test_pipeline_start_all(TestPipeline_t* p);
-Bp_EC test_pipeline_stop_all(TestPipeline_t* p);
-void test_pipeline_destroy(TestPipeline_t* p);
+// Performance/KPI metrics
+typedef struct {
+    double throughput_samples_per_sec;
+    double latency_ns_p50;
+    double latency_ns_p99;
+    double cpu_usage_percent;
+    size_t memory_bytes_peak;
+    size_t batches_processed;
+} TestMetrics_t;
+
+// Test error details
+typedef struct {
+    Bp_EC ec;
+    const char* file;
+    const char* func;
+    int line;
+    const char* expr;
+    const char* message;
+} TestError_t;
+
+// Error callback for real-time error reporting
+typedef void (*TestErrorCallback)(const TestError_t* error, void* user_data);
+
+// Test harness context (input to test)
+typedef struct {
+    Filter_t* fut;              // Filter under test
+    TestErrorCallback on_error; // Optional error callback
+    void* user_data;           // Callback user data
+    double timeout_sec;        // Test timeout
+    bool capture_metrics;      // Enable metric collection
+    void* default_config;      // Default config for filter init
+    FilterInitFunc init_func;  // Filter's init function
+} TestContext_t;
+
+// Test result (output from test)
+typedef struct {
+    TestResultStatus_t status;
+    TestMetrics_t metrics;
+    char message[256];         // Error or skip reason
+    
+    // Error details (if failed)
+    Bp_EC error_code;
+    const char* error_file;
+    const char* error_func;
+    int error_line;
+} TestResult_t;
+
+// Test case function signature
+typedef TestResult_t (*FilterTestCase)(TestContext_t* ctx);
 ```
 
-**Verification Utilities**
-- Data integrity checker (sequence validation)
-- Timing analyzer (jitter, latency)
-- Memory leak detector
-- Thread state monitor
-- Performance profiler
+### Test Assertion Macro
 
-### Test Categories
+```c
+// TH_ASSERT macro that captures context and returns on failure
+#define TH_ASSERT(ctx, condition, error_code, message) \
+    do { \
+        if (!(condition)) { \
+            TestResult_t result = { \
+                .status = TEST_RESULT_FAIL, \
+                .error_code = (error_code), \
+                .error_file = __FILE__, \
+                .error_func = __func__, \
+                .error_line = __LINE__ \
+            }; \
+            snprintf(result.message, sizeof(result.message), \
+                     "%s: %s", #condition, (message)); \
+            if ((ctx)->on_error) { \
+                TestError_t error = { \
+                    .ec = (error_code), \
+                    .file = __FILE__, \
+                    .func = __func__, \
+                    .line = __LINE__, \
+                    .expr = #condition, \
+                    .message = (message) \
+                }; \
+                (ctx)->on_error(&error, (ctx)->user_data); \
+            } \
+            return result; \
+        } \
+    } while(0)
+```
 
-#### 1. Lifecycle Tests (test_filter_lifecycle)
+### Example Test Implementation
 
-**Test Cases:**
-- `test_init_start_stop_deinit_sequence`: Verify correct lifecycle order
-- `test_multiple_start_stop_cycles`: Start/stop filter multiple times
-- `test_concurrent_lifecycle_operations`: Multiple threads operating on filters
-- `test_lifecycle_error_conditions`: Invalid state transitions
-- `test_resource_cleanup`: Verify no memory leaks after deinit
+```c
+// Example compliance test - lifecycle validation
+TestResult_t test_lifecycle_basic(TestContext_t* ctx) {
+    TestResult_t result = {.status = TEST_RESULT_PASS};
+    Filter_t* fut = ctx->fut;
+    
+    TH_ASSERT(ctx, fut != NULL, Bp_EC_NULL_PTR, "Filter under test is NULL");
+    
+    // Test init using provided init function
+    Bp_EC err = ctx->init_func(fut, ctx->default_config);
+    TH_ASSERT(ctx, err == Bp_EC_OK, err, "Failed to initialize filter");
+    
+    // Test start
+    err = filt_start(fut);
+    TH_ASSERT(ctx, err == Bp_EC_OK, err, "Failed to start filter");
+    
+    // Test stop
+    err = filt_stop(fut);
+    TH_ASSERT(ctx, err == Bp_EC_OK, err, "Failed to stop filter");
+    
+    // Test deinit
+    err = filt_deinit(fut);
+    TH_ASSERT(ctx, err == Bp_EC_OK, err, "Failed to deinitialize filter");
+    
+    return result;
+}
 
-**Validation:**
-- State transitions occur correctly
-- Resources allocated/freed properly
-- Thread creation/destruction works
-- Error codes returned appropriately
+// Example performance test
+TestResult_t test_throughput_max(TestContext_t* ctx) {
+    TestResult_t result = {.status = TEST_RESULT_PERF};
+    
+    // Skip if filter has no inputs
+    if (ctx->fut->n_input_buffers == 0) {
+        result.status = TEST_RESULT_SKIP;
+        snprintf(result.message, sizeof(result.message), 
+                 "Filter has no inputs - skipping throughput test");
+        return result;
+    }
+    
+    // Setup test pipeline...
+    MockProducer_t producer;
+    MockConsumer_t consumer;
+    
+    // Run throughput test...
+    double start_time = get_time_sec();
+    size_t samples_processed = run_throughput_test(ctx->fut, &producer, &consumer);
+    double elapsed_time = get_time_sec() - start_time;
+    
+    // Capture metrics
+    result.metrics.throughput_samples_per_sec = samples_processed / elapsed_time;
+    result.metrics.memory_bytes_peak = get_peak_memory();
+    result.metrics.batches_processed = consumer.batches_received;
+    
+    return result;
+}
+```
 
-#### 2. Connection Tests (test_filter_connections)
+## Mock Filters
 
-**Test Cases:**
-- `test_linear_pipeline`: A→B→C→D
-- `test_fan_out`: A→[B,C,D]
-- `test_fan_in`: [A,B,C]→D
-- `test_diamond`: A→[B,C]→D
-- `test_complex_dag`: Multiple paths and merges
-- `test_dynamic_reconnection`: Connect/disconnect during runtime
-- `test_type_mismatch`: Verify type checking works
-- `test_connection_limits`: Max inputs/outputs
+Mock filters provide controlled test infrastructure:
 
-**Validation:**
-- Data flows through all paths
-- No data loss or corruption
-- Type safety enforced
-- Connection state consistent
+### Controllable Producer Filter
+```c
+typedef struct {
+    Filter_t base;
+    
+    // Configuration
+    double samples_per_sec;     // Generation rate
+    size_t batch_size;          // Samples per batch
+    DataPattern_t pattern;      // SEQUENTIAL, RANDOM, SINE, etc.
+    bool burst_mode;            // Enable burst generation
+    
+    // Error injection
+    bool inject_error;          // Enable error injection
+    Bp_EC error_code;          // Error to inject
+    size_t error_after_samples; // When to inject error
+    
+    // Metrics
+    size_t batches_produced;
+    size_t samples_generated;
+    double timing_error_ns;     // Actual vs expected timing
+} MockProducer_t;
+```
 
-#### 3. Data Flow Tests (test_filter_dataflow)
+### Controllable Consumer Filter
+```c
+typedef struct {
+    Filter_t base;
+    
+    // Configuration
+    long processing_delay_us;   // Delay per batch
+    bool validate_sequence;     // Check sequential data
+    bool validate_checksum;     // Verify data integrity
+    ConsumptionPattern_t pattern; // STEADY, BURSTY, etc.
+    
+    // Metrics
+    size_t batches_consumed;
+    double avg_latency_ns;
+    bool data_valid;           // Data integrity check result
+} MockConsumer_t;
+```
 
-**Test Cases:**
-- `test_fast_producer_slow_consumer`: Backpressure handling
-- `test_slow_producer_fast_consumer`: Starvation handling
-- `test_burst_patterns`: Alternating fast/slow periods
-- `test_multiple_producers_different_rates`: Rate synchronization
-- `test_buffer_overflow_block`: Verify blocking behavior
-- `test_buffer_overflow_drop`: Verify drop behavior
-- `test_zero_copy_performance`: Measure overhead
+### Passthrough Filter with Metrics
+```c
+typedef struct {
+    Filter_t base;
+    
+    // Metrics
+    size_t batches_passed;
+    double min_latency_ns;
+    double max_latency_ns;
+    double avg_latency_ns;
+    size_t max_queue_depth;
+} MockPassthrough_t;
+```
 
-**Validation:**
-- Correct backpressure propagation
-- No data loss in BLOCK mode
-- Controlled data loss in DROP mode
-- Timing preservation
-- Performance metrics meet requirements
+## Test Utilities
 
-#### 4. Error Handling Tests (test_filter_errors)
+### Data Integrity Verification
+```c
+// Verify sequential data pattern
+bool verify_sequential_data(const Batch_t* batch, size_t* expected_value);
 
-**Test Cases:**
-- `test_worker_thread_errors`: BP_WORKER_ASSERT behavior
-- `test_error_propagation`: Errors flow downstream
-- `test_timeout_handling`: Proper timeout behavior
-- `test_force_return_mechanism`: Clean shutdown
-- `test_invalid_configuration`: Config validation
-- `test_null_pointer_handling`: Robust NULL checks
-- `test_resource_exhaustion`: Out of memory scenarios
+// Compute and verify checksum
+bool verify_checksum(const Batch_t* batch);
 
-**Validation:**
-- Errors reported correctly
-- No crashes or undefined behavior
-- Clean shutdown on errors
-- Error information preserved
+// Validate timing accuracy
+bool verify_timing(const Batch_t* batch, uint64_t expected_t_ns, 
+                  uint64_t tolerance_ns);
+```
 
-#### 5. Thread Safety Tests (test_filter_threading)
+### Performance Measurement
+```c
+// Measure end-to-end latency
+double measure_latency_ns(Filter_t* filter);
 
-**Test Cases:**
-- `test_concurrent_producer_consumer`: Multiple threads
-- `test_connection_during_operation`: Thread-safe connections
-- `test_shutdown_synchronization`: Clean multi-filter shutdown
-- `test_atomic_operations`: Verify atomic guarantees
-- `test_deadlock_prevention`: No deadlocks possible
-- `test_race_conditions`: No data races
+// Measure throughput
+double measure_throughput_samples_per_sec(Filter_t* filter, double duration_sec);
 
-**Validation:**
-- No data corruption
-- No deadlocks
-- Proper synchronization
-- Clean shutdown
+// Get memory usage
+size_t get_current_memory_bytes(void);
+size_t get_peak_memory_bytes(void);
 
-#### 6. Performance Tests (test_filter_performance)
+// Get CPU usage
+double get_cpu_usage_percent(void);
+```
 
-**Test Cases:**
-- `test_throughput_simple_pipeline`: Baseline performance
-- `test_throughput_complex_dag`: DAG overhead
-- `test_latency_measurement`: End-to-end latency
-- `test_cpu_usage`: CPU efficiency
-- `test_memory_usage`: Memory efficiency
-- `test_cache_performance`: Cache-friendly access
-- `test_scaling`: Performance vs pipeline length
+### Test Pipeline Helpers
+```c
+// Create standard test pipelines
+Bp_EC create_linear_pipeline(Filter_t* fut, MockProducer_t* prod, 
+                           MockConsumer_t* cons);
+Bp_EC create_fan_out_pipeline(Filter_t* fut, MockProducer_t* prod,
+                            MockConsumer_t* cons[], size_t n_consumers);
+Bp_EC create_fan_in_pipeline(Filter_t* fut, MockProducer_t* prod[],
+                           size_t n_producers, MockConsumer_t* cons);
+```
 
-**Metrics:**
-- Samples/second throughput
-- Microsecond latency
-- CPU usage percentage
-- Memory bandwidth
-- Cache miss rate
+## Test Categories
 
-### Test Scenarios
+### 1. Lifecycle Compliance Tests
 
-#### Scenario 1: Audio Processing Pipeline
-- 48kHz source → FFT → Filter → IFFT → Sink
-- Validate timing accuracy
-- Measure processing latency
-- Test buffer size effects
+Tests that validate filter lifecycle management:
+- `test_lifecycle_basic` - Init → Start → Stop → Deinit
+- `test_lifecycle_restart` - Multiple start/stop cycles
+- `test_lifecycle_errors` - Invalid state transitions
+- `test_lifecycle_cleanup` - Resource cleanup verification
 
-#### Scenario 2: Sensor Fusion
-- Multiple sensors → Synchronizer → Fusion → Output
-- Different sample rates
-- Time alignment verification
-- Missing data handling
+### 2. Connection Compliance Tests
 
-#### Scenario 3: High-Frequency Trading
-- Market data → Strategy → Order Router
-- Ultra-low latency requirements
-- Burst handling
-- Error recovery
+Tests that validate filter connection patterns:
+- `test_connection_single_sink` - Basic connection
+- `test_connection_multi_sink` - Fan-out connections
+- `test_connection_multi_input` - Fan-in connections
+- `test_connection_type_safety` - Type mismatch detection
+- `test_connection_limits` - Max connections validation
 
-#### Scenario 4: Video Processing
-- Camera → Decoder → Effects → Encoder → Display
-- Large buffer sizes
-- Frame dropping under load
-- Synchronization with audio
+### 3. Data Flow Compliance Tests
 
-### Success Criteria
+Tests that validate data flow patterns:
+- `test_dataflow_passthrough` - Data integrity
+- `test_dataflow_backpressure` - Buffer full handling
+- `test_dataflow_starvation` - Empty buffer handling
+- `test_dataflow_timing` - Timestamp preservation
+- `test_dataflow_ordering` - Sample order preservation
+
+### 4. Error Handling Compliance Tests
+
+Tests that validate error handling:
+- `test_error_worker_assert` - Worker thread assertions
+- `test_error_propagation` - Error flow downstream
+- `test_error_timeout` - Timeout handling
+- `test_error_invalid_config` - Configuration validation
+- `test_error_recovery` - Error recovery behavior
+
+### 5. Threading Compliance Tests
+
+Tests that validate thread safety:
+- `test_thread_worker_lifecycle` - Worker thread management
+- `test_thread_concurrent_ops` - Concurrent operations
+- `test_thread_shutdown_sync` - Clean shutdown
+- `test_thread_force_return` - Force return mechanism
+
+### 6. Performance Compliance Tests
+
+Tests that measure performance:
+- `test_perf_throughput` - Maximum throughput
+- `test_perf_latency` - End-to-end latency
+- `test_perf_cpu_usage` - CPU efficiency
+- `test_perf_memory_usage` - Memory efficiency
+- `test_perf_scaling` - Performance vs load
+
+## Test Registration and Execution
+
+### Filter Registration
+
+```c
+// Filter init function type (matches existing filter init signatures)
+typedef Bp_EC (*FilterInitFunc)(void* filter, void* config);
+
+// Filter registration entry
+typedef struct {
+    size_t filter_size;         // sizeof(MyFilter_t)
+    FilterInitFunc init;        // Filter's init function
+    void* default_config;       // Default configuration
+    size_t config_size;         // sizeof(MyFilterConfig_t)
+} FilterRegistration_t;
+
+// Global compliance test suite
+static const FilterTestCase compliance_tests[] = {
+    // Lifecycle tests
+    test_lifecycle_basic,
+    test_lifecycle_restart,
+    test_lifecycle_errors,
+    test_lifecycle_cleanup,
+    
+    // Connection tests
+    test_connection_single_sink,
+    test_connection_multi_sink,
+    test_connection_multi_input,
+    test_connection_type_safety,
+    test_connection_limits,
+    
+    // Data flow tests
+    test_dataflow_passthrough,
+    test_dataflow_backpressure,
+    test_dataflow_starvation,
+    test_dataflow_timing,
+    test_dataflow_ordering,
+    
+    // Error handling tests
+    test_error_worker_assert,
+    test_error_propagation,
+    test_error_timeout,
+    test_error_invalid_config,
+    test_error_recovery,
+    
+    // Threading tests
+    test_thread_worker_lifecycle,
+    test_thread_concurrent_ops,
+    test_thread_shutdown_sync,
+    test_thread_force_return,
+    
+    // Performance tests
+    test_perf_throughput,
+    test_perf_latency,
+    test_perf_cpu_usage,
+    test_perf_memory_usage,
+    test_perf_scaling,
+};
+```
+
+### Running Tests
+
+```c
+// Test runner that loops through all filters and all tests
+TestSummary_t run_filter_compliance_tests(FilterRegistration_t filters[], 
+                                         size_t n_filters) {
+    TestSummary_t summary = {0};
+    
+    // Loop through each filter
+    for (size_t f = 0; f < n_filters; f++) {
+        // Allocate filter and config
+        void* filter = calloc(1, filters[f].filter_size);
+        void* config = malloc(filters[f].config_size);
+        memcpy(config, filters[f].default_config, filters[f].config_size);
+        
+        // Initialize to get filter name
+        Bp_EC err = filters[f].init(filter, config);
+        if (err != Bp_EC_OK) {
+            printf("Failed to initialize filter for testing\n");
+            free(filter);
+            free(config);
+            continue;
+        }
+        
+        Filter_t* base = (Filter_t*)filter;
+        printf("Testing %s...\n", base->name);
+        
+        // Cleanup this instance
+        if (base->ops.deinit) base->ops.deinit(base);
+        free(filter);
+        free(config);
+        
+        // Loop through each compliance test
+        for (size_t t = 0; t < sizeof(compliance_tests)/sizeof(compliance_tests[0]); t++) {
+            // Create fresh filter instance for each test
+            filter = calloc(1, filters[f].filter_size);
+            config = malloc(filters[f].config_size);
+            memcpy(config, filters[f].default_config, filters[f].config_size);
+            
+            // Setup test context (uninitialized filter)
+            TestContext_t ctx = {
+                .fut = (Filter_t*)filter,
+                .on_error = default_error_handler,
+                .timeout_sec = 30.0,
+                .capture_metrics = true,
+                .default_config = config,
+                .init_func = filters[f].init
+            };
+            
+            // Run test
+            TestResult_t result = compliance_tests[t](&ctx);
+            
+            // Record result
+            record_test_result(&summary, base->name, 
+                             get_test_name(compliance_tests[t]), &result);
+            
+            // Cleanup
+            base = (Filter_t*)filter;
+            if (base->ops.deinit) base->ops.deinit(base);
+            free(filter);
+            free(config);
+        }
+    }
+    
+    return summary;
+}
+
+// Example usage in main test program
+int main() {
+    // Register all filters to test
+    FilterRegistration_t filters[] = {
+        {
+            .filter_size = sizeof(SignalGenerator_t),
+            .init = (FilterInitFunc)signal_generator_init,
+            .default_config = &default_sg_config,
+            .config_size = sizeof(SignalGeneratorConfig_t)
+        },
+        {
+            .filter_size = sizeof(MapFilter_t),
+            .init = (FilterInitFunc)map_filter_init,
+            .default_config = &default_map_config,
+            .config_size = sizeof(MapConfig_t)
+        },
+        {
+            .filter_size = sizeof(CSVSource_t),
+            .init = (FilterInitFunc)csv_source_init,
+            .default_config = &default_csv_config,
+            .config_size = sizeof(CSVSourceConfig_t)
+        },
+        // ... add more filters
+    };
+    
+    // Run all compliance tests on all filters
+    TestSummary_t summary = run_filter_compliance_tests(filters, 
+                                                       sizeof(filters)/sizeof(filters[0]));
+    
+    // Print results
+    print_test_summary(&summary);
+    
+    return summary.failed_count > 0 ? 1 : 0;
+}
+```
+
+## Success Criteria
 
 1. **Functional Correctness**
    - All API functions work as documented
@@ -215,64 +500,28 @@ void test_pipeline_destroy(TestPipeline_t* p);
    - < 100μs worst-case latency
 
 3. **Reliability**
-   - 24-hour stress test passes
    - No memory leaks
    - No crashes under any test
+   - Clean shutdown in all scenarios
 
-4. **Usability**
-   - Clear error messages
-   - Predictable behavior
-   - Easy to debug issues
+## Implementation Plan
 
-### Implementation Plan
-
-1. **Phase 1**: Core infrastructure
+1. **Phase 1**: Core framework
+   - Test types and macros
    - Mock filters
-   - Test harness
-   - Basic lifecycle tests
+   - Basic test registration
 
-2. **Phase 2**: Functional tests
+2. **Phase 2**: Compliance tests
+   - Lifecycle tests
    - Connection tests
    - Data flow tests
-   - Error handling tests
 
 3. **Phase 3**: Advanced tests
-   - Thread safety tests
+   - Error handling tests
+   - Threading tests
    - Performance tests
-   - Stress tests
 
-4. **Phase 4**: Scenarios
-   - Real-world simulations
-   - Integration tests
+4. **Phase 4**: Integration
+   - Apply to existing filters
+   - CI/CD integration
    - Documentation
-
-## Test Execution
-
-### Unit Test Integration
-```bash
-# Run all filter test bench tests
-make test-filter-bench
-
-# Run specific category
-make test-filter-lifecycle
-make test-filter-connections
-make test-filter-dataflow
-
-# Run with valgrind
-make test-filter-bench-valgrind
-
-# Run performance tests
-make test-filter-performance
-```
-
-### Continuous Integration
-- Run on every commit
-- Performance regression detection
-- Memory leak detection
-- Thread sanitizer checks
-
-### Test Reports
-- Functional test results
-- Performance metrics
-- Code coverage report
-- Memory usage analysis
