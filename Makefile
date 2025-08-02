@@ -48,7 +48,7 @@ $(BUILD_DIR)/test_%: $(BUILD_DIR)/test_%.o $(OBJ_FILES) $(BUILD_DIR)/unity.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 # Special rule for test_filter_bench that needs additional object files
-$(BUILD_DIR)/test_filter_bench: $(BUILD_DIR)/test_filter_bench.o $(BUILD_DIR)/mock_filters.o $(BUILD_DIR)/test_bench_utils.o $(OBJ_FILES) $(BUILD_DIR)/unity.o
+$(BUILD_DIR)/test_filter_bench: $(BUILD_DIR)/test_filter_bench.o $(BUILD_DIR)/mock_filters.o $(OBJ_FILES) $(BUILD_DIR)/unity.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 # Examples target
