@@ -9,14 +9,16 @@
 #include <stdio.h>
 
 // Helper to get current time in nanoseconds
-static uint64_t get_time_ns(void) {
+static uint64_t get_time_ns(void)
+{
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
 }
 
 // Controllable Producer Implementation
-static void* controllable_producer_worker(void* arg) {
+static void* controllable_producer_worker(void* arg)
+{
     ControllableProducer_t* cp = (ControllableProducer_t*)arg;
     BP_WORKER_ASSERT(&cp->base, cp->base.sinks[0] != NULL, Bp_EC_NO_SINK);
     
@@ -26,7 +28,7 @@ static void* controllable_producer_worker(void* arg) {
     
     while (atomic_load(&cp->base.running)) {
         // Check if we've hit max batches
-        if (cp->max_batches > 0 && 
+        if (cp->max_batches > 0 &&
             atomic_load(&cp->batches_produced) >= cp->max_batches) {
             // Send completion signal
             Batch_t* completion = bb_get_head(cp->base.sinks[0]);
@@ -114,7 +116,8 @@ static void* controllable_producer_worker(void* arg) {
     return NULL;
 }
 
-Bp_EC controllable_producer_init(ControllableProducer_t* cp, ControllableProducerConfig_t config) {
+Bp_EC controllable_producer_init(ControllableProducer_t* cp, ControllableProducerConfig_t config)
+{
     if (!cp) return Bp_EC_NULL_POINTER;
     
     // Build core config
@@ -162,7 +165,8 @@ Bp_EC controllable_producer_init(ControllableProducer_t* cp, ControllableProduce
 }
 
 // Controllable Consumer Implementation
-static void* controllable_consumer_worker(void* arg) {
+static void* controllable_consumer_worker(void* arg)
+{
     ControllableConsumer_t* cc = (ControllableConsumer_t*)arg;
     BP_WORKER_ASSERT(&cc->base, cc->base.n_input_buffers == 1, Bp_EC_INVALID_CONFIG);
     
@@ -239,12 +243,14 @@ static void* controllable_consumer_worker(void* arg) {
         
         // Update min/max latency
         uint64_t max_lat = atomic_load(&cc->max_latency_ns);
-        while (latency > max_lat && 
-               !atomic_compare_exchange_weak(&cc->max_latency_ns, &max_lat, latency));
+        while (latency > max_lat &&
+               !atomic_compare_exchange_weak(&cc->max_latency_ns, &max_lat, latency))
+            ;
         
         uint64_t min_lat = atomic_load(&cc->min_latency_ns);
-        while ((min_lat == 0 || latency < min_lat) && 
-               !atomic_compare_exchange_weak(&cc->min_latency_ns, &min_lat, latency));
+        while ((min_lat == 0 || latency < min_lat) &&
+               !atomic_compare_exchange_weak(&cc->min_latency_ns, &min_lat, latency))
+            ;
         
         // Simulate processing
         if (delay_us > 0) {
@@ -264,7 +270,8 @@ static void* controllable_consumer_worker(void* arg) {
     return NULL;
 }
 
-Bp_EC controllable_consumer_init(ControllableConsumer_t* cc, ControllableConsumerConfig_t config) {
+Bp_EC controllable_consumer_init(ControllableConsumer_t* cc, ControllableConsumerConfig_t config)
+{
     if (!cc) return Bp_EC_NULL_POINTER;
     
     // Build core config
@@ -312,10 +319,11 @@ Bp_EC controllable_consumer_init(ControllableConsumer_t* cc, ControllableConsume
 }
 
 // Metrics getters
-void controllable_producer_get_metrics(ControllableProducer_t* cp, 
-                                     size_t* batches, 
+void controllable_producer_get_metrics(ControllableProducer_t* cp,
+                                     size_t* batches,
                                      size_t* samples,
-                                     size_t* dropped) {
+                                     size_t* dropped)
+{
     if (batches) *batches = atomic_load(&cp->total_batches);
     if (samples) *samples = atomic_load(&cp->total_samples);
     if (dropped) *dropped = atomic_load(&cp->dropped_batches);
@@ -326,7 +334,8 @@ void controllable_consumer_get_metrics(ControllableConsumer_t* cc,
                                      size_t* samples,
                                      size_t* seq_errors,
                                      size_t* timing_errors,
-                                     uint64_t* avg_latency_ns) {
+                                     uint64_t* avg_latency_ns)
+{
     if (batches) *batches = atomic_load(&cc->total_batches);
     if (samples) *samples = atomic_load(&cc->total_samples);
     if (seq_errors) *seq_errors = atomic_load(&cc->sequence_errors);
@@ -341,4 +350,149 @@ void controllable_consumer_get_metrics(ControllableConsumer_t* cc,
     }
 }
 
-// TODO: Implement PassthroughMetrics and ErrorInjection filters
+// Passthrough Metrics Implementation
+static void* passthrough_metrics_worker(void* arg)
+{
+    PassthroughMetrics_t* pm = (PassthroughMetrics_t*)arg;
+    BP_WORKER_ASSERT(&pm->base, pm->base.n_input_buffers == 1, Bp_EC_INVALID_CONFIG);
+    BP_WORKER_ASSERT(&pm->base, pm->base.sinks[0] != NULL, Bp_EC_NO_SINK);
+    
+    while (atomic_load(&pm->base.running)) {
+        // Measure queue depth if enabled
+        if (pm->measure_queue_depth) {
+            size_t depth = bb_occupancy(pm->base.input_buffers[0]);
+            atomic_store(&pm->current_queue_depth, depth);
+            
+            // Update max queue depth
+            size_t max_depth = atomic_load(&pm->max_queue_depth);
+            while (depth > max_depth &&
+                   !atomic_compare_exchange_weak(&pm->max_queue_depth, &max_depth, depth))
+                ;
+        }
+        
+        // Get input batch
+        uint64_t receive_time = 0;
+        if (pm->measure_latency) {
+            receive_time = get_time_ns();
+        }
+        
+        Bp_EC err;
+        Batch_t* input = bb_get_tail(pm->base.input_buffers[0],
+                                    pm->base.timeout_us, &err);
+        if (!input) {
+            if (err == Bp_EC_TIMEOUT) continue;
+            if (err == Bp_EC_STOPPED) break;
+            break;
+        }
+        
+        // Check for completion
+        if (input->ec == Bp_EC_COMPLETE) {
+            // Pass through completion
+            Batch_t* output = bb_get_head(pm->base.sinks[0]);
+            *output = *input; // Copy entire batch structure
+            bb_submit(pm->base.sinks[0], pm->base.timeout_us);
+            bb_del_tail(pm->base.input_buffers[0]);
+            break;
+        }
+        
+        // Get output batch
+        Batch_t* output = bb_get_head(pm->base.sinks[0]);
+        
+        // Copy batch metadata
+        output->t_ns = input->t_ns;
+        output->period_ns = input->period_ns;
+        output->head = input->head;
+        output->ec = input->ec;
+        output->batch_id = input->batch_id;
+        
+        // Copy data
+        size_t data_size = bb_getdatawidth(pm->base.input_buffers[0]->dtype) * input->head;
+        memcpy(output->data, input->data, data_size);
+        
+        // Measure latency if enabled
+        if (pm->measure_latency && receive_time > 0) {
+            uint64_t latency = receive_time - input->t_ns;
+            atomic_fetch_add(&pm->total_latency_ns, latency);
+            
+            // Update min/max latency
+            uint64_t max_lat = atomic_load(&pm->max_latency_ns);
+            while (latency > max_lat &&
+                   !atomic_compare_exchange_weak(&pm->max_latency_ns, &max_lat, latency))
+                ;
+            
+            uint64_t min_lat = atomic_load(&pm->min_latency_ns);
+            while ((min_lat == 0 || latency < min_lat) &&
+                   !atomic_compare_exchange_weak(&pm->min_latency_ns, &min_lat, latency))
+                ;
+        }
+        
+        // Submit output
+        err = bb_submit(pm->base.sinks[0], pm->base.timeout_us);
+        BP_WORKER_ASSERT(&pm->base, err == Bp_EC_OK, err);
+        
+        // Delete input
+        err = bb_del_tail(pm->base.input_buffers[0]);
+        BP_WORKER_ASSERT(&pm->base, err == Bp_EC_OK, err);
+        
+        // Update metrics
+        atomic_fetch_add(&pm->batches_processed, 1);
+        atomic_fetch_add(&pm->samples_processed, input->head);
+    }
+    
+    return NULL;
+}
+
+Bp_EC passthrough_metrics_init(PassthroughMetrics_t* pm, PassthroughMetricsConfig_t config)
+{
+    if (!pm) return Bp_EC_NULL_POINTER;
+    
+    // Build core config
+    Core_filt_config_t core_config = {
+        .name = config.name,
+        .filt_type = FILT_T_MATCHED_PASSTHROUGH,
+        .size = sizeof(PassthroughMetrics_t),
+        .n_inputs = 1,
+        .max_supported_sinks = 1,
+        .buff_config = config.buff_config,
+        .timeout_us = config.timeout_us,
+        .worker = passthrough_metrics_worker
+    };
+    
+    // Initialize base filter
+    Bp_EC err = filt_init(&pm->base, core_config);
+    if (err != Bp_EC_OK) return err;
+    
+    // Initialize configuration
+    pm->measure_latency = config.measure_latency;
+    pm->measure_queue_depth = config.measure_queue_depth;
+    
+    // Initialize metrics
+    atomic_store(&pm->batches_processed, 0);
+    atomic_store(&pm->samples_processed, 0);
+    atomic_store(&pm->total_latency_ns, 0);
+    atomic_store(&pm->max_latency_ns, 0);
+    atomic_store(&pm->min_latency_ns, 0);
+    atomic_store(&pm->max_queue_depth, 0);
+    atomic_store(&pm->current_queue_depth, 0);
+    
+    return Bp_EC_OK;
+}
+
+void passthrough_metrics_get_metrics(PassthroughMetrics_t* pm,
+                                   size_t* batches,
+                                   size_t* samples,
+                                   uint64_t* avg_latency_ns,
+                                   size_t* max_queue)
+{
+    if (batches) *batches = atomic_load(&pm->batches_processed);
+    if (samples) *samples = atomic_load(&pm->samples_processed);
+    if (avg_latency_ns) {
+        size_t total_b = atomic_load(&pm->batches_processed);
+        if (total_b > 0) {
+            *avg_latency_ns = atomic_load(&pm->total_latency_ns) / total_b;
+        } else {
+            *avg_latency_ns = 0;
+        }
+    }
+    if (max_queue) *max_queue = atomic_load(&pm->max_queue_depth);
+}

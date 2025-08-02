@@ -78,14 +78,16 @@ static uint64_t g_test_start_ns = 0;
     }
 
 // Helper to get current time in nanoseconds
-static uint64_t get_time_ns(void) {
+static uint64_t get_time_ns(void)
+{
     struct timespec ts;
     clock_gettime(CLOCK_MONOTONIC, &ts);
     return (uint64_t)ts.tv_sec * 1000000000ULL + ts.tv_nsec;
 }
 
 // Unity setUp - called before each test
-void setUp(void) {
+void setUp(void)
+{
     // Create fresh filter instance for each test
     FilterRegistration_t* reg = &g_filters[g_current_filter];
     
@@ -104,7 +106,8 @@ void setUp(void) {
 }
 
 // Unity tearDown - called after each test
-void tearDown(void) {
+void tearDown(void)
+{
     // Cleanup after each test
     if (g_fut) {
         // Stop filter if running
@@ -277,7 +280,7 @@ void test_connection_single_sink(void) {
     ControllableConsumerConfig_t consumer_config = {
         .name = "test_consumer",
         .buff_config = {
-            .dtype = g_fut->input_buffers[0] ? g_fut->input_buffers[0]->dtype : DTYPE_FLOAT,
+            .dtype = (g_fut->n_input_buffers > 0 && g_fut->input_buffers[0]) ? g_fut->input_buffers[0]->dtype : DTYPE_FLOAT,
             .batch_capacity_expo = 6,
             .ring_capacity_expo = 8,
             .overflow_behaviour = OVERFLOW_BLOCK
@@ -323,7 +326,7 @@ void test_connection_multi_sink(void) {
         ControllableConsumerConfig_t config = {
             .name = "test_consumer",
             .buff_config = {
-                .dtype = g_fut->input_buffers[0] ? g_fut->input_buffers[0]->dtype : DTYPE_FLOAT,
+                .dtype = (g_fut->n_input_buffers > 0 && g_fut->input_buffers[0]) ? g_fut->input_buffers[0]->dtype : DTYPE_FLOAT,
                 .batch_capacity_expo = 6,
                 .ring_capacity_expo = 8,
                 .overflow_behaviour = OVERFLOW_BLOCK
@@ -358,6 +361,12 @@ void test_connection_type_safety(void) {
     
     Bp_EC err = g_fut_init(g_fut, g_fut_config);
     TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+    
+    // For filters with inputs, check type safety
+    if (g_fut->n_input_buffers == 0) {
+        TEST_IGNORE_MESSAGE("Filter has no inputs to test type safety");
+        return;
+    }
     
     // Get the expected data type from the filter's input buffer
     SampleDtype_t expected_dtype = g_fut->input_buffers[0]->dtype;
@@ -421,7 +430,7 @@ void test_dataflow_passthrough(void) {
     ControllableConsumerConfig_t cons_config = {
         .name = "test_consumer",
         .buff_config = {
-            .dtype = g_fut->input_buffers[0]->dtype,
+            .dtype = (g_fut->n_input_buffers > 0 && g_fut->input_buffers[0]) ? g_fut->input_buffers[0]->dtype : DTYPE_FLOAT,
             .batch_capacity_expo = 6,
             .ring_capacity_expo = 8,
             .overflow_behaviour = OVERFLOW_BLOCK
@@ -507,7 +516,7 @@ void test_dataflow_backpressure(void) {
     ControllableConsumerConfig_t cons_config = {
         .name = "slow_consumer",
         .buff_config = {
-            .dtype = g_fut->input_buffers[0]->dtype,
+            .dtype = (g_fut->n_input_buffers > 0 && g_fut->input_buffers[0]) ? g_fut->input_buffers[0]->dtype : DTYPE_FLOAT,
             .batch_capacity_expo = 4,  // Small buffer to trigger backpressure
             .ring_capacity_expo = 4,   // Small ring
             .overflow_behaviour = OVERFLOW_BLOCK
@@ -644,7 +653,7 @@ void test_thread_shutdown_sync(void) {
     ControllableConsumerConfig_t cons_config = {
         .name = "blocking_consumer",
         .buff_config = {
-            .dtype = g_fut->input_buffers[0] ? g_fut->input_buffers[0]->dtype : DTYPE_FLOAT,
+            .dtype = (g_fut->n_input_buffers > 0 && g_fut->input_buffers[0]) ? g_fut->input_buffers[0]->dtype : DTYPE_FLOAT,
             .batch_capacity_expo = 2,  // Very small buffer
             .ring_capacity_expo = 2,   // Very small ring
             .overflow_behaviour = OVERFLOW_BLOCK
@@ -718,7 +727,7 @@ void test_perf_throughput(void) {
     ControllableConsumerConfig_t cons_config = {
         .name = "perf_consumer",
         .buff_config = {
-            .dtype = g_fut->input_buffers[0]->dtype,
+            .dtype = (g_fut->n_input_buffers > 0 && g_fut->input_buffers[0]) ? g_fut->input_buffers[0]->dtype : DTYPE_FLOAT,
             .batch_capacity_expo = 10,  // Large batches
             .ring_capacity_expo = 8,    // Large ring
             .overflow_behaviour = OVERFLOW_BLOCK
@@ -803,7 +812,7 @@ void test_perf_latency(void) {
     PassthroughMetricsConfig_t pass_config = {
         .name = "latency_measure",
         .buff_config = {
-            .dtype = g_fut->input_buffers[0]->dtype,
+            .dtype = (g_fut->n_input_buffers > 0 && g_fut->input_buffers[0]) ? g_fut->input_buffers[0]->dtype : DTYPE_FLOAT,
             .batch_capacity_expo = 6,
             .ring_capacity_expo = 8,
             .overflow_behaviour = OVERFLOW_BLOCK
@@ -986,7 +995,7 @@ int main(int argc, char* argv[]) {
             continue;
         }
         
-        printf("\n========== Testing %s ==========\n", 
+        printf("\n========== Testing %s ==========\n",
                filters[g_current_filter].name);
         
         // Clear performance report
@@ -994,7 +1003,7 @@ int main(int argc, char* argv[]) {
         
         UNITY_BEGIN();
         
-        for (size_t i = 0; i < sizeof(compliance_tests)/sizeof(compliance_tests[0]); i++) {
+        for (size_t i = 0; i < sizeof(compliance_tests) / sizeof(compliance_tests[0]); i++) {
             RUN_TEST(compliance_tests[i]);
         }
         
@@ -1002,15 +1011,15 @@ int main(int argc, char* argv[]) {
         
         // Print performance metrics if collected
         if (strlen(g_perf_report) > 0) {
-            printf("\n=== %s Performance Metrics ===\n%s\n", 
+            printf("\n=== %s Performance Metrics ===\n%s\n",
                    filters[g_current_filter].name, g_perf_report);
         }
     }
     
     // Summary
     printf("\n========== SUMMARY ==========\n");
-    printf("Tested %zu filters with %zu compliance tests each\n", 
-           g_n_filters, sizeof(compliance_tests)/sizeof(compliance_tests[0]));
+    printf("Tested %zu filters with %zu compliance tests each\n",
+           g_n_filters, sizeof(compliance_tests) / sizeof(compliance_tests[0]));
     
     return 0;
 }
