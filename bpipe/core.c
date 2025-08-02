@@ -285,6 +285,11 @@ Bp_EC filt_deinit(Filter_t* f)
     return Bp_EC_NULL_FILTER;
   }
 
+  // Check if filter has been initialized
+  if (f->filt_type == FILT_T_NDEF) {
+    return Bp_EC_INVALID_CONFIG;
+  }
+
   // Use custom deinit operation if available
   if (f->ops.deinit != NULL && f->ops.deinit != default_deinit) {
     return f->ops.deinit(f);
@@ -345,6 +350,11 @@ Bp_EC filt_start(Filter_t* f)
     return Bp_EC_NULL_FILTER;
   }
 
+  // Check if filter has been initialized
+  if (f->filt_type == FILT_T_NDEF) {
+    return Bp_EC_INVALID_CONFIG;
+  }
+
   // Use custom start operation if available
   if (f->ops.start != NULL && f->ops.start != default_start) {
     return f->ops.start(f);
@@ -352,6 +362,12 @@ Bp_EC filt_start(Filter_t* f)
 
   if (f->running) {
     return Bp_EC_ALREADY_RUNNING;
+  }
+
+  // If no worker thread, just mark as running and return
+  if (f->worker == NULL) {
+    f->running = true;
+    return Bp_EC_OK;
   }
 
   f->running = true;
@@ -370,6 +386,11 @@ Bp_EC filt_stop(Filter_t* f)
 {
   if (!f) {
     return Bp_EC_NULL_FILTER;
+  }
+
+  // Check if filter has been initialized
+  if (f->filt_type == FILT_T_NDEF) {
+    return Bp_EC_INVALID_CONFIG;
   }
 
   // Use custom stop operation if available
