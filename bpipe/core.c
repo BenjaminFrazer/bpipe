@@ -46,6 +46,11 @@ static Bp_EC default_sink_connect(Filter_t* self, size_t output_port,
   if (output_port >= MAX_SINKS) {
     return Bp_EC_INVALID_SINK_IDX;
   }
+  
+  // Check against filter's configured maximum sinks
+  if (output_port >= self->max_supported_sinks) {
+    return Bp_EC_INVALID_SINK_IDX;
+  }
 
   pthread_mutex_lock(&self->filter_mutex);
 
@@ -110,7 +115,7 @@ static Bp_EC default_reconfigure(Filter_t* self, void* config)
 
 static Bp_EC default_validate_connection(Filter_t* self, size_t sink_idx)
 {
-  if (sink_idx >= self->max_suppported_sinks) {
+  if (sink_idx >= self->max_supported_sinks) {
     return Bp_EC_INVALID_SINK_IDX;
   }
   return Bp_EC_OK;
@@ -203,7 +208,7 @@ Bp_EC filt_init(Filter_t* f, Core_filt_config_t config)
   if (config.max_supported_sinks > MAX_SINKS) {
     return Bp_EC_INVALID_CONFIG_MAX_SINKS;
   }
-  f->max_suppported_sinks = config.max_supported_sinks;
+  f->max_supported_sinks = config.max_supported_sinks;
 
   if (config.n_inputs > MAX_INPUTS) {
     return Bp_EC_INVALID_CONFIG_MAX_INPUTS;

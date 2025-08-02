@@ -32,7 +32,7 @@ typedef struct _Filter_enhanced {
     Err_info worker_err_info;
     Filt_metrics metrics;
     unsigned long timeout_us;
-    size_t max_suppported_sinks;
+    size_t max_supported_sinks;
     int n_input_buffers;
     size_t n_sink_buffers;
     int n_sinks;
