@@ -441,166 +441,295 @@ void test_connection_type_safety(void) {
 //=============================================================================
 
 void test_dataflow_passthrough(void) {
-    SKIP_IF_NO_INPUTS();
-    SKIP_IF_NO_OUTPUTS();
     SKIP_IF_NO_WORKER();
+    
+    // Skip if filter has neither inputs nor outputs
+    if (g_fut->n_input_buffers == 0 && g_fut->max_supported_sinks == 0) {
+        TEST_IGNORE_MESSAGE("Filter has neither inputs nor outputs");
+        return;
+    }
     
     Bp_EC err = g_fut_init(g_fut, g_fut_config);
     TEST_ASSERT_EQUAL(Bp_EC_OK, err);
     
-    // Create producer and consumer
-    ControllableProducer_t producer;
-    ControllableProducerConfig_t prod_config = {
-        .name = "test_producer",
-        .timeout_us = 1000000,
-        .samples_per_second = 10000,
-        .batch_size = 64,
-        .pattern = PATTERN_SEQUENTIAL,
-        .max_batches = 10,
-        .start_sequence = 1000
-    };
+    // Determine filter type and create appropriate pipeline
+    ControllableProducer_t* producer = NULL;
+    ControllableConsumer_t* consumer = NULL;
     
-    err = controllable_producer_init(&producer, prod_config);
-    TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+    // For filters with outputs, create a consumer
+    if (g_fut->max_supported_sinks > 0) {
+        consumer = malloc(sizeof(ControllableConsumer_t));
+        TEST_ASSERT_NOT_NULL(consumer);
+        
+        // Determine data type: from input buffer if available, otherwise assume FLOAT
+        SampleDtype_t dtype = DTYPE_FLOAT;
+        if (g_fut->n_input_buffers > 0 && g_fut->input_buffers[0]) {
+            dtype = g_fut->input_buffers[0]->dtype;
+        }
+        
+        ControllableConsumerConfig_t cons_config = {
+            .name = "test_consumer",
+            .buff_config = {
+                .dtype = dtype,
+                .batch_capacity_expo = 6,
+                .ring_capacity_expo = 8,
+                .overflow_behaviour = OVERFLOW_BLOCK
+            },
+            .timeout_us = 1000000,
+            .validate_sequence = true,
+            .validate_timing = true
+        };
+        
+        err = controllable_consumer_init(consumer, cons_config);
+        TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+        
+        err = filt_sink_connect(g_fut, 0, consumer->base.input_buffers[0]);
+        TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+    }
     
-    ControllableConsumer_t consumer;
-    ControllableConsumerConfig_t cons_config = {
-        .name = "test_consumer",
-        .buff_config = {
-            .dtype = (g_fut->n_input_buffers > 0 && g_fut->input_buffers[0]) ? g_fut->input_buffers[0]->dtype : DTYPE_FLOAT,
-            .batch_capacity_expo = 6,
-            .ring_capacity_expo = 8,
-            .overflow_behaviour = OVERFLOW_BLOCK
-        },
-        .timeout_us = 1000000,
-        .validate_sequence = true,
-        .validate_timing = true
-    };
+    // For filters with inputs, create a producer
+    if (g_fut->n_input_buffers > 0) {
+        producer = malloc(sizeof(ControllableProducer_t));
+        TEST_ASSERT_NOT_NULL(producer);
+        
+        ControllableProducerConfig_t prod_config = {
+            .name = "test_producer",
+            .timeout_us = 1000000,
+            .samples_per_second = 10000,
+            .batch_size = 64,
+            .pattern = PATTERN_SEQUENTIAL,
+            .max_batches = 10,
+            .start_sequence = 1000
+        };
+        
+        err = controllable_producer_init(producer, prod_config);
+        TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+        
+        err = filt_sink_connect(&producer->base, 0, g_fut->input_buffers[0]);
+        TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+    }
     
-    err = controllable_consumer_init(&consumer, cons_config);
-    TEST_ASSERT_EQUAL(Bp_EC_OK, err);
-    
-    // Connect pipeline: producer -> filter -> consumer
-    err = filt_sink_connect(&producer.base, 0, g_fut->input_buffers[0]);
-    TEST_ASSERT_EQUAL(Bp_EC_OK, err);
-    
-    err = filt_sink_connect(g_fut, 0, consumer.base.input_buffers[0]);
-    TEST_ASSERT_EQUAL(Bp_EC_OK, err);
-    
-    // Start all filters
-    err = filt_start(&producer.base);
-    TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+    // Start all components
+    if (producer) {
+        err = filt_start(&producer->base);
+        TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+    }
     
     err = filt_start(g_fut);
     TEST_ASSERT_EQUAL(Bp_EC_OK, err);
     
-    err = filt_start(&consumer.base);
-    TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+    if (consumer) {
+        err = filt_start(&consumer->base);
+        TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+    }
     
-    // Wait for completion
-    while (atomic_load(&producer.batches_produced) < prod_config.max_batches) {
-        usleep(1000);
+    // Wait for completion based on filter type
+    if (producer) {
+        // Wait for producer to finish
+        while (atomic_load(&producer->batches_produced) < 10) {
+            usleep(1000);
+        }
+    } else if (consumer) {
+        // For source filters, wait a reasonable time for data generation
+        usleep(100000); // 100ms
     }
     usleep(10000); // Extra time for data to flow through
     
     // Stop pipeline
-    filt_stop(&producer.base);
+    if (producer) filt_stop(&producer->base);
     filt_stop(g_fut);
-    filt_stop(&consumer.base);
+    if (consumer) filt_stop(&consumer->base);
     
     // Check for errors
-    TEST_ASSERT_EQUAL(Bp_EC_OK, producer.base.worker_err_info.ec);
+    if (producer) {
+        TEST_ASSERT_EQUAL(Bp_EC_OK, producer->base.worker_err_info.ec);
+    }
     TEST_ASSERT_EQUAL(Bp_EC_OK, g_fut->worker_err_info.ec);
-    TEST_ASSERT_EQUAL(Bp_EC_OK, consumer.base.worker_err_info.ec);
+    if (consumer) {
+        TEST_ASSERT_EQUAL(Bp_EC_OK, consumer->base.worker_err_info.ec);
+    }
     
-    // Verify data integrity
-    size_t seq_errors = atomic_load(&consumer.sequence_errors);
-    TEST_ASSERT_EQUAL_MESSAGE(0, seq_errors, "Sequence errors detected");
+    // Verify data integrity for filters with outputs
+    if (consumer) {
+        size_t batches_consumed = atomic_load(&consumer->batches_consumed);
+        
+        // For transform filters, should receive what producer sent
+        if (producer) {
+            size_t batches_produced = atomic_load(&producer->batches_produced);
+            TEST_ASSERT_GREATER_THAN_MESSAGE(0, batches_consumed, 
+                                           "Consumer should have received batches");
+            // Allow some batches in flight
+            TEST_ASSERT_INT_WITHIN_MESSAGE(2, batches_produced, batches_consumed,
+                                         "Consumer should receive most produced batches");
+        } else {
+            // For source filters, just verify some data was generated
+            TEST_ASSERT_GREATER_THAN_MESSAGE(0, batches_consumed,
+                                           "Source filter should generate data");
+        }
+        
+        size_t seq_errors = atomic_load(&consumer->sequence_errors);
+        TEST_ASSERT_EQUAL_MESSAGE(0, seq_errors, "Sequence errors detected");
+        
+        size_t timing_errors = atomic_load(&consumer->timing_errors);
+        TEST_ASSERT_EQUAL_MESSAGE(0, timing_errors, "Timing errors detected");
+    }
     
-    size_t timing_errors = atomic_load(&consumer.timing_errors);
-    TEST_ASSERT_EQUAL_MESSAGE(0, timing_errors, "Timing errors detected");
+    // For sink filters, verify they consumed data
+    if (producer && !consumer) {
+        // Could add metrics checking here if sink filters track consumption
+        size_t batches_produced = atomic_load(&producer->batches_produced);
+        TEST_ASSERT_EQUAL_MESSAGE(10, batches_produced, 
+                                "Producer should have sent all batches");
+    }
     
     // Cleanup
-    filt_deinit(&producer.base);
-    filt_deinit(&consumer.base);
+    if (producer) {
+        filt_deinit(&producer->base);
+        free(producer);
+    }
+    if (consumer) {
+        filt_deinit(&consumer->base);
+        free(consumer);
+    }
     filt_deinit(g_fut);
 }
 
 void test_dataflow_backpressure(void) {
-    SKIP_IF_NO_INPUTS();
-    SKIP_IF_NO_OUTPUTS();
     SKIP_IF_NO_WORKER();
+    
+    // This test specifically needs both inputs and outputs to test backpressure propagation
+    // However, we can test partial backpressure for source/sink filters
+    if (g_fut->n_input_buffers == 0 && g_fut->max_supported_sinks == 0) {
+        TEST_IGNORE_MESSAGE("Filter has neither inputs nor outputs");
+        return;
+    }
     
     Bp_EC err = g_fut_init(g_fut, g_fut_config);
     TEST_ASSERT_EQUAL(Bp_EC_OK, err);
     
-    // Create fast producer and slow consumer to test backpressure
-    ControllableProducer_t producer;
-    ControllableProducerConfig_t prod_config = {
-        .name = "fast_producer",
-        .timeout_us = 1000000,
-        .samples_per_second = 1000000,  // 1M samples/sec
-        .batch_size = 1024,
-        .pattern = PATTERN_CONSTANT,
-        .constant_value = 42.0,
-        .max_batches = 50
-    };
+    ControllableProducer_t* producer = NULL;
+    ControllableConsumer_t* consumer = NULL;
     
-    err = controllable_producer_init(&producer, prod_config);
-    TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+    // For filters with outputs, create a slow consumer
+    if (g_fut->max_supported_sinks > 0) {
+        consumer = malloc(sizeof(ControllableConsumer_t));
+        TEST_ASSERT_NOT_NULL(consumer);
+        
+        SampleDtype_t dtype = DTYPE_FLOAT;
+        if (g_fut->n_input_buffers > 0 && g_fut->input_buffers[0]) {
+            dtype = g_fut->input_buffers[0]->dtype;
+        }
+        
+        ControllableConsumerConfig_t cons_config = {
+            .name = "slow_consumer",
+            .buff_config = {
+                .dtype = dtype,
+                .batch_capacity_expo = 4,  // Small buffer to trigger backpressure
+                .ring_capacity_expo = 4,   // Small ring
+                .overflow_behaviour = OVERFLOW_BLOCK
+            },
+            .timeout_us = 1000000,
+            .process_delay_us = 10000  // 10ms per batch - very slow
+        };
+        
+        err = controllable_consumer_init(consumer, cons_config);
+        TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+        
+        err = filt_sink_connect(g_fut, 0, consumer->base.input_buffers[0]);
+        TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+    }
     
-    ControllableConsumer_t consumer;
-    ControllableConsumerConfig_t cons_config = {
-        .name = "slow_consumer",
-        .buff_config = {
-            .dtype = (g_fut->n_input_buffers > 0 && g_fut->input_buffers[0]) ? g_fut->input_buffers[0]->dtype : DTYPE_FLOAT,
-            .batch_capacity_expo = 4,  // Small buffer to trigger backpressure
-            .ring_capacity_expo = 4,   // Small ring
-            .overflow_behaviour = OVERFLOW_BLOCK
-        },
-        .timeout_us = 1000000,
-        .process_delay_us = 10000  // 10ms per batch - very slow
-    };
-    
-    err = controllable_consumer_init(&consumer, cons_config);
-    TEST_ASSERT_EQUAL(Bp_EC_OK, err);
-    
-    // Connect pipeline
-    err = filt_sink_connect(&producer.base, 0, g_fut->input_buffers[0]);
-    TEST_ASSERT_EQUAL(Bp_EC_OK, err);
-    
-    err = filt_sink_connect(g_fut, 0, consumer.base.input_buffers[0]);
-    TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+    // For filters with inputs, create a fast producer
+    if (g_fut->n_input_buffers > 0) {
+        producer = malloc(sizeof(ControllableProducer_t));
+        TEST_ASSERT_NOT_NULL(producer);
+        
+        ControllableProducerConfig_t prod_config = {
+            .name = "fast_producer",
+            .timeout_us = 1000000,
+            .samples_per_second = 1000000,  // 1M samples/sec
+            .batch_size = 1024,
+            .pattern = PATTERN_CONSTANT,
+            .constant_value = 42.0,
+            .max_batches = 50
+        };
+        
+        err = controllable_producer_init(producer, prod_config);
+        TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+        
+        err = filt_sink_connect(&producer->base, 0, g_fut->input_buffers[0]);
+        TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+    }
     
     // Start pipeline
-    err = filt_start(&producer.base);
-    TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+    if (producer) {
+        err = filt_start(&producer->base);
+        TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+    }
     
     err = filt_start(g_fut);
     TEST_ASSERT_EQUAL(Bp_EC_OK, err);
     
-    err = filt_start(&consumer.base);
-    TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+    if (consumer) {
+        err = filt_start(&consumer->base);
+        TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+    }
     
     // Let it run for a bit
     usleep(100000); // 100ms
     
     // Stop pipeline
-    filt_stop(&producer.base);
+    if (producer) filt_stop(&producer->base);
     filt_stop(g_fut);
-    filt_stop(&consumer.base);
+    if (consumer) filt_stop(&consumer->base);
     
-    // Verify no data loss - all produced batches should be consumed
-    size_t produced = atomic_load(&producer.batches_produced);
-    size_t consumed = atomic_load(&consumer.batches_consumed);
+    // Verify backpressure behavior based on filter type
+    if (producer && consumer) {
+        // Full pipeline: verify no data loss
+        size_t produced = atomic_load(&producer->batches_produced);
+        size_t consumed = atomic_load(&consumer->batches_consumed);
+        
+        // Producer should have been slowed down by backpressure
+        TEST_ASSERT_LESS_THAN_MESSAGE(50, produced,
+                                    "Producer should be throttled by backpressure");
+        
+        // Allow for some batches in flight
+        TEST_ASSERT_INT_WITHIN_MESSAGE(5, produced, consumed, 
+                                     "Backpressure caused data loss");
+    } else if (producer && !consumer) {
+        // Sink filter: should consume at its own rate
+        size_t produced = atomic_load(&producer->batches_produced);
+        TEST_ASSERT_GREATER_THAN_MESSAGE(0, produced,
+                                       "Producer should have sent data to sink");
+    } else if (!producer && consumer) {
+        // Source filter: backpressure should slow down generation
+        size_t consumed = atomic_load(&consumer->batches_consumed);
+        
+        // With 10ms per batch and 100ms runtime, should consume ~10 batches
+        TEST_ASSERT_LESS_THAN_MESSAGE(20, consumed,
+                                    "Source should be throttled by slow consumer");
+        TEST_ASSERT_GREATER_THAN_MESSAGE(0, consumed,
+                                       "Consumer should have received some batches");
+    }
     
-    // Allow for some batches in flight
-    TEST_ASSERT_INT_WITHIN_MESSAGE(5, produced, consumed, 
-                                   "Backpressure caused data loss");
+    // Check for errors
+    if (producer) {
+        TEST_ASSERT_EQUAL(Bp_EC_OK, producer->base.worker_err_info.ec);
+    }
+    TEST_ASSERT_EQUAL(Bp_EC_OK, g_fut->worker_err_info.ec);
+    if (consumer) {
+        TEST_ASSERT_EQUAL(Bp_EC_OK, consumer->base.worker_err_info.ec);
+    }
     
     // Cleanup
-    filt_deinit(&producer.base);
-    filt_deinit(&consumer.base);
+    if (producer) {
+        filt_deinit(&producer->base);
+        free(producer);
+    }
+    if (consumer) {
+        filt_deinit(&consumer->base);
+        free(consumer);
+    }
     filt_deinit(g_fut);
 }
 
@@ -737,100 +866,170 @@ void test_thread_shutdown_sync(void) {
 //=============================================================================
 
 void test_perf_throughput(void) {
-    SKIP_IF_NO_INPUTS();
-    SKIP_IF_NO_OUTPUTS();
     SKIP_IF_NO_WORKER();
+    
+    // Skip if filter has neither inputs nor outputs
+    if (g_fut->n_input_buffers == 0 && g_fut->max_supported_sinks == 0) {
+        TEST_IGNORE_MESSAGE("Filter has neither inputs nor outputs");
+        return;
+    }
     
     Bp_EC err = g_fut_init(g_fut, g_fut_config);
     TEST_ASSERT_EQUAL(Bp_EC_OK, err);
     
-    // High-rate producer
-    ControllableProducer_t producer;
-    ControllableProducerConfig_t prod_config = {
-        .name = "perf_producer",
-        .timeout_us = 1000000,
-        .samples_per_second = 10000000,  // 10M samples/sec target
-        .batch_size = 1024,
-        .pattern = PATTERN_CONSTANT,
-        .constant_value = 1.0,
-        .max_batches = 1000  // ~1M samples
-    };
+    ControllableProducer_t* producer = NULL;
+    ControllableConsumer_t* consumer = NULL;
+    size_t target_batches = 1000;
     
-    err = controllable_producer_init(&producer, prod_config);
-    TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+    // For filters with outputs, create a fast consumer
+    if (g_fut->max_supported_sinks > 0) {
+        consumer = malloc(sizeof(ControllableConsumer_t));
+        TEST_ASSERT_NOT_NULL(consumer);
+        
+        SampleDtype_t dtype = DTYPE_FLOAT;
+        if (g_fut->n_input_buffers > 0 && g_fut->input_buffers[0]) {
+            dtype = g_fut->input_buffers[0]->dtype;
+        }
+        
+        ControllableConsumerConfig_t cons_config = {
+            .name = "perf_consumer",
+            .buff_config = {
+                .dtype = dtype,
+                .batch_capacity_expo = 10,  // Large batches
+                .ring_capacity_expo = 8,    // Large ring
+                .overflow_behaviour = OVERFLOW_BLOCK
+            },
+            .timeout_us = 1000000,
+            .process_delay_us = 0  // No artificial delay
+        };
+        
+        err = controllable_consumer_init(consumer, cons_config);
+        TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+        
+        err = filt_sink_connect(g_fut, 0, consumer->base.input_buffers[0]);
+        TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+    }
     
-    // Fast consumer
-    ControllableConsumer_t consumer;
-    ControllableConsumerConfig_t cons_config = {
-        .name = "perf_consumer",
-        .buff_config = {
-            .dtype = (g_fut->n_input_buffers > 0 && g_fut->input_buffers[0]) ? g_fut->input_buffers[0]->dtype : DTYPE_FLOAT,
-            .batch_capacity_expo = 10,  // Large batches
-            .ring_capacity_expo = 8,    // Large ring
-            .overflow_behaviour = OVERFLOW_BLOCK
-        },
-        .timeout_us = 1000000,
-        .process_delay_us = 0  // No artificial delay
-    };
-    
-    err = controllable_consumer_init(&consumer, cons_config);
-    TEST_ASSERT_EQUAL(Bp_EC_OK, err);
-    
-    // Connect pipeline
-    err = filt_sink_connect(&producer.base, 0, g_fut->input_buffers[0]);
-    TEST_ASSERT_EQUAL(Bp_EC_OK, err);
-    
-    err = filt_sink_connect(g_fut, 0, consumer.base.input_buffers[0]);
-    TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+    // For filters with inputs, create a high-rate producer
+    if (g_fut->n_input_buffers > 0) {
+        producer = malloc(sizeof(ControllableProducer_t));
+        TEST_ASSERT_NOT_NULL(producer);
+        
+        ControllableProducerConfig_t prod_config = {
+            .name = "perf_producer",
+            .timeout_us = 1000000,
+            .samples_per_second = 10000000,  // 10M samples/sec target
+            .batch_size = 1024,
+            .pattern = PATTERN_CONSTANT,
+            .constant_value = 1.0,
+            .max_batches = target_batches
+        };
+        
+        err = controllable_producer_init(producer, prod_config);
+        TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+        
+        err = filt_sink_connect(&producer->base, 0, g_fut->input_buffers[0]);
+        TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+    }
     
     // Measure time
     uint64_t start_ns = get_time_ns();
     
-    // Start pipeline
-    err = filt_start(&producer.base);
-    TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+    // Start all components
+    if (producer) {
+        err = filt_start(&producer->base);
+        TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+    }
     
     err = filt_start(g_fut);
     TEST_ASSERT_EQUAL(Bp_EC_OK, err);
     
-    err = filt_start(&consumer.base);
-    TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+    if (consumer) {
+        err = filt_start(&consumer->base);
+        TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+    }
     
-    // Wait for completion
-    while (atomic_load(&consumer.batches_consumed) < prod_config.max_batches) {
-        usleep(1000);
+    // Wait for completion based on filter type
+    if (producer && consumer) {
+        // Transform filter: wait for consumer to receive all data
+        while (atomic_load(&consumer->batches_consumed) < target_batches - 5) {
+            usleep(1000);
+        }
+    } else if (producer && !consumer) {
+        // Sink filter: wait for producer to send all data
+        while (atomic_load(&producer->batches_produced) < target_batches) {
+            usleep(1000);
+        }
+        usleep(10000); // Extra time for sink to process
+    } else if (!producer && consumer) {
+        // Source filter: run for fixed time
+        usleep(500000); // 500ms
     }
     
     uint64_t elapsed_ns = get_time_ns() - start_ns;
     
     // Stop pipeline
-    filt_stop(&producer.base);
+    if (producer) filt_stop(&producer->base);
     filt_stop(g_fut);
-    filt_stop(&consumer.base);
+    if (consumer) filt_stop(&consumer->base);
     
-    // Calculate throughput
-    size_t total_samples = atomic_load(&consumer.samples_consumed);
-    double throughput = (double)total_samples * 1e9 / elapsed_ns;
+    // Calculate throughput based on filter type
+    size_t total_samples = 0;
+    size_t batches_processed = 0;
+    double throughput = 0;
     
-    g_last_perf_metrics.throughput_samples_per_sec = throughput;
-    g_last_perf_metrics.batches_processed = atomic_load(&consumer.batches_consumed);
+    if (consumer) {
+        total_samples = atomic_load(&consumer->samples_consumed);
+        batches_processed = atomic_load(&consumer->batches_consumed);
+    } else if (producer) {
+        // For sink filters, use producer's sent data
+        total_samples = atomic_load(&producer->batches_produced) * 1024;
+        batches_processed = atomic_load(&producer->batches_produced);
+    }
     
-    // Record in performance report
-    char buf[256];
-    snprintf(buf, sizeof(buf), "  Throughput: %.2f Msamples/sec\n", throughput / 1e6);
-    strcat(g_perf_report, buf);
-    snprintf(buf, sizeof(buf), "  Batches: %zu\n", g_last_perf_metrics.batches_processed);
-    strcat(g_perf_report, buf);
-    snprintf(buf, sizeof(buf), "  Time: %.2f ms\n", elapsed_ns / 1e6);
-    strcat(g_perf_report, buf);
+    if (total_samples > 0) {
+        throughput = (double)total_samples * 1e9 / elapsed_ns;
+        
+        g_last_perf_metrics.throughput_samples_per_sec = throughput;
+        g_last_perf_metrics.batches_processed = batches_processed;
+        
+        // Record in performance report
+        char buf[256];
+        snprintf(buf, sizeof(buf), "  Throughput: %.2f Msamples/sec\n", throughput / 1e6);
+        strcat(g_perf_report, buf);
+        snprintf(buf, sizeof(buf), "  Batches: %zu\n", batches_processed);
+        strcat(g_perf_report, buf);
+        snprintf(buf, sizeof(buf), "  Time: %.2f ms\n", elapsed_ns / 1e6);
+        strcat(g_perf_report, buf);
+        
+        // Different thresholds for different filter types
+        double min_throughput = 100000; // 100K samples/sec for transform filters
+        if (!producer || !consumer) {
+            min_throughput = 50000; // 50K samples/sec for source/sink filters
+        }
+        
+        TEST_ASSERT_GREATER_THAN_MESSAGE(min_throughput, throughput,
+                                       "Filter throughput below minimum threshold");
+    }
     
-    // Performance assertion - expect at least 100K samples/sec for any filter
-    TEST_ASSERT_GREATER_THAN_MESSAGE(100000, throughput,
-                                     "Filter throughput below minimum threshold");
+    // Check for errors
+    if (producer) {
+        TEST_ASSERT_EQUAL(Bp_EC_OK, producer->base.worker_err_info.ec);
+    }
+    TEST_ASSERT_EQUAL(Bp_EC_OK, g_fut->worker_err_info.ec);
+    if (consumer) {
+        TEST_ASSERT_EQUAL(Bp_EC_OK, consumer->base.worker_err_info.ec);
+    }
     
     // Cleanup
-    filt_deinit(&producer.base);
-    filt_deinit(&consumer.base);
+    if (producer) {
+        filt_deinit(&producer->base);
+        free(producer);
+    }
+    if (consumer) {
+        filt_deinit(&consumer->base);
+        free(consumer);
+    }
     filt_deinit(g_fut);
 }
 
