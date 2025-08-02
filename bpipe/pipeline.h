@@ -43,7 +43,7 @@ typedef struct _Pipeline_t {
     size_t from_port;
     Filter_t* to_filter;
     size_t to_port;
-  }* connections;
+  } * connections;
   size_t n_connections;
 
   /* External interface mapping (direct pointers) */

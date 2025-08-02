@@ -46,7 +46,7 @@ static Bp_EC default_sink_connect(Filter_t* self, size_t output_port,
   if (output_port >= MAX_SINKS) {
     return Bp_EC_INVALID_SINK_IDX;
   }
-  
+
   // Check against filter's configured maximum sinks
   if (output_port >= self->max_supported_sinks) {
     return Bp_EC_INVALID_SINK_IDX;
@@ -57,6 +57,15 @@ static Bp_EC default_sink_connect(Filter_t* self, size_t output_port,
   if (self->sinks[output_port] != NULL) {
     pthread_mutex_unlock(&self->filter_mutex);
     return Bp_EC_CONNECTION_OCCUPIED;
+  }
+
+  // Type checking: If filter has input buffers, check type compatibility
+  // This assumes that filters with inputs should output the same type
+  if (self->n_input_buffers > 0 && self->input_buffers[0] != NULL) {
+    if (sink->dtype != self->input_buffers[0]->dtype) {
+      pthread_mutex_unlock(&self->filter_mutex);
+      return Bp_EC_DTYPE_MISMATCH;
+    }
   }
 
   self->sinks[output_port] = sink;
@@ -311,6 +320,9 @@ Bp_EC filt_deinit(Filter_t* f)
 
   // Destroy mutex
   pthread_mutex_destroy(&f->filter_mutex);
+
+  // Reset filter type to indicate it's deinitialized
+  f->filt_type = FILT_T_NDEF;
 
   return Bp_EC_OK;
 }
