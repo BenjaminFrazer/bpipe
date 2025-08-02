@@ -23,7 +23,6 @@ static void* controllable_producer_worker(void* arg)
     BP_WORKER_ASSERT(&cp->base, cp->base.sinks[0] != NULL, Bp_EC_NO_SINK);
     
     uint64_t period_ns = 1000000000ULL / cp->samples_per_second;
-    uint64_t batch_period_ns = period_ns * cp->batch_size;
     uint64_t next_batch_time = get_time_ns();
     
     while (atomic_load(&cp->base.running)) {
@@ -51,8 +50,9 @@ static void* controllable_producer_worker(void* arg)
                     cp->in_burst_on_phase = true;
                     cp->burst_counter = 0;
                 } else {
-                    // In off phase, sleep
-                    usleep(batch_period_ns / 1000);
+                    // In off phase, sleep for one batch period
+                    // We'll calculate this later when we know the batch size
+                    usleep(10000);  // 10ms default pause
                     continue;
                 }
             }
@@ -60,10 +60,22 @@ static void* controllable_producer_worker(void* arg)
         
         // Get output batch
         Batch_t* output = bb_get_head(cp->base.sinks[0]);
+        BP_WORKER_ASSERT(&cp->base, output != NULL, Bp_EC_NULL_POINTER);
+        
+        // Always use the sink's batch capacity
+        size_t batch_size = bb_batch_size(cp->base.sinks[0]);
+        BP_WORKER_ASSERT(&cp->base, batch_size > 0, Bp_EC_INVALID_CONFIG);
+        BP_WORKER_ASSERT(&cp->base, batch_size <= 65536, Bp_EC_INVALID_CONFIG); // Sanity check
+        
+        // Safety check - ensure we have valid data pointer
+        BP_WORKER_ASSERT(&cp->base, output->data != NULL, Bp_EC_NULL_POINTER);
+        
+        // Check that the sink buffer is configured for float data
+        BP_WORKER_ASSERT(&cp->base, cp->base.sinks[0]->dtype == DTYPE_FLOAT, Bp_EC_TYPE_MISMATCH);
         
         // Generate data based on pattern
         float* data = (float*)output->data;
-        for (size_t i = 0; i < cp->batch_size; i++) {
+        for (size_t i = 0; i < batch_size; i++) {
             switch (cp->pattern) {
                 case PATTERN_SEQUENTIAL:
                     data[i] = (float)(cp->next_sequence++);
@@ -85,7 +97,7 @@ static void* controllable_producer_worker(void* arg)
         }
         
         // Set batch metadata
-        output->head = cp->batch_size;
+        output->head = batch_size;
         output->t_ns = next_batch_time;
         output->period_ns = period_ns;
         output->ec = Bp_EC_OK;
@@ -100,12 +112,13 @@ static void* controllable_producer_worker(void* arg)
         
         // Update metrics
         atomic_fetch_add(&cp->batches_produced, 1);
-        atomic_fetch_add(&cp->samples_generated, cp->batch_size);
+        atomic_fetch_add(&cp->samples_generated, batch_size);
         atomic_fetch_add(&cp->total_batches, 1);
-        atomic_fetch_add(&cp->total_samples, cp->batch_size);
+        atomic_fetch_add(&cp->total_samples, batch_size);
         atomic_store(&cp->last_timestamp_ns, next_batch_time);
         
-        // Rate limiting
+        // Rate limiting - calculate batch period based on actual batch size
+        uint64_t batch_period_ns = period_ns * batch_size;
         uint64_t now = get_time_ns();
         next_batch_time += batch_period_ns;
         if (next_batch_time > now) {
@@ -119,6 +132,11 @@ static void* controllable_producer_worker(void* arg)
 Bp_EC controllable_producer_init(ControllableProducer_t* cp, ControllableProducerConfig_t config)
 {
     if (!cp) return Bp_EC_NULL_POINTER;
+    
+    // Check if already initialized
+    if (cp->base.filt_type != FILT_T_NDEF) {
+        return Bp_EC_ALREADY_RUNNING;
+    }
     
     // Build core config
     Core_filt_config_t core_config = {
@@ -137,7 +155,6 @@ Bp_EC controllable_producer_init(ControllableProducer_t* cp, ControllableProduce
     
     // Initialize configuration
     cp->samples_per_second = config.samples_per_second;
-    cp->batch_size = config.batch_size;
     cp->pattern = config.pattern;
     cp->constant_value = config.constant_value;
     cp->sine_frequency = config.sine_frequency;
@@ -273,6 +290,11 @@ static void* controllable_consumer_worker(void* arg)
 Bp_EC controllable_consumer_init(ControllableConsumer_t* cc, ControllableConsumerConfig_t config)
 {
     if (!cc) return Bp_EC_NULL_POINTER;
+    
+    // Check if already initialized
+    if (cc->base.filt_type != FILT_T_NDEF) {
+        return Bp_EC_ALREADY_RUNNING;
+    }
     
     // Build core config
     Core_filt_config_t core_config = {

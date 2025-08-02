@@ -116,157 +116,15 @@ void UnityTestResultsFailBegin(const UNITY_LINE_TYPE line) {
 }
 ```
 
-### Example Test Implementations
-
-```c
-// Lifecycle compliance test using Unity assertions
-void test_lifecycle_basic(void) {
-    TEST_ASSERT_NOT_NULL(g_fut);
-    
-    // Test init
-    TEST_ASSERT_EQUAL(Bp_EC_OK, g_fut_init(g_fut, g_fut_config));
-    TEST_ASSERT_NOT_NULL(g_fut->name);
-    
-    // Test start
-    TEST_ASSERT_EQUAL(Bp_EC_OK, filt_start(g_fut));
-    TEST_ASSERT_TRUE(atomic_load(&g_fut->running));
-    
-    // Test stop
-    TEST_ASSERT_EQUAL(Bp_EC_OK, filt_stop(g_fut));
-    TEST_ASSERT_FALSE(atomic_load(&g_fut->running));
-    
-    // Test deinit
-    TEST_ASSERT_EQUAL(Bp_EC_OK, filt_deinit(g_fut));
-}
-
-// Connection test with skip support
-void test_connection_single_sink(void) {
-    TEST_ASSERT_EQUAL(Bp_EC_OK, g_fut_init(g_fut, g_fut_config));
-    
-    // Skip if filter has no outputs
-    if (g_fut->max_sinks == 0) {
-        TEST_IGNORE_MESSAGE("Filter has no outputs");
-        return;
-    }
-    
-    MockConsumer_t consumer;
-    TEST_ASSERT_EQUAL(Bp_EC_OK, mock_consumer_init(&consumer));
-    
-    TEST_ASSERT_EQUAL(Bp_EC_OK, filt_sink_connect(g_fut, 0, consumer.base.input_buffers[0]));
-    TEST_ASSERT_NOT_NULL(g_fut->sinks[0]);
-    TEST_ASSERT_EQUAL_PTR(consumer.base.input_buffers[0], g_fut->sinks[0]);
-}
-
-// Performance test with metrics collection
-void test_perf_throughput(void) {
-    // Skip for zero-input filters
-    if (g_fut->n_input_buffers == 0) {
-        TEST_IGNORE_MESSAGE("Filter has no inputs");
-        return;
-    }
-    
-    TEST_ASSERT_EQUAL(Bp_EC_OK, g_fut_init(g_fut, g_fut_config));
-    
-    // Setup high-rate pipeline
-    MockProducer_t producer;
-    TEST_ASSERT_EQUAL(Bp_EC_OK, mock_producer_init(&producer, &(MockProducerConfig_t){
-        .samples_per_sec = 10000000.0,  // 10M samples/sec
-        .batch_size = 1024
-    }));
-    
-    MockConsumer_t consumer;
-    TEST_ASSERT_EQUAL(Bp_EC_OK, mock_consumer_init(&consumer));
-    
-    // Connect and run
-    TEST_ASSERT_EQUAL(Bp_EC_OK, bp_connect(&producer.base, 0, g_fut, 0));
-    TEST_ASSERT_EQUAL(Bp_EC_OK, bp_connect(g_fut, 0, &consumer.base, 0));
-    
-    uint64_t start_ns = get_time_ns();
-    
-    TEST_ASSERT_EQUAL(Bp_EC_OK, filt_start(&producer.base));
-    TEST_ASSERT_EQUAL(Bp_EC_OK, filt_start(g_fut));
-    TEST_ASSERT_EQUAL(Bp_EC_OK, filt_start(&consumer.base));
-    
-    sleep(1);  // Run for 1 second
-    
-    TEST_ASSERT_EQUAL(Bp_EC_OK, filt_stop(&producer.base));
-    TEST_ASSERT_EQUAL(Bp_EC_OK, filt_stop(g_fut));
-    TEST_ASSERT_EQUAL(Bp_EC_OK, filt_stop(&consumer.base));
-    
-    uint64_t elapsed_ns = get_time_ns() - start_ns;
-    
-    // Calculate and store metrics
-    double throughput = consumer.samples_consumed * 1e9 / elapsed_ns;
-    g_last_perf_metrics.throughput_samples_per_sec = throughput;
-    
-    // Record performance metric
-    char buf[256];
-    snprintf(buf, sizeof(buf), "Throughput: %.2f Msamples/sec\n", throughput / 1e6);
-    strcat(g_perf_report, buf);
-    
-    // Assert minimum performance
-    TEST_ASSERT_GREATER_THAN(1000000, throughput);  // > 1M samples/sec
-}
-```
-
 ## Mock Filters
 
 Mock filters provide controlled test infrastructure:
 
 ### Controllable Producer Filter
-```c
-typedef struct {
-    Filter_t base;
-    
-    // Configuration
-    double samples_per_sec;     // Generation rate
-    size_t batch_size;          // Samples per batch
-    DataPattern_t pattern;      // SEQUENTIAL, RANDOM, SINE, etc.
-    bool burst_mode;            // Enable burst generation
-    
-    // Error injection
-    bool inject_error;          // Enable error injection
-    Bp_EC error_code;          // Error to inject
-    size_t error_after_samples; // When to inject error
-    
-    // Metrics
-    size_t batches_produced;
-    size_t samples_generated;
-    double timing_error_ns;     // Actual vs expected timing
-} MockProducer_t;
-```
 
 ### Controllable Consumer Filter
-```c
-typedef struct {
-    Filter_t base;
-    
-    // Configuration
-    long processing_delay_us;   // Delay per batch
-    bool validate_sequence;     // Check sequential data
-    bool validate_checksum;     // Verify data integrity
-    ConsumptionPattern_t pattern; // STEADY, BURSTY, etc.
-    
-    // Metrics
-    size_t batches_consumed;
-    double avg_latency_ns;
-    bool data_valid;           // Data integrity check result
-} MockConsumer_t;
-```
 
 ### Passthrough Filter with Metrics
-```c
-typedef struct {
-    Filter_t base;
-    
-    // Metrics
-    size_t batches_passed;
-    double min_latency_ns;
-    double max_latency_ns;
-    double avg_latency_ns;
-    size_t max_queue_depth;
-} MockPassthrough_t;
-```
 
 ## Test Utilities
 
@@ -368,152 +226,6 @@ Tests that measure performance:
 
 ### Unity Test Runner
 
-```c
-// All compliance tests as Unity test functions
-static void (*compliance_tests[])(void) = {
-    // Lifecycle tests
-    test_lifecycle_basic,
-    test_lifecycle_restart,
-    test_lifecycle_errors,
-    test_lifecycle_cleanup,
-    
-    // Connection tests
-    test_connection_single_sink,
-    test_connection_multi_sink,
-    test_connection_multi_input,
-    test_connection_type_safety,
-    test_connection_limits,
-    
-    // Data flow tests
-    test_dataflow_passthrough,
-    test_dataflow_backpressure,
-    test_dataflow_starvation,
-    test_dataflow_timing,
-    test_dataflow_ordering,
-    
-    // Error handling tests
-    test_error_worker_assert,
-    test_error_propagation,
-    test_error_timeout,
-    test_error_invalid_config,
-    test_error_recovery,
-    
-    // Threading tests
-    test_thread_worker_lifecycle,
-    test_thread_concurrent_ops,
-    test_thread_shutdown_sync,
-    test_thread_force_return,
-    
-    // Performance tests
-    test_perf_throughput,
-    test_perf_latency,
-    test_perf_cpu_usage,
-    test_perf_memory_usage,
-    test_perf_scaling,
-};
-```
-
-// Helper macros for skipping inapplicable tests
-#define SKIP_IF_NO_INPUTS() \
-    if (g_fut->n_input_buffers == 0) { \
-        TEST_IGNORE_MESSAGE("Filter has no inputs"); \
-        return; \
-    }
-
-#define SKIP_IF_NO_OUTPUTS() \
-    if (g_fut->max_sinks == 0) { \
-        TEST_IGNORE_MESSAGE("Filter has no outputs"); \
-        return; \
-    }
-
-// Main test program
-int main(int argc, char* argv[]) {
-    // Command line options
-    const char* filter_pattern = NULL;
-    const char* test_pattern = NULL;
-    
-    for (int i = 1; i < argc; i++) {
-        if (strcmp(argv[i], "--filter") == 0 && i + 1 < argc) {
-            filter_pattern = argv[++i];
-        } else if (strcmp(argv[i], "--test") == 0 && i + 1 < argc) {
-            test_pattern = argv[++i];
-        }
-    }
-    
-    // Register filters to test
-    FilterRegistration_t filters[] = {
-        {
-            .name = "SignalGenerator",
-            .filter_size = sizeof(SignalGenerator_t),
-            .init = (FilterInitFunc)signal_generator_init,
-            .default_config = &default_sg_config,
-            .config_size = sizeof(SignalGeneratorConfig_t)
-        },
-        {
-            .name = "MapFilter",
-            .filter_size = sizeof(MapFilter_t),
-            .init = (FilterInitFunc)map_filter_init,
-            .default_config = &default_map_config,
-            .config_size = sizeof(MapConfig_t)
-        },
-        {
-            .name = "CSVSource",
-            .filter_size = sizeof(CSVSource_t),
-            .init = (FilterInitFunc)csv_source_init,
-            .default_config = &default_csv_config,
-            .config_size = sizeof(CSVSourceConfig_t)
-        },
-        // ... add more filters
-    };
-    
-    g_filters = filters;
-    g_n_filters = sizeof(filters) / sizeof(filters[0]);
-    
-    // Run all tests for each filter
-    for (g_current_filter = 0; g_current_filter < g_n_filters; g_current_filter++) {
-        // Skip if filter doesn't match pattern
-        if (filter_pattern && !strstr(filters[g_current_filter].name, filter_pattern)) {
-            continue;
-        }
-        
-        printf("\n========== Testing %s ==========\n", 
-               filters[g_current_filter].name);
-        
-        // Clear performance report
-        g_perf_report[0] = '\0';
-        
-        UNITY_BEGIN();
-        
-        for (size_t i = 0; i < sizeof(compliance_tests)/sizeof(compliance_tests[0]); i++) {
-            // Skip if test doesn't match pattern
-            if (test_pattern) {
-                const char* test_name = Unity.TestFile; // Unity tracks current test name
-                if (!strstr(test_name, test_pattern)) {
-                    continue;
-                }
-            }
-            
-            RUN_TEST(compliance_tests[i]);
-        }
-        
-        UNITY_END();
-        
-        // Print performance metrics if collected
-        if (strlen(g_perf_report) > 0) {
-            printf("\n=== %s Performance Metrics ===\n%s\n", 
-                   filters[g_current_filter].name, g_perf_report);
-        }
-    }
-    
-    // Summary
-    printf("\n========== SUMMARY ==========\n");
-    printf("Tested %zu filters with %zu compliance tests each\n", 
-           g_n_filters, sizeof(compliance_tests)/sizeof(compliance_tests[0]));
-    
-    return 0;
-}
-```
-
 ## Benefits of Unity-First Architecture
 
 1. **Simplicity**: Developers use familiar Unity TEST_ASSERT macros
@@ -584,59 +296,76 @@ int main(int argc, char* argv[]) {
 ### Critical Issues
 
 1. **Memory Corruption in test_dataflow_backpressure**
-   - **Symptom**: Segmentation fault when stopping producers
-   - **Details**: The `producers[0]` pointer gets corrupted with the value `0x4228000042280000` (which is 42.0 in double precision)
+   - **Symptom**: Segmentation fault when stopping filter (g_fut pointer corrupted to `0x4228000042280000`)
+   - **Details**: The filter pointer gets corrupted, possibly with floating point data (42.0 in double precision)
    - **Impact**: Test is currently disabled to allow other tests to run
-   - **Root Cause**: Unknown - possibly buffer overflow or type confusion in controllable_producer
+   - **Root Cause**: Unknown - likely race condition during high-throughput blocking scenarios
    - **Next Steps**: Need detailed memory debugging with valgrind or AddressSanitizer
 
-2. **API Inconsistency Between Filters**
-   - **Issue**: Mock filters (ControllableProducer, ControllableConsumer) take config by value, while real filters (Passthrough) take config by pointer
-   - **Current Fix**: Created wrapper functions to normalize the API
-   - **Long-term Fix**: Standardize all filter init functions to take config by pointer
+2. **Race Condition in tearDown()**
+   - **Issue**: Filter could be deinitialized while worker thread still active
+   - **Status**: Fixed by adding pthread_join() after filt_stop()
+   - **Impact**: Could cause segfaults or memory corruption during test cleanup
 
 ### Minor Issues
 
-3. **Sequence Validation Failure in Passthrough Test**
+3. **Filter Initialization Order Bug**
+   - **Issue**: SKIP_IF_NO_* macros were called before filter initialization
+   - **Status**: Fixed by moving g_fut_init() before all skip checks
+   - **Impact**: Tests incorrectly skipped for filters with outputs/inputs/workers
+   - **Root Cause**: Filter properties only populated during init
+
+4. **Sequence Validation Failures**
    - **Symptom**: test_dataflow_passthrough reports 640 sequence errors for Passthrough filter
-   - **Impact**: One test failure but filter appears to work correctly
-   - **Possible Cause**: The controllable consumer's sequence validation logic may not account for how passthrough handles batch metadata
+   - **Impact**: Test failures but filter appears to work correctly
+   - **Possible Cause**: The controllable consumer's sequence validation logic may not account for multiple producers with different start sequences
    - **Next Steps**: Debug sequence number propagation through passthrough filter
 
-4. **Missing Buffer Lifecycle Management**
-   - **Issue**: Original tests didn't call bb_start/bb_stop on input buffers
-   - **Status**: Fixed by adding buffer lifecycle calls to all test functions
-   - **Recommendation**: Add validation to ensure buffers are started before use
+5. **Type Safety Test Failing**
+   - **Issue**: test_connection_type_safety expects connection to fail with type mismatch, but it succeeds
+   - **Impact**: Type checking may not be working as expected
+   - **Next Steps**: Verify type checking logic in filt_sink_connect
 
-5. **Uninitialized Struct Fields**
-   - **Issue**: Config structs were missing field initializations, leading to undefined behavior
-   - **Status**: Fixed by explicitly initializing all fields
-   - **Recommendation**: Use designated initializers or memset to ensure all fields are initialized
+6. **Worker Thread Errors During Shutdown**
+   - **Issue**: NO_SINK errors reported when filter stopped without connected sink
+   - **Status**: Expected behavior but causes test failures
+   - **Recommendation**: Tests should connect sinks before starting filters with outputs
 
 ### Architectural Improvements Needed
 
-6. **Test Framework Robustness**
-   - Add better error messages for common failures
-   - Implement timeout handling for hung tests
-   - Add memory leak detection between tests
-   - Improve test isolation to prevent cross-test pollution
+7. **Enhanced Error Context**
+   - **Status**: Implemented custom assert macros in test_filter_bench_asserts.h
+   - **Features**: Automatic file/line context, human-readable error codes, descriptive messages
+   - **Next Steps**: Extend to all test assertions for consistency
 
-7. **Mock Filter Improvements**
-   - Standardize config passing (all by pointer)
-   - Add bounds checking in controllable_producer
-   - Implement proper cleanup in error paths
-   - Add debug logging for easier troubleshooting
+8. **Redundant Passthrough Implementation**
+   - **Issue**: Both core.c (matched_passthrough) and passthrough.c implement the same functionality
+   - **Impact**: Maintenance burden and potential confusion
+   - **Recommendation**: Remove duplicate or consolidate implementations
 
-8. **Performance Test Infrastructure**
-   - PassthroughMetrics filter not yet implemented
-   - Need consistent timing measurement across all tests
-   - Add CPU and memory usage tracking
-   - Implement configurable performance thresholds
+9. **Resource Management**
+   - **Issue**: Complex cleanup paths with multiple allocation points
+   - **Status**: Added tracking of allocated vs initialized resources
+   - **Recommendation**: Implement RAII-style resource management helpers
+
+### Test Infrastructure Improvements
+
+10. **Mock Filter Enhancements**
+    - Need better cleanup in error paths
+    - Add bounds checking in controllable_producer
+    - Implement debug logging for troubleshooting
+    - Add memory corruption detection
+
+11. **Performance Test Infrastructure**
+    - PassthroughMetrics filter not yet implemented (test_perf_latency disabled)
+    - Need consistent timing measurement across all tests
+    - Add CPU and memory usage tracking
+    - Implement configurable performance thresholds
 
 ### Lessons Learned
 
-1. **Buffer Management is Critical**: Every filter with input buffers must start them before use
-2. **Struct Initialization**: Always initialize all fields to prevent memory corruption
-3. **API Consistency**: Mixed by-value/by-pointer APIs cause confusion and bugs
-4. **Test Isolation**: Each test must fully clean up to prevent affecting subsequent tests
-5. **Error Context**: Unity's built-in error reporting could be enhanced with filter-specific context
+1. **Initialization Order Matters**: Always initialize filters before checking their properties
+2. **Thread Synchronization**: Must ensure worker threads are fully stopped before cleanup
+3. **Error Context is Critical**: Rich error messages dramatically improve debugging efficiency
+4. **Resource Tracking**: Distinguish between allocated and initialized resources for proper cleanup
+5. **Test Isolation**: Each test must fully clean up to prevent affecting subsequent tests

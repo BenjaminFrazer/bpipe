@@ -237,7 +237,6 @@ void test_lifecycle_with_worker(void)
           .name = "test_producer",
           .timeout_us = 1000000,
           .samples_per_second = 1000,
-          .batch_size = 64,
           .pattern = PATTERN_SEQUENTIAL,
           .constant_value = 0.0,
           .sine_frequency = 0.0,
@@ -258,7 +257,7 @@ void test_lifecycle_with_worker(void)
 
   // For filters with outputs, connect a consumer
   ControllableConsumer_t* consumer = NULL;
-  if (g_fut->n_sinks > 0) {
+  if (g_fut->max_supported_sinks > 0) {
     consumer = (ControllableConsumer_t*) malloc(sizeof(ControllableConsumer_t));
     ASSERT_ALLOC(consumer, "consumer");
 
@@ -354,8 +353,44 @@ void test_lifecycle_restart(void)
   
   SKIP_IF_NO_WORKER();
 
+  // Start input buffers if any
+  for (int i = 0; i < g_fut->n_input_buffers; i++) {
+    bb_start(g_fut->input_buffers[i]);
+  }
+
+  // For filters with outputs, connect a dummy consumer to avoid NO_SINK errors
+  ControllableConsumer_t* consumer = NULL;
+  if (g_fut->max_supported_sinks > 0) {
+    consumer = (ControllableConsumer_t*) malloc(sizeof(ControllableConsumer_t));
+    ASSERT_ALLOC(consumer, "consumer");
+
+    ControllableConsumerConfig_t consumer_config = {
+        .name = "restart_test_consumer",
+        .buff_config = {.dtype = (g_fut->n_input_buffers > 0 && g_fut->input_buffers[0])
+                                     ? g_fut->input_buffers[0]->dtype
+                                     : DTYPE_FLOAT,
+                        .batch_capacity_expo = 6,
+                        .ring_capacity_expo = 8,
+                        .overflow_behaviour = OVERFLOW_BLOCK},
+        .timeout_us = 1000000,
+        .process_delay_us = 0,
+        .validate_sequence = false,
+        .validate_timing = false,
+        .consume_pattern = 0,
+        .slow_start = false,
+        .slow_start_batches = 0};
+
+    ASSERT_BP_OK(controllable_consumer_init(consumer, consumer_config));
+    ASSERT_CONNECT_OK(g_fut, 0, consumer->base.input_buffers[0]);
+  }
+
   // Multiple start/stop cycles
   for (int i = 0; i < 3; i++) {
+    if (consumer) {
+      err = filt_start(&consumer->base);
+      TEST_ASSERT_EQUAL_MESSAGE(Bp_EC_OK, err, "Consumer start failed");
+    }
+    
     err = filt_start(g_fut);
     TEST_ASSERT_EQUAL_MESSAGE(Bp_EC_OK, err, "Filter start failed");
     TEST_ASSERT_TRUE(atomic_load(&g_fut->running));
@@ -366,6 +401,22 @@ void test_lifecycle_restart(void)
     TEST_ASSERT_EQUAL_MESSAGE(Bp_EC_OK, err, "Filter stop failed");
     TEST_ASSERT_FALSE(atomic_load(&g_fut->running));
     TEST_ASSERT_EQUAL(Bp_EC_OK, g_fut->worker_err_info.ec);
+    
+    if (consumer) {
+      err = filt_stop(&consumer->base);
+      TEST_ASSERT_EQUAL_MESSAGE(Bp_EC_OK, err, "Consumer stop failed");
+    }
+  }
+
+  // Cleanup consumer if connected
+  if (consumer) {
+    filt_deinit(&consumer->base);
+    free(consumer);
+  }
+
+  // Stop input buffers
+  for (int i = 0; i < g_fut->n_input_buffers; i++) {
+    bb_stop(g_fut->input_buffers[i]);
   }
 
   err = filt_deinit(g_fut);
@@ -662,7 +713,6 @@ void test_dataflow_passthrough(void)
           .name = "test_producer",
           .timeout_us = 1000000,
           .samples_per_second = 10000,
-          .batch_size = 64,
           .pattern = PATTERN_SEQUENTIAL,
           .constant_value = 0.0,
           .sine_frequency = 0.0,
@@ -884,7 +934,6 @@ void test_dataflow_backpressure(void)
           .name = "fast_producer",
           .timeout_us = 1000000,
           .samples_per_second = 1000000,  // 1M samples/sec
-          .batch_size = 1024,
           .pattern = PATTERN_CONSTANT,
           .constant_value = 42.0 + i,  // Different values for each input
           .sine_frequency = 0.0,
@@ -1048,6 +1097,33 @@ void test_error_timeout(void)
     bb_start(g_fut->input_buffers[i]);
   }
 
+  // For filters with outputs, connect a dummy consumer to avoid NO_SINK errors
+  ControllableConsumer_t* consumer = NULL;
+  if (g_fut->max_supported_sinks > 0) {
+    consumer = (ControllableConsumer_t*) malloc(sizeof(ControllableConsumer_t));
+    ASSERT_ALLOC(consumer, "consumer");
+
+    ControllableConsumerConfig_t consumer_config = {
+        .name = "timeout_test_consumer",
+        .buff_config = {.dtype = (g_fut->n_input_buffers > 0 && g_fut->input_buffers[0])
+                                     ? g_fut->input_buffers[0]->dtype
+                                     : DTYPE_FLOAT,
+                        .batch_capacity_expo = 6,
+                        .ring_capacity_expo = 8,
+                        .overflow_behaviour = OVERFLOW_BLOCK},
+        .timeout_us = 1000000,
+        .process_delay_us = 0,
+        .validate_sequence = false,
+        .validate_timing = false,
+        .consume_pattern = 0,
+        .slow_start = false,
+        .slow_start_batches = 0};
+
+    ASSERT_BP_OK(controllable_consumer_init(consumer, consumer_config));
+    ASSERT_CONNECT_OK(g_fut, 0, consumer->base.input_buffers[0]);
+    ASSERT_START_OK(&consumer->base);
+  }
+
   // Start filter with no producer - should handle timeouts gracefully
   err = filt_start(g_fut);
   TEST_ASSERT_EQUAL(Bp_EC_OK, err);
@@ -1062,6 +1138,13 @@ void test_error_timeout(void)
   // No worker errors expected from timeouts
   TEST_ASSERT_EQUAL_MESSAGE(Bp_EC_OK, g_fut->worker_err_info.ec,
                             "Timeout caused worker error");
+
+  // Stop and cleanup consumer if connected
+  if (consumer) {
+    filt_stop(&consumer->base);
+    filt_deinit(&consumer->base);
+    free(consumer);
+  }
 
   // Stop input buffers
   for (int i = 0; i < g_fut->n_input_buffers; i++) {
@@ -1085,6 +1168,38 @@ void test_thread_worker_lifecycle(void)
   // Verify worker thread not running
   TEST_ASSERT_FALSE(atomic_load(&g_fut->running));
 
+  // Start input buffers if any
+  for (int i = 0; i < g_fut->n_input_buffers; i++) {
+    bb_start(g_fut->input_buffers[i]);
+  }
+
+  // For filters with outputs, connect a dummy consumer to avoid NO_SINK errors
+  ControllableConsumer_t* consumer = NULL;
+  if (g_fut->max_supported_sinks > 0) {
+    consumer = (ControllableConsumer_t*) malloc(sizeof(ControllableConsumer_t));
+    ASSERT_ALLOC(consumer, "consumer");
+
+    ControllableConsumerConfig_t consumer_config = {
+        .name = "lifecycle_test_consumer",
+        .buff_config = {.dtype = (g_fut->n_input_buffers > 0 && g_fut->input_buffers[0])
+                                     ? g_fut->input_buffers[0]->dtype
+                                     : DTYPE_FLOAT,
+                        .batch_capacity_expo = 6,
+                        .ring_capacity_expo = 8,
+                        .overflow_behaviour = OVERFLOW_BLOCK},
+        .timeout_us = 1000000,
+        .process_delay_us = 0,
+        .validate_sequence = false,
+        .validate_timing = false,
+        .consume_pattern = 0,
+        .slow_start = false,
+        .slow_start_batches = 0};
+
+    ASSERT_BP_OK(controllable_consumer_init(consumer, consumer_config));
+    ASSERT_CONNECT_OK(g_fut, 0, consumer->base.input_buffers[0]);
+    ASSERT_START_OK(&consumer->base);
+  }
+
   // Start should create worker thread
   err = filt_start(g_fut);
   TEST_ASSERT_EQUAL(Bp_EC_OK, err);
@@ -1100,6 +1215,18 @@ void test_thread_worker_lifecycle(void)
 
   // Verify clean termination
   TEST_ASSERT_EQUAL(Bp_EC_OK, g_fut->worker_err_info.ec);
+
+  // Stop and cleanup consumer if connected
+  if (consumer) {
+    filt_stop(&consumer->base);
+    filt_deinit(&consumer->base);
+    free(consumer);
+  }
+
+  // Stop input buffers
+  for (int i = 0; i < g_fut->n_input_buffers; i++) {
+    bb_stop(g_fut->input_buffers[i]);
+  }
 
   filt_deinit(g_fut);
 }
@@ -1239,7 +1366,6 @@ void test_perf_throughput(void)
           .name = "perf_producer",
           .timeout_us = 1000000,
           .samples_per_second = 10000000,  // 10M samples/sec target
-          .batch_size = 1024,
           .pattern = PATTERN_CONSTANT,
           .constant_value = 1.0 + i * 0.1,  // Slightly different values
           .sine_frequency = 0.0,
@@ -1338,19 +1464,23 @@ void test_perf_throughput(void)
   } else if (producers) {
     // For sink filters, use total from all producers
     for (int i = 0; i < g_fut->n_input_buffers; i++) {
-      size_t produced = atomic_load(&producers[i]->batches_produced);
-      total_samples += produced * 1024;
-      batches_processed += produced;
+      size_t samples = atomic_load(&producers[i]->samples_generated);
+      size_t batches = atomic_load(&producers[i]->batches_produced);
+      total_samples += samples;
+      batches_processed += batches;
     }
     // For multi-input element-wise, actual processed = min(inputs)
     if (g_fut->n_input_buffers > 1) {
+      size_t min_samples = atomic_load(&producers[0]->samples_generated);
       size_t min_batches = atomic_load(&producers[0]->batches_produced);
       for (int i = 1; i < g_fut->n_input_buffers; i++) {
-        size_t produced = atomic_load(&producers[i]->batches_produced);
-        if (produced < min_batches) min_batches = produced;
+        size_t samples = atomic_load(&producers[i]->samples_generated);
+        size_t batches = atomic_load(&producers[i]->batches_produced);
+        if (samples < min_samples) min_samples = samples;
+        if (batches < min_batches) min_batches = batches;
       }
       batches_processed = min_batches;
-      total_samples = min_batches * 1024;
+      total_samples = min_samples;
     }
   }
 
@@ -1522,7 +1652,6 @@ static ControllableProducerConfig_t default_producer_config = {
     .name = "default_producer",
     .timeout_us = 1000000,
     .samples_per_second = 1000,
-    .batch_size = 64,
     .pattern = PATTERN_SEQUENTIAL,
     .constant_value = 0.0,
     .sine_frequency = 0.0,
@@ -1566,7 +1695,7 @@ static void (*compliance_tests[])(void) = {
 
     // Data flow tests
     test_dataflow_passthrough,
-    // test_dataflow_backpressure,  // FIXME: Memory corruption issue
+    // test_dataflow_backpressure,  // TODO: Still debugging memory corruption
 
     // Error handling tests
     test_error_invalid_config, test_error_timeout,

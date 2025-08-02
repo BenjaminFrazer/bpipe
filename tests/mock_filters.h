@@ -18,7 +18,6 @@ typedef struct {
     const char* name;
     long timeout_us;
     size_t samples_per_second;     // Data generation rate
-    size_t batch_size;             // Samples per batch
     ProducerPattern_t pattern;     // Data pattern to generate
     float constant_value;          // For PATTERN_CONSTANT
     float sine_frequency;          // For PATTERN_SINE
@@ -34,7 +33,6 @@ typedef struct {
     
     // Configuration
     size_t samples_per_second;
-    size_t batch_size;
     ProducerPattern_t pattern;
     float constant_value;
     float sine_frequency;

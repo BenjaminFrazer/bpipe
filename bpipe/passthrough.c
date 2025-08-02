@@ -93,7 +93,7 @@ Bp_EC passthrough_init(Passthrough_t* pt, Passthrough_config_t* config)
     if (config == NULL) return Bp_EC_NULL_POINTER;
     
     // Check if already initialized
-    if (pt->base.name[0] != '\0') {
+    if (pt->base.filt_type != FILT_T_NDEF) {
         return Bp_EC_ALREADY_RUNNING;
     }
     
