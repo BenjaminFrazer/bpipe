@@ -578,3 +578,65 @@ int main(int argc, char* argv[]) {
    - CI/CD integration with Unity output parsing
    - Documentation and examples
    - Performance baselines
+
+## Outstanding Issues
+
+### Critical Issues
+
+1. **Memory Corruption in test_dataflow_backpressure**
+   - **Symptom**: Segmentation fault when stopping producers
+   - **Details**: The `producers[0]` pointer gets corrupted with the value `0x4228000042280000` (which is 42.0 in double precision)
+   - **Impact**: Test is currently disabled to allow other tests to run
+   - **Root Cause**: Unknown - possibly buffer overflow or type confusion in controllable_producer
+   - **Next Steps**: Need detailed memory debugging with valgrind or AddressSanitizer
+
+2. **API Inconsistency Between Filters**
+   - **Issue**: Mock filters (ControllableProducer, ControllableConsumer) take config by value, while real filters (Passthrough) take config by pointer
+   - **Current Fix**: Created wrapper functions to normalize the API
+   - **Long-term Fix**: Standardize all filter init functions to take config by pointer
+
+### Minor Issues
+
+3. **Sequence Validation Failure in Passthrough Test**
+   - **Symptom**: test_dataflow_passthrough reports 640 sequence errors for Passthrough filter
+   - **Impact**: One test failure but filter appears to work correctly
+   - **Possible Cause**: The controllable consumer's sequence validation logic may not account for how passthrough handles batch metadata
+   - **Next Steps**: Debug sequence number propagation through passthrough filter
+
+4. **Missing Buffer Lifecycle Management**
+   - **Issue**: Original tests didn't call bb_start/bb_stop on input buffers
+   - **Status**: Fixed by adding buffer lifecycle calls to all test functions
+   - **Recommendation**: Add validation to ensure buffers are started before use
+
+5. **Uninitialized Struct Fields**
+   - **Issue**: Config structs were missing field initializations, leading to undefined behavior
+   - **Status**: Fixed by explicitly initializing all fields
+   - **Recommendation**: Use designated initializers or memset to ensure all fields are initialized
+
+### Architectural Improvements Needed
+
+6. **Test Framework Robustness**
+   - Add better error messages for common failures
+   - Implement timeout handling for hung tests
+   - Add memory leak detection between tests
+   - Improve test isolation to prevent cross-test pollution
+
+7. **Mock Filter Improvements**
+   - Standardize config passing (all by pointer)
+   - Add bounds checking in controllable_producer
+   - Implement proper cleanup in error paths
+   - Add debug logging for easier troubleshooting
+
+8. **Performance Test Infrastructure**
+   - PassthroughMetrics filter not yet implemented
+   - Need consistent timing measurement across all tests
+   - Add CPU and memory usage tracking
+   - Implement configurable performance thresholds
+
+### Lessons Learned
+
+1. **Buffer Management is Critical**: Every filter with input buffers must start them before use
+2. **Struct Initialization**: Always initialize all fields to prevent memory corruption
+3. **API Consistency**: Mixed by-value/by-pointer APIs cause confusion and bugs
+4. **Test Isolation**: Each test must fully clean up to prevent affecting subsequent tests
+5. **Error Context**: Unity's built-in error reporting could be enhanced with filter-specific context
