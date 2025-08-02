@@ -2,32 +2,38 @@
 
 ## Overview
 
-The Filter Test Bench is a comprehensive testing framework designed to validate all aspects of the bpipe2 filter public API. It provides a generic compliance test suite that can be applied to any filter implementation, reducing code repetition and ensuring consistent API behavior.
+The Filter Test Bench is a Unity-based testing framework designed to validate all aspects of the bpipe2 filter public API. It provides a generic compliance test suite that can be applied to any filter implementation, reducing code repetition and ensuring consistent API behavior.
 
 ## Design Principles
 
-1. **Generic Compliance Testing** - Single test suite applicable to all filter types
-2. **Clean Separation** - Test context (input) separate from test results (output)
-3. **Rich Error Context** - Capture file, line, function for debugging
-4. **Performance Metrics** - Extract KPIs like throughput and latency
-5. **Flexible Results** - Support pass/fail/skip/performance outcomes
+1. **Unity-First Architecture** - Leverages Unity test framework for assertions and test running
+2. **Generic Compliance Testing** - Single test suite applicable to all filter types
+3. **Automatic Error Context** - Unity captures file, line, function on assertion failures
+4. **Performance Metrics** - Additional layer for KPIs like throughput and latency
+5. **Simple Test Writing** - Standard Unity TEST_ASSERT macros with optional enhancements
 
 ## Test Framework Architecture
+
+### Unity Integration
+
+The test bench uses Unity as its core assertion and test execution framework. Each compliance test is implemented as a standard Unity test function, with additional infrastructure for filter registration and performance metrics.
 
 ### Core Types
 
 ```c
-// Test result status
-typedef enum {
-    TEST_RESULT_PASS,
-    TEST_RESULT_FAIL,
-    TEST_RESULT_SKIP,      // Test not applicable to this filter
-    TEST_RESULT_TIMEOUT,   // Test exceeded time limit
-    TEST_RESULT_PERF,      // Performance test completed (check metrics)
-    TEST_RESULT_BASELINE   // Baseline measurement captured
-} TestResultStatus_t;
+// Filter init function type
+typedef Bp_EC (*FilterInitFunc)(void* filter, void* config);
 
-// Performance/KPI metrics
+// Filter registration for test harness
+typedef struct {
+    const char* name;           // Filter name for reporting
+    size_t filter_size;         // sizeof(MyFilter_t)
+    FilterInitFunc init;        // Filter's init function
+    void* default_config;       // Default configuration
+    size_t config_size;         // sizeof(MyFilterConfig_t)
+} FilterRegistration_t;
+
+// Performance metrics (collected separately from Unity)
 typedef struct {
     double throughput_samples_per_sec;
     double latency_ns_p50;
@@ -35,137 +41,171 @@ typedef struct {
     double cpu_usage_percent;
     size_t memory_bytes_peak;
     size_t batches_processed;
-} TestMetrics_t;
+} PerfMetrics_t;
 
-// Test error details
-typedef struct {
-    Bp_EC ec;
-    const char* file;
-    const char* func;
-    int line;
-    const char* expr;
-    const char* message;
-} TestError_t;
+// Global state for current test
+static FilterRegistration_t* g_filters = NULL;
+static size_t g_n_filters = 0;
+static size_t g_current_filter = 0;
 
-// Error callback for real-time error reporting
-typedef void (*TestErrorCallback)(const TestError_t* error, void* user_data);
+// Current filter under test
+static Filter_t* g_fut = NULL;
+static void* g_fut_config = NULL;
+static FilterInitFunc g_fut_init = NULL;
+static const char* g_filter_name = NULL;
 
-// Test harness context (input to test)
-typedef struct {
-    Filter_t* fut;              // Filter under test
-    TestErrorCallback on_error; // Optional error callback
-    void* user_data;           // Callback user data
-    double timeout_sec;        // Test timeout
-    bool capture_metrics;      // Enable metric collection
-    void* default_config;      // Default config for filter init
-    FilterInitFunc init_func;  // Filter's init function
-} TestContext_t;
+// Performance metrics storage
+static PerfMetrics_t g_last_perf_metrics;
+static char g_perf_report[8192];
 
-// Test result (output from test)
-typedef struct {
-    TestResultStatus_t status;
-    TestMetrics_t metrics;
-    char message[256];         // Error or skip reason
-    
-    // Error details (if failed)
-    Bp_EC error_code;
-    const char* error_file;
-    const char* error_func;
-    int error_line;
-} TestResult_t;
-
-// Test case function signature
-typedef TestResult_t (*FilterTestCase)(TestContext_t* ctx);
+// Test timing
+static uint64_t g_test_start_ns = 0;
 ```
 
-### Test Assertion Macro
+### Unity setUp/tearDown
 
 ```c
-// TH_ASSERT macro that captures context and returns on failure
-#define TH_ASSERT(ctx, condition, error_code, message) \
-    do { \
-        if (!(condition)) { \
-            TestResult_t result = { \
-                .status = TEST_RESULT_FAIL, \
-                .error_code = (error_code), \
-                .error_file = __FILE__, \
-                .error_func = __func__, \
-                .error_line = __LINE__ \
-            }; \
-            snprintf(result.message, sizeof(result.message), \
-                     "%s: %s", #condition, (message)); \
-            if ((ctx)->on_error) { \
-                TestError_t error = { \
-                    .ec = (error_code), \
-                    .file = __FILE__, \
-                    .func = __func__, \
-                    .line = __LINE__, \
-                    .expr = #condition, \
-                    .message = (message) \
-                }; \
-                (ctx)->on_error(&error, (ctx)->user_data); \
-            } \
-            return result; \
-        } \
-    } while(0)
-```
-
-### Example Test Implementation
-
-```c
-// Example compliance test - lifecycle validation
-TestResult_t test_lifecycle_basic(TestContext_t* ctx) {
-    TestResult_t result = {.status = TEST_RESULT_PASS};
-    Filter_t* fut = ctx->fut;
+// Unity setUp - called before each test
+void setUp(void) {
+    // Create fresh filter instance for each test
+    FilterRegistration_t* reg = &g_filters[g_current_filter];
     
-    TH_ASSERT(ctx, fut != NULL, Bp_EC_NULL_PTR, "Filter under test is NULL");
+    g_fut = (Filter_t*)calloc(1, reg->filter_size);
+    g_fut_config = malloc(reg->config_size);
+    memcpy(g_fut_config, reg->default_config, reg->config_size);
+    g_fut_init = reg->init;
+    g_filter_name = reg->name;
     
-    // Test init using provided init function
-    Bp_EC err = ctx->init_func(fut, ctx->default_config);
-    TH_ASSERT(ctx, err == Bp_EC_OK, err, "Failed to initialize filter");
-    
-    // Test start
-    err = filt_start(fut);
-    TH_ASSERT(ctx, err == Bp_EC_OK, err, "Failed to start filter");
-    
-    // Test stop
-    err = filt_stop(fut);
-    TH_ASSERT(ctx, err == Bp_EC_OK, err, "Failed to stop filter");
-    
-    // Test deinit
-    err = filt_deinit(fut);
-    TH_ASSERT(ctx, err == Bp_EC_OK, err, "Failed to deinitialize filter");
-    
-    return result;
+    // Capture test start time
+    g_test_start_ns = get_time_ns();
 }
 
-// Example performance test
-TestResult_t test_throughput_max(TestContext_t* ctx) {
-    TestResult_t result = {.status = TEST_RESULT_PERF};
+// Unity tearDown - called after each test
+void tearDown(void) {
+    // Cleanup after each test
+    if (g_fut && g_fut->ops.deinit) {
+        g_fut->ops.deinit(g_fut);
+    }
+    free(g_fut);
+    free(g_fut_config);
+    g_fut = NULL;
+    g_fut_config = NULL;
+}
+```
+
+### Optional Unity Customization
+
+```c
+// Optional: Custom Unity failure handler for enhanced debugging
+void UnityTestResultsFailBegin(const UNITY_LINE_TYPE line) {
+    uint64_t elapsed_ns = get_time_ns() - g_test_start_ns;
     
-    // Skip if filter has no inputs
-    if (ctx->fut->n_input_buffers == 0) {
-        result.status = TEST_RESULT_SKIP;
-        snprintf(result.message, sizeof(result.message), 
-                 "Filter has no inputs - skipping throughput test");
-        return result;
+    // Print enhanced context
+    printf("\n[Test: %s, Filter: %s, Elapsed: %.3f ms]\n",
+           Unity.CurrentTestName,
+           g_filter_name,
+           elapsed_ns / 1000000.0);
+    
+    // Automatic debugger break if attached
+    #ifdef DEBUG
+    if (is_debugger_attached()) {
+        printf("⚠️  Debugger attached - breaking at assertion\n");
+        __builtin_trap();
+    }
+    #endif
+}
+```
+
+### Example Test Implementations
+
+```c
+// Lifecycle compliance test using Unity assertions
+void test_lifecycle_basic(void) {
+    TEST_ASSERT_NOT_NULL(g_fut);
+    
+    // Test init
+    TEST_ASSERT_EQUAL(Bp_EC_OK, g_fut_init(g_fut, g_fut_config));
+    TEST_ASSERT_NOT_NULL(g_fut->name);
+    
+    // Test start
+    TEST_ASSERT_EQUAL(Bp_EC_OK, filt_start(g_fut));
+    TEST_ASSERT_TRUE(atomic_load(&g_fut->running));
+    
+    // Test stop
+    TEST_ASSERT_EQUAL(Bp_EC_OK, filt_stop(g_fut));
+    TEST_ASSERT_FALSE(atomic_load(&g_fut->running));
+    
+    // Test deinit
+    TEST_ASSERT_EQUAL(Bp_EC_OK, filt_deinit(g_fut));
+}
+
+// Connection test with skip support
+void test_connection_single_sink(void) {
+    TEST_ASSERT_EQUAL(Bp_EC_OK, g_fut_init(g_fut, g_fut_config));
+    
+    // Skip if filter has no outputs
+    if (g_fut->max_sinks == 0) {
+        TEST_IGNORE_MESSAGE("Filter has no outputs");
+        return;
     }
     
-    // Setup test pipeline...
-    MockProducer_t producer;
     MockConsumer_t consumer;
+    TEST_ASSERT_EQUAL(Bp_EC_OK, mock_consumer_init(&consumer));
     
-    // Run throughput test...
-    double start_time = get_time_sec();
-    size_t samples_processed = run_throughput_test(ctx->fut, &producer, &consumer);
-    double elapsed_time = get_time_sec() - start_time;
+    TEST_ASSERT_EQUAL(Bp_EC_OK, filt_sink_connect(g_fut, 0, consumer.base.input_buffers[0]));
+    TEST_ASSERT_NOT_NULL(g_fut->sinks[0]);
+    TEST_ASSERT_EQUAL_PTR(consumer.base.input_buffers[0], g_fut->sinks[0]);
+}
+
+// Performance test with metrics collection
+void test_perf_throughput(void) {
+    // Skip for zero-input filters
+    if (g_fut->n_input_buffers == 0) {
+        TEST_IGNORE_MESSAGE("Filter has no inputs");
+        return;
+    }
     
-    // Capture metrics
-    result.metrics.throughput_samples_per_sec = samples_processed / elapsed_time;
-    result.metrics.memory_bytes_peak = get_peak_memory();
-    result.metrics.batches_processed = consumer.batches_received;
+    TEST_ASSERT_EQUAL(Bp_EC_OK, g_fut_init(g_fut, g_fut_config));
     
-    return result;
+    // Setup high-rate pipeline
+    MockProducer_t producer;
+    TEST_ASSERT_EQUAL(Bp_EC_OK, mock_producer_init(&producer, &(MockProducerConfig_t){
+        .samples_per_sec = 10000000.0,  // 10M samples/sec
+        .batch_size = 1024
+    }));
+    
+    MockConsumer_t consumer;
+    TEST_ASSERT_EQUAL(Bp_EC_OK, mock_consumer_init(&consumer));
+    
+    // Connect and run
+    TEST_ASSERT_EQUAL(Bp_EC_OK, bp_connect(&producer.base, 0, g_fut, 0));
+    TEST_ASSERT_EQUAL(Bp_EC_OK, bp_connect(g_fut, 0, &consumer.base, 0));
+    
+    uint64_t start_ns = get_time_ns();
+    
+    TEST_ASSERT_EQUAL(Bp_EC_OK, filt_start(&producer.base));
+    TEST_ASSERT_EQUAL(Bp_EC_OK, filt_start(g_fut));
+    TEST_ASSERT_EQUAL(Bp_EC_OK, filt_start(&consumer.base));
+    
+    sleep(1);  // Run for 1 second
+    
+    TEST_ASSERT_EQUAL(Bp_EC_OK, filt_stop(&producer.base));
+    TEST_ASSERT_EQUAL(Bp_EC_OK, filt_stop(g_fut));
+    TEST_ASSERT_EQUAL(Bp_EC_OK, filt_stop(&consumer.base));
+    
+    uint64_t elapsed_ns = get_time_ns() - start_ns;
+    
+    // Calculate and store metrics
+    double throughput = consumer.samples_consumed * 1e9 / elapsed_ns;
+    g_last_perf_metrics.throughput_samples_per_sec = throughput;
+    
+    // Record performance metric
+    char buf[256];
+    snprintf(buf, sizeof(buf), "Throughput: %.2f Msamples/sec\n", throughput / 1e6);
+    strcat(g_perf_report, buf);
+    
+    // Assert minimum performance
+    TEST_ASSERT_GREATER_THAN(1000000, throughput);  // > 1M samples/sec
 }
 ```
 
@@ -326,22 +366,11 @@ Tests that measure performance:
 
 ## Test Registration and Execution
 
-### Filter Registration
+### Unity Test Runner
 
 ```c
-// Filter init function type (matches existing filter init signatures)
-typedef Bp_EC (*FilterInitFunc)(void* filter, void* config);
-
-// Filter registration entry
-typedef struct {
-    size_t filter_size;         // sizeof(MyFilter_t)
-    FilterInitFunc init;        // Filter's init function
-    void* default_config;       // Default configuration
-    size_t config_size;         // sizeof(MyFilterConfig_t)
-} FilterRegistration_t;
-
-// Global compliance test suite
-static const FilterTestCase compliance_tests[] = {
+// All compliance tests as Unity test functions
+static void (*compliance_tests[])(void) = {
     // Lifecycle tests
     test_lifecycle_basic,
     test_lifecycle_restart,
@@ -384,90 +413,51 @@ static const FilterTestCase compliance_tests[] = {
 };
 ```
 
-### Running Tests
+// Helper macros for skipping inapplicable tests
+#define SKIP_IF_NO_INPUTS() \
+    if (g_fut->n_input_buffers == 0) { \
+        TEST_IGNORE_MESSAGE("Filter has no inputs"); \
+        return; \
+    }
 
-```c
-// Test runner that loops through all filters and all tests
-TestSummary_t run_filter_compliance_tests(FilterRegistration_t filters[], 
-                                         size_t n_filters) {
-    TestSummary_t summary = {0};
+#define SKIP_IF_NO_OUTPUTS() \
+    if (g_fut->max_sinks == 0) { \
+        TEST_IGNORE_MESSAGE("Filter has no outputs"); \
+        return; \
+    }
+
+// Main test program
+int main(int argc, char* argv[]) {
+    // Command line options
+    const char* filter_pattern = NULL;
+    const char* test_pattern = NULL;
     
-    // Loop through each filter
-    for (size_t f = 0; f < n_filters; f++) {
-        // Allocate filter and config
-        void* filter = calloc(1, filters[f].filter_size);
-        void* config = malloc(filters[f].config_size);
-        memcpy(config, filters[f].default_config, filters[f].config_size);
-        
-        // Initialize to get filter name
-        Bp_EC err = filters[f].init(filter, config);
-        if (err != Bp_EC_OK) {
-            printf("Failed to initialize filter for testing\n");
-            free(filter);
-            free(config);
-            continue;
-        }
-        
-        Filter_t* base = (Filter_t*)filter;
-        printf("Testing %s...\n", base->name);
-        
-        // Cleanup this instance
-        if (base->ops.deinit) base->ops.deinit(base);
-        free(filter);
-        free(config);
-        
-        // Loop through each compliance test
-        for (size_t t = 0; t < sizeof(compliance_tests)/sizeof(compliance_tests[0]); t++) {
-            // Create fresh filter instance for each test
-            filter = calloc(1, filters[f].filter_size);
-            config = malloc(filters[f].config_size);
-            memcpy(config, filters[f].default_config, filters[f].config_size);
-            
-            // Setup test context (uninitialized filter)
-            TestContext_t ctx = {
-                .fut = (Filter_t*)filter,
-                .on_error = default_error_handler,
-                .timeout_sec = 30.0,
-                .capture_metrics = true,
-                .default_config = config,
-                .init_func = filters[f].init
-            };
-            
-            // Run test
-            TestResult_t result = compliance_tests[t](&ctx);
-            
-            // Record result
-            record_test_result(&summary, base->name, 
-                             get_test_name(compliance_tests[t]), &result);
-            
-            // Cleanup
-            base = (Filter_t*)filter;
-            if (base->ops.deinit) base->ops.deinit(base);
-            free(filter);
-            free(config);
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--filter") == 0 && i + 1 < argc) {
+            filter_pattern = argv[++i];
+        } else if (strcmp(argv[i], "--test") == 0 && i + 1 < argc) {
+            test_pattern = argv[++i];
         }
     }
     
-    return summary;
-}
-
-// Example usage in main test program
-int main() {
-    // Register all filters to test
+    // Register filters to test
     FilterRegistration_t filters[] = {
         {
+            .name = "SignalGenerator",
             .filter_size = sizeof(SignalGenerator_t),
             .init = (FilterInitFunc)signal_generator_init,
             .default_config = &default_sg_config,
             .config_size = sizeof(SignalGeneratorConfig_t)
         },
         {
+            .name = "MapFilter",
             .filter_size = sizeof(MapFilter_t),
             .init = (FilterInitFunc)map_filter_init,
             .default_config = &default_map_config,
             .config_size = sizeof(MapConfig_t)
         },
         {
+            .name = "CSVSource",
             .filter_size = sizeof(CSVSource_t),
             .init = (FilterInitFunc)csv_source_init,
             .default_config = &default_csv_config,
@@ -476,16 +466,63 @@ int main() {
         // ... add more filters
     };
     
-    // Run all compliance tests on all filters
-    TestSummary_t summary = run_filter_compliance_tests(filters, 
-                                                       sizeof(filters)/sizeof(filters[0]));
+    g_filters = filters;
+    g_n_filters = sizeof(filters) / sizeof(filters[0]);
     
-    // Print results
-    print_test_summary(&summary);
+    // Run all tests for each filter
+    for (g_current_filter = 0; g_current_filter < g_n_filters; g_current_filter++) {
+        // Skip if filter doesn't match pattern
+        if (filter_pattern && !strstr(filters[g_current_filter].name, filter_pattern)) {
+            continue;
+        }
+        
+        printf("\n========== Testing %s ==========\n", 
+               filters[g_current_filter].name);
+        
+        // Clear performance report
+        g_perf_report[0] = '\0';
+        
+        UNITY_BEGIN();
+        
+        for (size_t i = 0; i < sizeof(compliance_tests)/sizeof(compliance_tests[0]); i++) {
+            // Skip if test doesn't match pattern
+            if (test_pattern) {
+                const char* test_name = Unity.TestFile; // Unity tracks current test name
+                if (!strstr(test_name, test_pattern)) {
+                    continue;
+                }
+            }
+            
+            RUN_TEST(compliance_tests[i]);
+        }
+        
+        UNITY_END();
+        
+        // Print performance metrics if collected
+        if (strlen(g_perf_report) > 0) {
+            printf("\n=== %s Performance Metrics ===\n%s\n", 
+                   filters[g_current_filter].name, g_perf_report);
+        }
+    }
     
-    return summary.failed_count > 0 ? 1 : 0;
+    // Summary
+    printf("\n========== SUMMARY ==========\n");
+    printf("Tested %zu filters with %zu compliance tests each\n", 
+           g_n_filters, sizeof(compliance_tests)/sizeof(compliance_tests[0]));
+    
+    return 0;
 }
 ```
+
+## Benefits of Unity-First Architecture
+
+1. **Simplicity**: Developers use familiar Unity TEST_ASSERT macros
+2. **Proven Framework**: Unity is mature, well-documented, and widely used
+3. **Zero Learning Curve**: Team likely already knows Unity
+4. **Built-in Features**: Test discovery, skipping, timing, and reporting
+5. **CI/CD Ready**: Standard output format parseable by most CI tools
+6. **Extensible**: Can add custom handlers and metrics as needed
+7. **Lightweight**: Unity has minimal overhead and dependencies
 
 ## Success Criteria
 
@@ -506,22 +543,38 @@ int main() {
 
 ## Implementation Plan
 
-1. **Phase 1**: Core framework
-   - Test types and macros
-   - Mock filters
-   - Basic test registration
+1. **Phase 1**: Unity Integration
+   - Set up Unity test framework
+   - Create basic test harness with setUp/tearDown
+   - Implement filter registration structure
+   - Test with one simple filter
 
-2. **Phase 2**: Compliance tests
-   - Lifecycle tests
-   - Connection tests
-   - Data flow tests
+2. **Phase 2**: Core Compliance Tests  
+   - Port existing tests to Unity format
+   - Implement lifecycle tests
+   - Implement connection tests
+   - Implement basic data flow tests
 
-3. **Phase 3**: Advanced tests
+3. **Phase 3**: Mock Filters
+   - MockProducer with configurable patterns
+   - MockConsumer with validation
+   - MockPassthrough with metrics
+   - Test utilities for data verification
+
+4. **Phase 4**: Advanced Tests
    - Error handling tests
-   - Threading tests
-   - Performance tests
+   - Threading tests  
+   - Performance tests with metrics collection
+   - Skip logic for inapplicable tests
 
-4. **Phase 4**: Integration
-   - Apply to existing filters
-   - CI/CD integration
-   - Documentation
+5. **Phase 5**: Enhancements
+   - Custom Unity error handler with timing
+   - Performance metric reporting
+   - Command-line test filtering
+   - Debugger integration
+
+6. **Phase 6**: Full Integration
+   - Apply to all existing filters
+   - CI/CD integration with Unity output parsing
+   - Documentation and examples
+   - Performance baselines
