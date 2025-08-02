@@ -441,8 +441,6 @@ void test_connection_type_safety(void) {
 //=============================================================================
 
 void test_dataflow_passthrough(void) {
-    SKIP_IF_NO_WORKER();
-    
     // Skip if filter has neither inputs nor outputs
     if (g_fut->n_input_buffers == 0 && g_fut->max_supported_sinks == 0) {
         TEST_IGNORE_MESSAGE("Filter has neither inputs nor outputs");
@@ -595,8 +593,6 @@ void test_dataflow_passthrough(void) {
 }
 
 void test_dataflow_backpressure(void) {
-    SKIP_IF_NO_WORKER();
-    
     // This test specifically needs both inputs and outputs to test backpressure propagation
     // However, we can test partial backpressure for source/sink filters
     if (g_fut->n_input_buffers == 0 && g_fut->max_supported_sinks == 0) {
@@ -866,8 +862,6 @@ void test_thread_shutdown_sync(void) {
 //=============================================================================
 
 void test_perf_throughput(void) {
-    SKIP_IF_NO_WORKER();
-    
     // Skip if filter has neither inputs nor outputs
     if (g_fut->n_input_buffers == 0 && g_fut->max_supported_sinks == 0) {
         TEST_IGNORE_MESSAGE("Filter has neither inputs nor outputs");
