@@ -15,6 +15,8 @@ DEP_FLAGS = -MMD -MP
 TEST_SOURCES=$(wildcard $(TEST_SRC_DIR)/test_*.c)
 # Generate test executable names from source files
 TEST_EXECUTABLES=$(patsubst $(TEST_SRC_DIR)/%.c,$(BUILD_DIR)/%,$(TEST_SOURCES))
+# Add filter compliance test to the list
+TEST_EXECUTABLES += $(BUILD_DIR)/test_filter_compliance
 # Find all source files in bpipe directory
 SRC_FILES=$(wildcard $(SRC_DIR)/*.c)
 # Generate object files from source files
@@ -47,8 +49,18 @@ $(BUILD_DIR)/unity.o: $(UNITY_SRC) | $(BUILD_DIR)
 $(BUILD_DIR)/test_%: $(BUILD_DIR)/test_%.o $(OBJ_FILES) $(BUILD_DIR)/unity.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-# Special rule for test_filter_bench that needs additional object files
-$(BUILD_DIR)/test_filter_bench: $(BUILD_DIR)/test_filter_bench.o $(BUILD_DIR)/mock_filters.o $(OBJ_FILES) $(BUILD_DIR)/unity.o
+
+# Filter compliance test suite
+FILTER_COMPLIANCE_DIR=tests/filter_compliance
+FILTER_COMPLIANCE_SOURCES=$(wildcard $(FILTER_COMPLIANCE_DIR)/test_*.c)
+FILTER_COMPLIANCE_OBJS=$(patsubst $(FILTER_COMPLIANCE_DIR)/%.c,$(BUILD_DIR)/filter_compliance_%.o,$(FILTER_COMPLIANCE_SOURCES))
+
+# Build rule for filter compliance object files
+$(BUILD_DIR)/filter_compliance_%.o: $(FILTER_COMPLIANCE_DIR)/%.c | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(DEP_FLAGS) -c -o $@ $<
+
+# Build the filter compliance test executable
+$(BUILD_DIR)/test_filter_compliance: $(BUILD_DIR)/filter_compliance_main.o $(BUILD_DIR)/filter_compliance_common.o $(FILTER_COMPLIANCE_OBJS) $(BUILD_DIR)/mock_filters.o $(OBJ_FILES) $(BUILD_DIR)/unity.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 # Examples target
@@ -104,9 +116,9 @@ test-debug-output: $(BUILD_DIR)/test_debug_output_filter
 	@echo "Running debug output filter tests..."
 	scripts/run_with_timeout.sh 30 $(BUILD_DIR)/test_debug_output_filter
 
-test-filter-bench: $(BUILD_DIR)/test_filter_bench
-	@echo "Running filter test bench..."
-	scripts/run_with_timeout.sh 60 $(BUILD_DIR)/test_filter_bench
+test-filter-compliance: $(BUILD_DIR)/test_filter_compliance
+	@echo "Running filter compliance tests..."
+	scripts/run_with_timeout.sh 60 $(BUILD_DIR)/test_filter_compliance
 
 # Linting targets
 lint: lint-c #lint-py
