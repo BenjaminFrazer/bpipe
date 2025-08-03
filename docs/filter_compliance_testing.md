@@ -8,23 +8,23 @@ The filter compliance testing framework provides a comprehensive test suite to v
 
 The compliance tests are organized into modular files by category:
 
-| Test Category | File | Description |
-|--------------|------|-------------|
-| Lifecycle | `test_lifecycle_basic.c` | Basic init/deinit operations |
-| Lifecycle | `test_lifecycle_with_worker.c` | Worker thread lifecycle management |
-| Lifecycle | `test_lifecycle_restart.c` | Multiple start/stop cycles |
-| Lifecycle | `test_lifecycle_errors.c` | Error conditions during lifecycle |
-| Connection | `test_connection_single_sink.c` | Single output connection |
-| Connection | `test_connection_multi_sink.c` | Multiple output connections |
-| Connection | `test_connection_type_safety.c` | Type mismatch detection |
-| Data Flow | `test_dataflow_passthrough.c` | Data integrity through filter |
-| Data Flow | `test_dataflow_backpressure.c` | Buffer full handling |
-| Error Handling | `test_error_invalid_config.c` | Configuration validation |
-| Error Handling | `test_error_timeout.c` | Timeout error handling |
-| Threading | `test_thread_worker_lifecycle.c` | Worker thread management |
-| Threading | `test_thread_shutdown_sync.c` | Clean shutdown synchronization |
-| Performance | `test_perf_throughput.c` | Maximum throughput measurement |
-| Buffer Config | `test_buffer_edge_cases.c` | Edge case buffer configurations |
+| Test Category     | File                              | Description                           |
+|-------------------|-----------------------------------|---------------------------------------|
+| Lifecycle         | `test_lifecycle_basic.c`          | Basic init/deinit operations          |
+| Lifecycle         | `test_lifecycle_with_worker.c`    | Worker thread lifecycle management    |
+| Lifecycle         | `test_lifecycle_restart.c`        | Multiple start/stop cycles            |
+| Lifecycle         | `test_lifecycle_errors.c`         | Error conditions during lifecycle     |
+| Connection        | `test_connection_single_sink.c`   | Single output connection              |
+| Connection        | `test_connection_multi_sink.c`    | Multiple output connections           |
+| Connection        | `test_connection_type_safety.c`   | Type mismatch detection               |
+| Data Flow         | `test_dataflow_passthrough.c`     | Data integrity through filter         |
+| Data Flow         | `test_dataflow_backpressure.c`    | Buffer full handling                  |
+| Error Handling    | `test_error_invalid_config.c`     | Configuration validation              |
+| Error Handling    | `test_error_timeout.c`            | Timeout error handling                |
+| Threading         | `test_thread_worker_lifecycle.c`  | Worker thread management              |
+| Threading         | `test_thread_shutdown_sync.c`     | Clean shutdown synchronization        |
+| Performance       | `test_perf_throughput.c`          | Maximum throughput measurement        |
+| Buffer Config     | `test_buffer_edge_cases.c`        | Edge case buffer configurations       |
 
 ## Running Compliance Tests
 
