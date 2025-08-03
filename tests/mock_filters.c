@@ -106,6 +106,8 @@ static void* controllable_producer_worker(void* arg)
         Bp_EC err = bb_submit(cp->base.sinks[0], cp->base.timeout_us);
         if (err == Bp_EC_NO_SPACE) {
             atomic_fetch_add(&cp->dropped_batches, 1);
+        } else if (err == Bp_EC_FILTER_STOPPING) {
+            break;  // Filter is stopping, exit gracefully
         } else {
             BP_WORKER_ASSERT(&cp->base, err == Bp_EC_OK, err);
         }
