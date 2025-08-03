@@ -7,14 +7,22 @@
 
 void test_perf_throughput(void)
 {
+  // Apply performance buffer profile if the filter has buffer configuration
+  FilterRegistration_t* reg = &g_filters[g_current_filter];
+  if (reg->has_buff_config) {
+    apply_buffer_profile(g_fut_config, reg->buff_config_offset, 
+                        BUFF_PROFILE_PERF);
+  }
+  
+  // Initialize filter first to check capabilities
+  Bp_EC err = g_fut_init(g_fut, g_fut_config);
+  TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+  
   // Skip if filter has neither inputs nor outputs
   if (g_fut->n_input_buffers == 0 && g_fut->max_supported_sinks == 0) {
     TEST_IGNORE_MESSAGE("Filter has neither inputs nor outputs");
     return;
   }
-
-  Bp_EC err = g_fut_init(g_fut, g_fut_config);
-  TEST_ASSERT_EQUAL(Bp_EC_OK, err);
 
   // Start input buffers
   for (int i = 0; i < g_fut->n_input_buffers; i++) {

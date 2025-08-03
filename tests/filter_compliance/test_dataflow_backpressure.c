@@ -7,6 +7,13 @@
 
 void test_dataflow_backpressure(void)
 {
+  // Apply backpressure buffer profile if the filter has buffer configuration
+  FilterRegistration_t* reg = &g_filters[g_current_filter];
+  if (reg->has_buff_config) {
+    apply_buffer_profile(g_fut_config, reg->buff_config_offset, 
+                        BUFF_PROFILE_BACKPRESSURE);
+  }
+  
   // Initialize filter first to determine its capabilities
   Bp_EC err = g_fut_init(g_fut, g_fut_config);
   TEST_ASSERT_EQUAL(Bp_EC_OK, err);

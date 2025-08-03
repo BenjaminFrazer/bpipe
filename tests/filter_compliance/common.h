@@ -32,7 +32,20 @@ typedef struct {
   FilterInitFunc init;   // Filter's init function
   void* default_config;  // Default configuration
   size_t config_size;    // sizeof(MyFilterConfig_t)
+  // Buffer configuration metadata
+  size_t buff_config_offset;  // Offset of BatchBuffer_config in filter's config struct
+  bool has_buff_config;       // Whether this filter uses buffer configuration
 } FilterRegistration_t;
+
+// Predefined buffer profiles for different test scenarios
+typedef enum {
+  BUFF_PROFILE_DEFAULT,      // Standard config (6/8)
+  BUFF_PROFILE_TINY,         // Minimum sizes (2/2) - edge case testing
+  BUFF_PROFILE_SMALL,        // Small buffers (4/3) - backpressure testing
+  BUFF_PROFILE_LARGE,        // Large buffers (10/10) - performance testing
+  BUFF_PROFILE_BACKPRESSURE, // Normal batch, tiny ring (6/2)
+  BUFF_PROFILE_PERF,         // Optimized for throughput (10/8)
+} BufferProfile_t;
 
 // Performance metrics (collected separately from Unity)
 typedef struct {
@@ -115,6 +128,10 @@ static inline Bp_EC controllable_consumer_init_wrapper(void* filter,
   ControllableConsumerConfig_t* cfg = (ControllableConsumerConfig_t*) config;
   return controllable_consumer_init((ControllableConsumer_t*) filter, *cfg);
 }
+
+// Apply buffer profile to filter configuration
+void apply_buffer_profile(void* filter_config, size_t buff_config_offset, 
+                         BufferProfile_t profile);
 
 // Unity setUp/tearDown - implemented in common.c
 void setUp(void);

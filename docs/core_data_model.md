@@ -252,6 +252,18 @@ The architecture optimizes for:
 - **False sharing prevention** - producer/consumer fields in separate cache lines (64-byte aligned)
 - **Atomic operations** - for head/tail indices with appropriate memory ordering
 
+## Connection Requriements 
+
+- Depending on the application filters may be more or less flexible about the data and batch configurations which they can be connected to.
+- This is driven primerily by the simplicity & performance gain by not catering for corner cases.
+- As a rule all filters must be garuanteed to tollerate:
+    - ****
+- Filters may or may not tollerate the following:
+    - **Variable batch sizes**
+    - **Irregular Data**
+    - **Different sink batch sizes**
+Some filters may be more or less flexible about what out
+
 ## Usage Patterns
 
 ### Simple Pipeline

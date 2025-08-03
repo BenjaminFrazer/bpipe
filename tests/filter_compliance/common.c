@@ -23,6 +23,52 @@ char g_perf_report[8192];
 // Test timing
 uint64_t g_test_start_ns = 0;
 
+// Apply buffer profile to filter configuration
+void apply_buffer_profile(void* filter_config, size_t buff_config_offset, 
+                         BufferProfile_t profile)
+{
+  if (!filter_config) {
+    return;
+  }
+  
+  // Get pointer to BatchBuffer_config within the filter's config struct
+  BatchBuffer_config* buff_config = 
+    (BatchBuffer_config*)((char*)filter_config + buff_config_offset);
+  
+  // Apply the profile settings
+  switch (profile) {
+    case BUFF_PROFILE_DEFAULT:
+      buff_config->batch_capacity_expo = 6;
+      buff_config->ring_capacity_expo = 8;
+      break;
+      
+    case BUFF_PROFILE_TINY:
+      buff_config->batch_capacity_expo = 2;
+      buff_config->ring_capacity_expo = 2;
+      break;
+      
+    case BUFF_PROFILE_SMALL:
+      buff_config->batch_capacity_expo = 4;
+      buff_config->ring_capacity_expo = 3;
+      break;
+      
+    case BUFF_PROFILE_LARGE:
+      buff_config->batch_capacity_expo = 10;
+      buff_config->ring_capacity_expo = 10;
+      break;
+      
+    case BUFF_PROFILE_BACKPRESSURE:
+      buff_config->batch_capacity_expo = 6;
+      buff_config->ring_capacity_expo = 2;  // Tiny ring to force backpressure
+      break;
+      
+    case BUFF_PROFILE_PERF:
+      buff_config->batch_capacity_expo = 10;
+      buff_config->ring_capacity_expo = 8;
+      break;
+  }
+}
+
 // Unity setUp - called before each test
 void setUp(void)
 {

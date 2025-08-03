@@ -3,6 +3,7 @@
  * @brief Main test runner for filter compliance tests
  */
 
+#include <stddef.h>  // for offsetof
 #include "common.h"
 
 // Declare all test functions
@@ -20,6 +21,10 @@ void test_error_timeout(void);
 void test_thread_worker_lifecycle(void);
 void test_thread_shutdown_sync(void);
 void test_perf_throughput(void);
+void test_buffer_minimum_size(void);
+void test_buffer_overflow_drop_head(void);
+void test_buffer_overflow_drop_tail(void);
+void test_buffer_large_batches(void);
 
 // Example default configurations for testing
 static ControllableProducerConfig_t default_producer_config = {
@@ -80,6 +85,10 @@ static void (*compliance_tests[])(void) = {
     // Performance tests
     test_perf_throughput,
     // test_perf_latency,  // TODO: Implement passthrough_metrics filter
+    
+    // Buffer configuration tests
+    test_buffer_minimum_size, test_buffer_overflow_drop_head,
+    test_buffer_overflow_drop_tail, test_buffer_large_batches,
 };
 
 int main(int argc, char* argv[])
@@ -100,17 +109,23 @@ int main(int argc, char* argv[])
        .filter_size = sizeof(ControllableProducer_t),
        .init = controllable_producer_init_wrapper,
        .default_config = &default_producer_config,
-       .config_size = sizeof(ControllableProducerConfig_t)},
+       .config_size = sizeof(ControllableProducerConfig_t),
+       .buff_config_offset = 0,  // Producer has no buffer config
+       .has_buff_config = false},
       {.name = "ControllableConsumer",
        .filter_size = sizeof(ControllableConsumer_t),
        .init = controllable_consumer_init_wrapper,
        .default_config = &default_consumer_config,
-       .config_size = sizeof(ControllableConsumerConfig_t)},
+       .config_size = sizeof(ControllableConsumerConfig_t),
+       .buff_config_offset = offsetof(ControllableConsumerConfig_t, buff_config),
+       .has_buff_config = true},
       {.name = "Passthrough",
        .filter_size = sizeof(Passthrough_t),
        .init = passthrough_init_wrapper,
        .default_config = &default_passthrough_config,
-       .config_size = sizeof(Passthrough_config_t)},
+       .config_size = sizeof(Passthrough_config_t),
+       .buff_config_offset = offsetof(Passthrough_config_t, buff_config),
+       .has_buff_config = true},
       // Add more filters here as needed
   };
 
