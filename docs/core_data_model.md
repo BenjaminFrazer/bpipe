@@ -260,7 +260,7 @@ The architecture optimizes for:
     - **Incomplete input batches** - head != 2^batch_capacity_expo-1
     - **Input output capacity missmatch** - Output batch capacity != input batch capacity.
     - **Irregular Data** - Data does not hava a consistent sample rate.
-    - **Different sink batch sizes**
+    - **Different sink batch sizes** - 
     - **Un-aligned inputs** - Input timestamps & number of samples do not align.
 Some filters may be more or less flexible about what out
 
