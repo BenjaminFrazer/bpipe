@@ -278,12 +278,16 @@ void test_buffer_overflow_drop_head(void)
   
   // Check that some batches were dropped
   size_t produced = atomic_load(&producer->batches_produced);
-  size_t dropped = atomic_load(&producer->dropped_batches);
   
   TEST_ASSERT_GREATER_THAN_MESSAGE(0, produced,
                                   "Producer should have sent batches");
-  TEST_ASSERT_GREATER_THAN_MESSAGE(0, dropped,
-                                  "Some batches should have been dropped");
+  
+  // For DROP_HEAD, check the filter's input buffer dropped_batches counter
+  if (g_fut->n_input_buffers > 0 && g_fut->input_buffers[0]) {
+    size_t dropped = atomic_load(&g_fut->input_buffers[0]->producer.dropped_batches);
+    TEST_ASSERT_GREATER_THAN_MESSAGE(0, dropped,
+                                    "Some batches should have been dropped at filter's input buffer");
+  }
   
   // Cleanup
   filt_deinit(&producer->base);
@@ -402,12 +406,16 @@ void test_buffer_overflow_drop_tail(void)
   
   // Check that some batches were dropped
   size_t produced = atomic_load(&producer->batches_produced);
-  size_t dropped = atomic_load(&producer->dropped_batches);
   
   TEST_ASSERT_GREATER_THAN_MESSAGE(0, produced,
                                   "Producer should have sent batches");
-  TEST_ASSERT_GREATER_THAN_MESSAGE(0, dropped,
-                                  "Some batches should have been dropped");
+  
+  // For DROP_TAIL, check the filter's input buffer dropped_by_producer counter
+  if (g_fut->n_input_buffers > 0 && g_fut->input_buffers[0]) {
+    size_t dropped = atomic_load(&g_fut->input_buffers[0]->consumer.dropped_by_producer);
+    TEST_ASSERT_GREATER_THAN_MESSAGE(0, dropped,
+                                    "Some batches should have been dropped at filter's input buffer");
+  }
   
   // Cleanup
   filt_deinit(&producer->base);
