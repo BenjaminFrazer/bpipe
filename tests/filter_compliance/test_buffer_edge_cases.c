@@ -6,16 +6,25 @@
 #include "common.h"
 #include "test_utils.h"
 
-// Helper function to create a consumer for filters with outputs
-static ControllableConsumer_t* create_consumer_if_needed(Filter_t* filter, 
-                                                         uint8_t batch_expo,
-                                                         uint8_t ring_expo) {
+// Helper structure to manage multiple consumers
+typedef struct {
+  ControllableConsumer_t* consumers;  // Array of consumers (not array of pointers)
+  size_t n_consumers;
+} ConsumerArray_t;
+
+// Helper function to create consumers for all filter outputs
+static ConsumerArray_t create_consumers_if_needed(Filter_t* filter, 
+                                                  uint8_t batch_expo,
+                                                  uint8_t ring_expo) {
+  ConsumerArray_t result = {.consumers = NULL, .n_consumers = 0};
+  
   if (filter->max_supported_sinks == 0) {
-    return NULL;
+    return result;
   }
   
-  ControllableConsumer_t* consumer = calloc(1, sizeof(ControllableConsumer_t));
-  TEST_ASSERT_NOT_NULL(consumer);
+  result.n_consumers = filter->max_supported_sinks;
+  result.consumers = calloc(result.n_consumers, sizeof(ControllableConsumer_t));
+  TEST_ASSERT_NOT_NULL(result.consumers);
   
   // Match data type from input buffer if available
   SampleDtype_t dtype = DTYPE_FLOAT;
@@ -23,25 +32,31 @@ static ControllableConsumer_t* create_consumer_if_needed(Filter_t* filter,
     dtype = filter->input_buffers[0]->dtype;
   }
   
-  ControllableConsumerConfig_t cons_config = {
-    .name = "edge_consumer",
-    .buff_config = {.dtype = dtype,
-                    .batch_capacity_expo = batch_expo,
-                    .ring_capacity_expo = ring_expo,
-                    .overflow_behaviour = OVERFLOW_BLOCK},
-    .timeout_us = 1000000,
-    .process_delay_us = 0,
-    .validate_sequence = false,
-    .validate_timing = false,
-    .consume_pattern = 0,
-    .slow_start = false,
-    .slow_start_batches = 0
-  };
+  for (size_t i = 0; i < result.n_consumers; i++) {
+    // Create unique name for each consumer
+    char name[32];
+    snprintf(name, sizeof(name), "edge_consumer_%zu", i);
+    
+    ControllableConsumerConfig_t cons_config = {
+      .name = name,
+      .buff_config = {.dtype = dtype,
+                      .batch_capacity_expo = batch_expo,
+                      .ring_capacity_expo = ring_expo,
+                      .overflow_behaviour = OVERFLOW_BLOCK},
+      .timeout_us = 1000000,
+      .process_delay_us = 0,
+      .validate_sequence = false,
+      .validate_timing = false,
+      .consume_pattern = 0,
+      .slow_start = false,
+      .slow_start_batches = 0
+    };
+    
+    CHECK_ERR(controllable_consumer_init(&result.consumers[i], cons_config));
+    CHECK_ERR(filt_sink_connect(filter, i, result.consumers[i].base.input_buffers[0]));
+  }
   
-  CHECK_ERR(controllable_consumer_init(consumer, cons_config));
-  CHECK_ERR(filt_sink_connect(filter, 0, consumer->base.input_buffers[0]));
-  
-  return consumer;
+  return result;
 }
 
 void test_buffer_minimum_size(void)
@@ -95,16 +110,16 @@ void test_buffer_minimum_size(void)
   
   CHECK_ERR(filt_sink_connect(&producer->base, 0, g_fut->input_buffers[0]));
   
-  // If filter has outputs, create a consumer to receive data
-  ControllableConsumer_t* consumer = create_consumer_if_needed(g_fut, 2, 2);
+  // If filter has outputs, create consumers for all sinks
+  ConsumerArray_t consumers = create_consumers_if_needed(g_fut, 2, 2);
   
   // Start pipeline
   CHECK_ERR(filt_start(&producer->base));
   
   CHECK_ERR(filt_start(g_fut));
   
-  if (consumer) {
-    CHECK_ERR(filt_start(&consumer->base));
+  for (size_t i = 0; i < consumers.n_consumers; i++) {
+    CHECK_ERR(filt_start(&consumers.consumers[i].base));
   }
   
   // Let it run briefly
@@ -115,15 +130,15 @@ void test_buffer_minimum_size(void)
   
   CHECK_ERR(filt_stop(g_fut));
   
-  if (consumer) {
-    CHECK_ERR(filt_stop(&consumer->base));
+  for (size_t i = 0; i < consumers.n_consumers; i++) {
+    CHECK_ERR(filt_stop(&consumers.consumers[i].base));
   }
   
   // Verify filter handled tiny buffers without errors
   CHECK_ERR(producer->base.worker_err_info.ec);
   CHECK_ERR(g_fut->worker_err_info.ec);
-  if (consumer) {
-    CHECK_ERR(consumer->base.worker_err_info.ec);
+  for (size_t i = 0; i < consumers.n_consumers; i++) {
+    CHECK_ERR(consumers.consumers[i].base.worker_err_info.ec);
   }
   
   // Verify some data was processed
@@ -135,10 +150,10 @@ void test_buffer_minimum_size(void)
   filt_deinit(&producer->base);
   free(producer);
   
-  if (consumer) {
-    filt_deinit(&consumer->base);
-    free(consumer);
+  for (size_t i = 0; i < consumers.n_consumers; i++) {
+    filt_deinit(&consumers.consumers[i].base);
   }
+  free(consumers.consumers);
   
   // Stop input buffers
   for (int i = 0; i < g_fut->n_input_buffers; i++) {
@@ -193,8 +208,8 @@ void test_buffer_overflow_drop_head(void)
   
   CHECK_ERR(filt_sink_connect(&producer->base, 0, g_fut->input_buffers[0]));
   
-  // If filter has outputs, create a consumer to receive data
-  ControllableConsumer_t* consumer = create_consumer_if_needed(g_fut, 4, 3);
+  // If filter has outputs, create consumers for all sinks
+  ConsumerArray_t consumers = create_consumers_if_needed(g_fut, 4, 3);
   
   // Start producer but not filter (to cause overflow)
   CHECK_ERR(filt_start(&producer->base));
@@ -205,8 +220,8 @@ void test_buffer_overflow_drop_head(void)
   // Now start filter to process
   CHECK_ERR(filt_start(g_fut));
   
-  if (consumer) {
-    CHECK_ERR(filt_start(&consumer->base));
+  for (size_t i = 0; i < consumers.n_consumers; i++) {
+    CHECK_ERR(filt_start(&consumers.consumers[i].base));
   }
   
   // Let it run
@@ -217,15 +232,15 @@ void test_buffer_overflow_drop_head(void)
   
   CHECK_ERR(filt_stop(g_fut));
   
-  if (consumer) {
-    CHECK_ERR(filt_stop(&consumer->base));
+  for (size_t i = 0; i < consumers.n_consumers; i++) {
+    CHECK_ERR(filt_stop(&consumers.consumers[i].base));
   }
   
   // Verify no errors (DROP_HEAD should handle overflow gracefully)
   CHECK_ERR(producer->base.worker_err_info.ec);
   CHECK_ERR(g_fut->worker_err_info.ec);
-  if (consumer) {
-    CHECK_ERR(consumer->base.worker_err_info.ec);
+  for (size_t i = 0; i < consumers.n_consumers; i++) {
+    CHECK_ERR(consumers.consumers[i].base.worker_err_info.ec);
   }
   
   // Check that some batches were dropped
@@ -241,10 +256,10 @@ void test_buffer_overflow_drop_head(void)
   filt_deinit(&producer->base);
   free(producer);
   
-  if (consumer) {
-    filt_deinit(&consumer->base);
-    free(consumer);
+  for (size_t i = 0; i < consumers.n_consumers; i++) {
+    filt_deinit(&consumers.consumers[i].base);
   }
+  free(consumers.consumers);
   
   // Stop input buffers
   for (int i = 0; i < g_fut->n_input_buffers; i++) {
@@ -299,8 +314,8 @@ void test_buffer_overflow_drop_tail(void)
   
   CHECK_ERR(filt_sink_connect(&producer->base, 0, g_fut->input_buffers[0]));
   
-  // If filter has outputs, create a consumer to receive data
-  ControllableConsumer_t* consumer = create_consumer_if_needed(g_fut, 4, 3);
+  // If filter has outputs, create consumers for all sinks
+  ConsumerArray_t consumers = create_consumers_if_needed(g_fut, 4, 3);
   
   // Start producer but not filter (to cause overflow)
   CHECK_ERR(filt_start(&producer->base));
@@ -311,8 +326,8 @@ void test_buffer_overflow_drop_tail(void)
   // Now start filter to process
   CHECK_ERR(filt_start(g_fut));
   
-  if (consumer) {
-    CHECK_ERR(filt_start(&consumer->base));
+  for (size_t i = 0; i < consumers.n_consumers; i++) {
+    CHECK_ERR(filt_start(&consumers.consumers[i].base));
   }
   
   // Let it run
@@ -323,15 +338,15 @@ void test_buffer_overflow_drop_tail(void)
   
   CHECK_ERR(filt_stop(g_fut));
   
-  if (consumer) {
-    CHECK_ERR(filt_stop(&consumer->base));
+  for (size_t i = 0; i < consumers.n_consumers; i++) {
+    CHECK_ERR(filt_stop(&consumers.consumers[i].base));
   }
   
   // Verify no errors (DROP_TAIL should handle overflow gracefully)
   CHECK_ERR(producer->base.worker_err_info.ec);
   CHECK_ERR(g_fut->worker_err_info.ec);
-  if (consumer) {
-    CHECK_ERR(consumer->base.worker_err_info.ec);
+  for (size_t i = 0; i < consumers.n_consumers; i++) {
+    CHECK_ERR(consumers.consumers[i].base.worker_err_info.ec);
   }
   
   // Check that some batches were dropped
@@ -347,10 +362,10 @@ void test_buffer_overflow_drop_tail(void)
   filt_deinit(&producer->base);
   free(producer);
   
-  if (consumer) {
-    filt_deinit(&consumer->base);
-    free(consumer);
+  for (size_t i = 0; i < consumers.n_consumers; i++) {
+    filt_deinit(&consumers.consumers[i].base);
   }
+  free(consumers.consumers);
   
   // Stop input buffers
   for (int i = 0; i < g_fut->n_input_buffers; i++) {
@@ -409,16 +424,16 @@ void test_buffer_large_batches(void)
   
   CHECK_ERR(filt_sink_connect(&producer->base, 0, g_fut->input_buffers[0]));
   
-  // If filter has outputs, create a consumer to receive data
-  ControllableConsumer_t* consumer = create_consumer_if_needed(g_fut, 10, 10);
+  // If filter has outputs, create consumers for all sinks
+  ConsumerArray_t consumers = create_consumers_if_needed(g_fut, 10, 10);
   
   // Start pipeline
   CHECK_ERR(filt_start(&producer->base));
   
   CHECK_ERR(filt_start(g_fut));
   
-  if (consumer) {
-    CHECK_ERR(filt_start(&consumer->base));
+  for (size_t i = 0; i < consumers.n_consumers; i++) {
+    CHECK_ERR(filt_start(&consumers.consumers[i].base));
   }
   
   // Let it run
@@ -429,15 +444,15 @@ void test_buffer_large_batches(void)
   
   CHECK_ERR(filt_stop(g_fut));
   
-  if (consumer) {
-    CHECK_ERR(filt_stop(&consumer->base));
+  for (size_t i = 0; i < consumers.n_consumers; i++) {
+    CHECK_ERR(filt_stop(&consumers.consumers[i].base));
   }
   
   // Verify filter handled large buffers without errors
   CHECK_ERR(producer->base.worker_err_info.ec);
   CHECK_ERR(g_fut->worker_err_info.ec);
-  if (consumer) {
-    CHECK_ERR(consumer->base.worker_err_info.ec);
+  for (size_t i = 0; i < consumers.n_consumers; i++) {
+    CHECK_ERR(consumers.consumers[i].base.worker_err_info.ec);
   }
   
   // Verify data was processed
@@ -454,10 +469,10 @@ void test_buffer_large_batches(void)
   filt_deinit(&producer->base);
   free(producer);
   
-  if (consumer) {
-    filt_deinit(&consumer->base);
-    free(consumer);
+  for (size_t i = 0; i < consumers.n_consumers; i++) {
+    filt_deinit(&consumers.consumers[i].base);
   }
+  free(consumers.consumers);
   
   // Stop input buffers
   for (int i = 0; i < g_fut->n_input_buffers; i++) {
