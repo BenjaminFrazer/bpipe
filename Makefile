@@ -85,9 +85,15 @@ help-compliance:
 	@echo "  make compliance-buffer             - Run only buffer configuration tests"
 	@echo "  make compliance-perf               - Run only performance tests"
 	@echo ""
+	@echo "All targets support the FILTER variable to test specific filters."
+	@echo ""
 	@echo "Examples:"
 	@echo "  make compliance FILTER=Passthrough"
 	@echo "  make compliance-buffer FILTER=ControllableConsumer"
+	@echo "  make compliance-lifecycle    # Run lifecycle tests for all filters"
+	@echo ""
+	@echo "The test executable also supports:"
+	@echo "  ./build/test_filter_compliance --filter <name> --test <pattern>"
 
 project_root:
 	echo $(PROJECT_ROOT)
@@ -150,19 +156,35 @@ compliance: $(BUILD_DIR)/test_filter_compliance
 # Run specific compliance test categories
 compliance-lifecycle: $(BUILD_DIR)/test_filter_compliance
 	@echo "Running lifecycle compliance tests..."
-	scripts/run_with_timeout.sh 60 $(BUILD_DIR)/test_filter_compliance --filter $(FILTER) 2>&1 | grep -E "(lifecycle|Testing|PASS|FAIL|IGNORE)"
+	@if [ -n "$(FILTER)" ]; then \
+		scripts/run_with_timeout.sh 60 $(BUILD_DIR)/test_filter_compliance --filter $(FILTER) --test lifecycle; \
+	else \
+		scripts/run_with_timeout.sh 60 $(BUILD_DIR)/test_filter_compliance --test lifecycle; \
+	fi
 
 compliance-dataflow: $(BUILD_DIR)/test_filter_compliance
 	@echo "Running dataflow compliance tests..."
-	scripts/run_with_timeout.sh 60 $(BUILD_DIR)/test_filter_compliance --filter $(FILTER) 2>&1 | grep -E "(dataflow|Testing|PASS|FAIL|IGNORE)"
+	@if [ -n "$(FILTER)" ]; then \
+		scripts/run_with_timeout.sh 60 $(BUILD_DIR)/test_filter_compliance --filter $(FILTER) --test dataflow; \
+	else \
+		scripts/run_with_timeout.sh 60 $(BUILD_DIR)/test_filter_compliance --test dataflow; \
+	fi
 
 compliance-buffer: $(BUILD_DIR)/test_filter_compliance
 	@echo "Running buffer configuration compliance tests..."
-	scripts/run_with_timeout.sh 60 $(BUILD_DIR)/test_filter_compliance --filter $(FILTER) 2>&1 | grep -E "(buffer|Testing|PASS|FAIL|IGNORE)"
+	@if [ -n "$(FILTER)" ]; then \
+		scripts/run_with_timeout.sh 60 $(BUILD_DIR)/test_filter_compliance --filter $(FILTER) --test buffer; \
+	else \
+		scripts/run_with_timeout.sh 60 $(BUILD_DIR)/test_filter_compliance --test buffer; \
+	fi
 
 compliance-perf: $(BUILD_DIR)/test_filter_compliance
 	@echo "Running performance compliance tests..."
-	scripts/run_with_timeout.sh 60 $(BUILD_DIR)/test_filter_compliance --filter $(FILTER) 2>&1 | grep -E "(perf|Performance|Testing|PASS|FAIL|IGNORE)"
+	@if [ -n "$(FILTER)" ]; then \
+		scripts/run_with_timeout.sh 60 $(BUILD_DIR)/test_filter_compliance --filter $(FILTER) --test perf; \
+	else \
+		scripts/run_with_timeout.sh 60 $(BUILD_DIR)/test_filter_compliance --test perf; \
+	fi
 
 # Linting targets
 lint: lint-c #lint-py

@@ -63,42 +63,59 @@ static Passthrough_config_t default_passthrough_config = {
                     .overflow_behaviour = OVERFLOW_BLOCK},
     .timeout_us = 1000000};
 
-// All compliance tests as Unity test functions
-static void (*compliance_tests[])(void) = {
+// Structure to hold test function and its name
+typedef struct {
+    void (*test_func)(void);
+    const char* test_name;
+} ComplianceTest_t;
+
+// All compliance tests as Unity test functions with names
+static ComplianceTest_t compliance_tests[] = {
     // Lifecycle tests
-    test_lifecycle_basic, test_lifecycle_with_worker, test_lifecycle_restart,
-    test_lifecycle_errors,
+    {test_lifecycle_basic, "test_lifecycle_basic"},
+    {test_lifecycle_with_worker, "test_lifecycle_with_worker"},
+    {test_lifecycle_restart, "test_lifecycle_restart"},
+    {test_lifecycle_errors, "test_lifecycle_errors"},
 
     // Connection tests
-    test_connection_single_sink, test_connection_multi_sink,
-    test_connection_type_safety,
+    {test_connection_single_sink, "test_connection_single_sink"},
+    {test_connection_multi_sink, "test_connection_multi_sink"},
+    {test_connection_type_safety, "test_connection_type_safety"},
 
     // Data flow tests
-    test_dataflow_passthrough, test_dataflow_backpressure,
+    {test_dataflow_passthrough, "test_dataflow_passthrough"},
+    {test_dataflow_backpressure, "test_dataflow_backpressure"},
 
     // Error handling tests
-    test_error_invalid_config, test_error_timeout,
+    {test_error_invalid_config, "test_error_invalid_config"},
+    {test_error_timeout, "test_error_timeout"},
 
     // Threading tests
-    test_thread_worker_lifecycle, test_thread_shutdown_sync,
+    {test_thread_worker_lifecycle, "test_thread_worker_lifecycle"},
+    {test_thread_shutdown_sync, "test_thread_shutdown_sync"},
 
     // Performance tests
-    test_perf_throughput,
-    // test_perf_latency,  // TODO: Implement passthrough_metrics filter
+    {test_perf_throughput, "test_perf_throughput"},
+    // {test_perf_latency, "test_perf_latency"},  // TODO: Implement passthrough_metrics filter
     
     // Buffer configuration tests
-    test_buffer_minimum_size, test_buffer_overflow_drop_head,
-    test_buffer_overflow_drop_tail, test_buffer_large_batches,
+    {test_buffer_minimum_size, "test_buffer_minimum_size"},
+    {test_buffer_overflow_drop_head, "test_buffer_overflow_drop_head"},
+    {test_buffer_overflow_drop_tail, "test_buffer_overflow_drop_tail"},
+    {test_buffer_large_batches, "test_buffer_large_batches"},
 };
 
 int main(int argc, char* argv[])
 {
   // Command line options
   const char* filter_pattern = NULL;
+  const char* test_pattern = NULL;
 
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "--filter") == 0 && i + 1 < argc) {
       filter_pattern = argv[++i];
+    } else if (strcmp(argv[i], "--test") == 0 && i + 1 < argc) {
+      test_pattern = argv[++i];
     }
   }
 
@@ -151,7 +168,14 @@ int main(int argc, char* argv[])
 
     for (size_t i = 0;
          i < sizeof(compliance_tests) / sizeof(compliance_tests[0]); i++) {
-      RUN_TEST(compliance_tests[i]);
+      // Skip if test doesn't match pattern
+      if (test_pattern && !strstr(compliance_tests[i].test_name, test_pattern)) {
+        continue;
+      }
+      
+      printf("Running: %s - ", compliance_tests[i].test_name);
+      fflush(stdout);
+      RUN_TEST(compliance_tests[i].test_func);
     }
 
     UNITY_END();
