@@ -431,3 +431,28 @@ Adding support for testing filters with different buffer configurations:
 - Filters can be tested with tiny, small, large, and performance-optimized buffers
 - Each test can apply the appropriate buffer profile for its scenario
 - Helps identify buffer-size-dependent bugs and performance characteristics
+
+#### Implementation Todo List
+1. **Add buffer config metadata to FilterRegistration_t structure** ✓
+   - Add `buff_config_offset` and `has_buff_config` fields to the struct
+   
+2. **Define BufferProfile_t enum and apply_buffer_profile function**
+   - Create enum with predefined buffer profiles (tiny, small, large, etc.)
+   - Implement `apply_buffer_profile()` function in common.c
+   
+3. **Update existing filter registrations with buff_config_offset**
+   - Calculate offset for each filter type using `offsetof()`
+   - Set `has_buff_config` flag appropriately
+   
+4. **Modify test_dataflow_backpressure to use BUFF_PROFILE_BACKPRESSURE**
+   - Apply small ring buffer profile before filter initialization
+   - Verify backpressure behavior is properly tested
+   
+5. **Modify test_perf_throughput to use BUFF_PROFILE_PERF**
+   - Apply performance-optimized buffer profile
+   - Ensure maximum throughput testing
+   
+6. **Create test_buffer_edge_cases.c with minimum size and overflow tests**
+   - Test filters with absolute minimum buffer sizes (2/2)
+   - Test all three overflow modes (BLOCK, DROP_HEAD, DROP_TAIL)
+   - Verify filters handle edge cases gracefully
