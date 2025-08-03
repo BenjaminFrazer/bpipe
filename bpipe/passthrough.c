@@ -90,6 +90,29 @@ static Bp_EC passthrough_describe(Filter_t* self, char* buffer, size_t size)
   return Bp_EC_OK;
 }
 
+static Bp_EC passthrough_validate_connection(Filter_t* self, size_t sink_idx)
+{
+  if (sink_idx >= self->max_supported_sinks) {
+    return Bp_EC_INVALID_SINK_IDX;
+  }
+
+  if (self->sinks[sink_idx] == NULL) {
+    return Bp_EC_NULL_BUFF;
+  }
+
+  // Passthrough requires matching batch capacities
+  if (self->n_input_buffers > 0 && self->input_buffers[0] != NULL) {
+    size_t input_capacity = bb_batch_size(self->input_buffers[0]);
+    size_t output_capacity = bb_batch_size(self->sinks[sink_idx]);
+
+    if (input_capacity != output_capacity) {
+      return Bp_EC_CAPACITY_MISMATCH;
+    }
+  }
+
+  return Bp_EC_OK;
+}
+
 Bp_EC passthrough_init(Passthrough_t* pt, Passthrough_config_t* config)
 {
   if (pt == NULL) return Bp_EC_NULL_POINTER;
@@ -123,6 +146,7 @@ Bp_EC passthrough_init(Passthrough_t* pt, Passthrough_config_t* config)
 
   // Override operations
   pt->base.ops.describe = passthrough_describe;
+  pt->base.ops.validate_connection = passthrough_validate_connection;
 
   return Bp_EC_OK;
 }
