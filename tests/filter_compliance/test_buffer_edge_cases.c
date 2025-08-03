@@ -59,6 +59,22 @@ static ConsumerArray_t create_consumers_if_needed(Filter_t* filter,
   return result;
 }
 
+/**
+ * Intent: Verify that filters can operate correctly with the absolute minimum buffer sizes
+ * (2^2 = 4 samples per batch, 2^2 = 4 batches in ring buffer).
+ * 
+ * Approach:
+ * 1. Configure filter with BUFF_PROFILE_TINY (batch_capacity_expo=2, ring_capacity_expo=2)
+ * 2. Create a producer that sends 10 batches of sequential data
+ * 3. Connect consumers to all filter outputs (if any) to prevent NO_SINK errors
+ * 4. Run the pipeline briefly and verify:
+ *    - Filter initializes successfully with tiny buffers
+ *    - Data flows through without errors
+ *    - At least some batches are processed
+ * 
+ * This tests the filter's robustness with minimal memory usage and ensures
+ * it doesn't have hardcoded assumptions about buffer sizes.
+ */
 void test_buffer_minimum_size(void)
 {
   // Apply tiny buffer profile
@@ -161,6 +177,23 @@ void test_buffer_minimum_size(void)
   }
 }
 
+/**
+ * Intent: Verify that filters handle buffer overflow correctly when configured
+ * with OVERFLOW_DROP_HEAD behavior (oldest batches are dropped when buffer is full).
+ * 
+ * Approach:
+ * 1. Configure filter with small buffers and OVERFLOW_DROP_HEAD behavior
+ * 2. Create a fast producer with burst mode (20 batches on, 5 off) to trigger overflow
+ * 3. Start producer first but delay starting the filter to cause buffer buildup
+ * 4. After 50ms, start the filter to begin processing accumulated data
+ * 5. Verify:
+ *    - No errors occur (DROP_HEAD should handle overflow gracefully)
+ *    - Producer successfully sends batches
+ *    - Some batches are dropped (for filters that track this)
+ * 
+ * Note: This test expects dropped batches, but passthrough filters may not
+ * drop batches at the producer level since they don't have internal buffering.
+ */
 void test_buffer_overflow_drop_head(void)
 {
   // Apply small buffer profile
@@ -267,6 +300,24 @@ void test_buffer_overflow_drop_head(void)
   }
 }
 
+/**
+ * Intent: Verify that filters handle buffer overflow correctly when configured
+ * with OVERFLOW_DROP_TAIL behavior (newest batches are dropped when buffer is full).
+ * 
+ * Approach:
+ * 1. Configure filter with small buffers and OVERFLOW_DROP_TAIL behavior
+ * 2. Create a fast producer with burst mode (20 batches on, 5 off) to trigger overflow
+ * 3. Start producer first but delay starting the filter to cause buffer buildup
+ * 4. After 50ms, start the filter to begin processing accumulated data
+ * 5. Verify:
+ *    - No errors occur (DROP_TAIL should handle overflow gracefully)
+ *    - Producer successfully sends batches
+ *    - Some batches are dropped (for filters that track this)
+ * 
+ * This test is similar to DROP_HEAD but verifies the opposite behavior - when
+ * the buffer is full, new incoming batches are dropped instead of old ones.
+ * This preserves the oldest data at the cost of losing the most recent samples.
+ */
 void test_buffer_overflow_drop_tail(void)
 {
   // Apply small buffer profile
@@ -373,6 +424,23 @@ void test_buffer_overflow_drop_tail(void)
   }
 }
 
+/**
+ * Intent: Verify that filters can handle large buffer configurations efficiently
+ * (2^10 = 1024 samples per batch, 2^10 = 1024 batches in ring buffer).
+ * 
+ * Approach:
+ * 1. Configure filter with BUFF_PROFILE_LARGE (batch_capacity_expo=10, ring_capacity_expo=10)
+ * 2. Create a producer that sends 50 batches at moderate speed (10k samples/sec)
+ * 3. Connect consumers to all filter outputs (if any)
+ * 4. Run the pipeline for 500ms and verify:
+ *    - Filter handles large buffers without errors
+ *    - All data is processed (no dropped batches with large buffers)
+ *    - Substantial amount of data flows through (≥40 batches)
+ * 
+ * This test ensures filters don't have issues with large memory allocations
+ * and can efficiently process data when given ample buffer space. Large buffers
+ * should eliminate any backpressure or overflow conditions.
+ */
 void test_buffer_large_batches(void)
 {
   // Apply large buffer profile
