@@ -27,7 +27,7 @@ WORKING_EXAMPLES=csv_to_debug_auto csv_to_csv_scale
 # Generate full paths for working examples
 EXAMPLE_EXECUTABLES=$(addprefix $(EXAMPLES_DIR)/,$(WORKING_EXAMPLES))
 
-.PHONY: all clean run test test-c test-py lint lint-c lint-py lint-fix clang-format-check clang-format-fix clang-tidy-check cppcheck-check ruff-check ruff-format-check ruff-fix examples
+.PHONY: all clean run test test-c test-py lint lint-c lint-py lint-fix clang-format-check clang-format-fix clang-tidy-check cppcheck-check ruff-check ruff-format-check ruff-fix examples compliance compliance-lifecycle compliance-dataflow compliance-buffer compliance-perf help-compliance
 
 all: | $(BUILD_DIR)
 all: $(TEST_EXECUTABLES) examples
@@ -75,6 +75,20 @@ clean:
 	rm -rf $(BUILD_DIR)
 	rm -f $(EXAMPLE_EXECUTABLES)
 
+# Help target for compliance testing
+help-compliance:
+	@echo "Filter Compliance Testing Targets:"
+	@echo "  make compliance                    - Run all compliance tests for all filters"
+	@echo "  make compliance FILTER=Passthrough - Run all tests for specific filter"
+	@echo "  make compliance-lifecycle          - Run only lifecycle tests"
+	@echo "  make compliance-dataflow           - Run only dataflow tests"
+	@echo "  make compliance-buffer             - Run only buffer configuration tests"
+	@echo "  make compliance-perf               - Run only performance tests"
+	@echo ""
+	@echo "Examples:"
+	@echo "  make compliance FILTER=Passthrough"
+	@echo "  make compliance-buffer FILTER=ControllableConsumer"
+
 project_root:
 	echo $(PROJECT_ROOT)
 
@@ -119,6 +133,36 @@ test-debug-output: $(BUILD_DIR)/test_debug_output_filter
 test-filter-compliance: $(BUILD_DIR)/test_filter_compliance
 	@echo "Running filter compliance tests..."
 	scripts/run_with_timeout.sh 60 $(BUILD_DIR)/test_filter_compliance
+
+# Run compliance tests with optional filter pattern
+# Usage: make compliance FILTER=Passthrough
+# Usage: make compliance (runs all filters)
+compliance: $(BUILD_DIR)/test_filter_compliance
+	@echo "Running filter compliance tests..."
+	@if [ -n "$(FILTER)" ]; then \
+		echo "Testing filter: $(FILTER)"; \
+		scripts/run_with_timeout.sh 60 $(BUILD_DIR)/test_filter_compliance --filter $(FILTER); \
+	else \
+		echo "Testing all filters"; \
+		scripts/run_with_timeout.sh 60 $(BUILD_DIR)/test_filter_compliance; \
+	fi
+
+# Run specific compliance test categories
+compliance-lifecycle: $(BUILD_DIR)/test_filter_compliance
+	@echo "Running lifecycle compliance tests..."
+	scripts/run_with_timeout.sh 60 $(BUILD_DIR)/test_filter_compliance --filter $(FILTER) 2>&1 | grep -E "(lifecycle|Testing|PASS|FAIL|IGNORE)"
+
+compliance-dataflow: $(BUILD_DIR)/test_filter_compliance
+	@echo "Running dataflow compliance tests..."
+	scripts/run_with_timeout.sh 60 $(BUILD_DIR)/test_filter_compliance --filter $(FILTER) 2>&1 | grep -E "(dataflow|Testing|PASS|FAIL|IGNORE)"
+
+compliance-buffer: $(BUILD_DIR)/test_filter_compliance
+	@echo "Running buffer configuration compliance tests..."
+	scripts/run_with_timeout.sh 60 $(BUILD_DIR)/test_filter_compliance --filter $(FILTER) 2>&1 | grep -E "(buffer|Testing|PASS|FAIL|IGNORE)"
+
+compliance-perf: $(BUILD_DIR)/test_filter_compliance
+	@echo "Running performance compliance tests..."
+	scripts/run_with_timeout.sh 60 $(BUILD_DIR)/test_filter_compliance --filter $(FILTER) 2>&1 | grep -E "(perf|Performance|Testing|PASS|FAIL|IGNORE)"
 
 # Linting targets
 lint: lint-c #lint-py

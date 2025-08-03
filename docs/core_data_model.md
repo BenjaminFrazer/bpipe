@@ -256,12 +256,12 @@ The architecture optimizes for:
 
 - Depending on the application filters may be more or less flexible about the data and batch configurations which they can be connected to.
 - This is driven primerily by the simplicity & performance gain by not catering for corner cases.
-- As a rule all filters must be garuanteed to tollerate:
-    - ****
 - Filters may or may not tollerate the following:
-    - **Variable batch sizes**
-    - **Irregular Data**
+    - **Incomplete input batches** - head != 2^batch_capacity_expo-1
+    - **Input output capacity missmatch** - Output batch capacity != input batch capacity.
+    - **Irregular Data** - Data does not hava a consistent sample rate.
     - **Different sink batch sizes**
+    - **Un-aligned inputs** - Input timestamps & number of samples do not align.
 Some filters may be more or less flexible about what out
 
 ## Usage Patterns
