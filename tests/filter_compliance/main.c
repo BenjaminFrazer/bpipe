@@ -173,7 +173,7 @@ int main(int argc, char* argv[])
         continue;
       }
       
-      printf("Running: %s - ", compliance_tests[i].test_name);
+      printf("\033[36mRunning: %s\033[0m - ", compliance_tests[i].test_name);  // Cyan for test name
       fflush(stdout);
       RUN_TEST(compliance_tests[i].test_func);
     }

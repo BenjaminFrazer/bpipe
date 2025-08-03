@@ -2,6 +2,7 @@ PROJECT_ROOT=./
 CC=gcc
 CFLAGS = -std=c99 -Wall -Werror -pthread -save-temps=obj -g 
 CFLAGS += -I$(PROJECT_ROOT)/bpipe -I$(PROJECT_ROOT)/tests -I$(PROJECT_ROOT)/lib/Unity/src
+CFLAGS += -DUNITY_OUTPUT_COLOR
 #CFLAGS += -DUNITY_INCLUDE_CONFIG_H -DUNITY_DEBUG_BREAK_ON_FAIL
 LDFLAGS=-lm
 SRC_DIR=bpipe
