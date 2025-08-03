@@ -31,6 +31,9 @@ typedef struct {
     FilterInitFunc init;        // Filter's init function
     void* default_config;       // Default configuration
     size_t config_size;         // sizeof(MyFilterConfig_t)
+    // Buffer configuration metadata
+    size_t buff_config_offset;  // Offset of BatchBuffer_config in filter's config struct
+    bool has_buff_config;       // Whether this filter uses buffer configuration
 } FilterRegistration_t;
 
 // Performance metrics (collected separately from Unity)
@@ -168,6 +171,32 @@ Bp_EC create_fan_in_pipeline(Filter_t* fut, MockProducer_t* prod[],
                            size_t n_producers, MockConsumer_t* cons);
 ```
 
+### Buffer Configuration Testing
+
+The test framework supports testing filters with different buffer configurations to validate edge cases, performance characteristics, and backpressure behavior.
+
+```c
+// Predefined buffer profiles for different test scenarios
+typedef enum {
+    BUFF_PROFILE_DEFAULT,      // Standard config (6/8)
+    BUFF_PROFILE_TINY,         // Minimum sizes (2/2) - edge case testing
+    BUFF_PROFILE_SMALL,        // Small buffers (4/3) - backpressure testing
+    BUFF_PROFILE_LARGE,        // Large buffers (10/10) - performance testing
+    BUFF_PROFILE_BACKPRESSURE, // Normal batch, tiny ring (6/2)
+    BUFF_PROFILE_PERF,         // Optimized for throughput (10/8)
+} BufferProfile_t;
+
+// Apply buffer profile to filter configuration
+void apply_buffer_profile(void* filter_config, size_t buff_config_offset, 
+                         BufferProfile_t profile);
+```
+
+Tests can apply specific buffer profiles based on their testing needs:
+- **Backpressure tests**: Use `BUFF_PROFILE_BACKPRESSURE` to force buffer full conditions
+- **Performance tests**: Use `BUFF_PROFILE_PERF` for maximum throughput testing
+- **Edge case tests**: Use `BUFF_PROFILE_TINY` to test minimum buffer handling
+- **Overflow tests**: Use small buffers with different overflow modes
+
 ## Test Categories
 
 ### 1. Lifecycle Compliance Tests
@@ -222,6 +251,15 @@ Tests that measure performance:
 - `test_perf_memory_usage` - Memory efficiency
 - `test_perf_scaling` - Performance vs load
 
+### 7. Buffer Configuration Tests
+
+Tests that validate filter behavior with different buffer configurations:
+- `test_buffer_minimum_size` - Verify filters work with tiny buffers (2/2)
+- `test_buffer_overflow_modes` - Test DROP_HEAD/DROP_TAIL with small buffers
+- `test_buffer_large_batches` - Verify handling of maximum batch sizes
+- `test_buffer_backpressure_scenarios` - Systematic backpressure testing
+- `test_buffer_performance_impact` - Measure throughput vs buffer size
+
 ## Test Registration and Execution
 
 ### Unity Test Runner
@@ -255,37 +293,43 @@ Tests that measure performance:
 
 ## Implementation Plan
 
-1. **Phase 1**: Unity Integration
+1. **Phase 1**: Unity Integration ✓
    - Set up Unity test framework
    - Create basic test harness with setUp/tearDown
    - Implement filter registration structure
    - Test with one simple filter
 
-2. **Phase 2**: Core Compliance Tests  
+2. **Phase 2**: Core Compliance Tests ✓
    - Port existing tests to Unity format
    - Implement lifecycle tests
    - Implement connection tests
    - Implement basic data flow tests
 
-3. **Phase 3**: Mock Filters
+3. **Phase 3**: Mock Filters ✓
    - MockProducer with configurable patterns
    - MockConsumer with validation
    - MockPassthrough with metrics
    - Test utilities for data verification
 
-4. **Phase 4**: Advanced Tests
+4. **Phase 4**: Advanced Tests ✓
    - Error handling tests
    - Threading tests  
    - Performance tests with metrics collection
    - Skip logic for inapplicable tests
 
-5. **Phase 5**: Enhancements
-   - Custom Unity error handler with timing
-   - Performance metric reporting
-   - Command-line test filtering
-   - Debugger integration
+5. **Phase 5**: Test Modularization ✓
+   - Break monolithic test file into focused modules
+   - One file per test category
+   - Common infrastructure in shared files
+   - Improved maintainability and reduced token usage
 
-6. **Phase 6**: Full Integration
+6. **Phase 6**: Buffer Configuration Testing (Current)
+   - Add buffer configuration metadata to FilterRegistration_t
+   - Implement buffer profile system
+   - Update existing tests to use appropriate profiles
+   - Add dedicated buffer configuration tests
+
+7. **Phase 7**: Full Integration
    - Apply to all existing filters
    - CI/CD integration with Unity output parsing
    - Documentation and examples
@@ -295,16 +339,16 @@ Tests that measure performance:
 
 ### Critical Issues
 
-1. **Memory Corruption in test_dataflow_backpressure**
+1. **Memory Corruption in test_dataflow_backpressure** ✓
    - **Symptom**: Segmentation fault when stopping filter (g_fut pointer corrupted to `0x4228000042280000`)
    - **Details**: The filter pointer gets corrupted, possibly with floating point data (42.0 in double precision)
-   - **Impact**: Test is currently disabled to allow other tests to run
-   - **Root Cause**: Unknown - likely race condition during high-throughput blocking scenarios
-   - **Next Steps**: Need detailed memory debugging with valgrind or AddressSanitizer
+   - **Status**: RESOLVED - Was caused by buffer size mismatch for passthrough filter
+   - **Fix**: Test now detects passthrough filter type and matches consumer buffer size to input buffer size
+   - **Root Cause**: Passthrough filter expects matching buffer sizes between input and output
 
-2. **Race Condition in tearDown()**
+2. **Race Condition in tearDown()** ✓
    - **Issue**: Filter could be deinitialized while worker thread still active
-   - **Status**: Fixed by adding pthread_join() after filt_stop()
+   - **Status**: RESOLVED - Fixed by adding pthread_join() after filt_stop()
    - **Impact**: Could cause segfaults or memory corruption during test cleanup
 
 ### Minor Issues
@@ -369,3 +413,21 @@ Tests that measure performance:
 3. **Error Context is Critical**: Rich error messages dramatically improve debugging efficiency
 4. **Resource Tracking**: Distinguish between allocated and initialized resources for proper cleanup
 5. **Test Isolation**: Each test must fully clean up to prevent affecting subsequent tests
+6. **Buffer Size Compatibility**: Some filters (like passthrough) require matching buffer sizes between components
+7. **Modular Test Structure**: Breaking tests into separate files improves maintainability and reduces token usage
+
+## Recent Improvements
+
+### Test Modularization (Completed)
+The original monolithic `test_filter_bench.c` (1,799 lines) has been refactored into focused test modules:
+- Each test category now has its own file (e.g., `test_lifecycle_basic.c`, `test_dataflow_backpressure.c`)
+- Common infrastructure moved to `common.h` and `common.c`
+- Reduces token usage from ~45k to 1-5k per test file
+- Improves git history clarity and reduces merge conflicts
+- Makes it easier to work on specific test categories
+
+### Buffer Configuration Testing (In Progress)
+Adding support for testing filters with different buffer configurations:
+- Filters can be tested with tiny, small, large, and performance-optimized buffers
+- Each test can apply the appropriate buffer profile for its scenario
+- Helps identify buffer-size-dependent bugs and performance characteristics
