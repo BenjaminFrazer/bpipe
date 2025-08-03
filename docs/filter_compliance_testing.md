@@ -216,15 +216,16 @@ typedef struct {
 **Concerns**: None identified.
 
 #### test_thread_shutdown_sync
-**Intent**: Verify synchronized shutdown.
+**Intent**: Verify filters can shut down cleanly when output buffers are blocked.
 
 **Approach**:
-1. Start filter with worker
-2. Begin shutdown
-3. Verify proper synchronization
+1. Create a very slow consumer (1 second per batch) to cause backpressure
+2. Start filter and consumer with small buffers
+3. Let them run briefly to fill buffers
+4. Stop both filter and consumer
+5. Verify both stop cleanly using force_return mechanism
 
-**Concerns**:
-- Test skips for filters without workers
+**Concerns**: None identified.
 
 ### Performance Tests
 

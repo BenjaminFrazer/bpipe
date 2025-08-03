@@ -1,13 +1,16 @@
 /**
  * @file test_thread_shutdown_sync.c
- * @brief Test synchronized shutdown
+ * @brief Test synchronized shutdown with blocked buffers
+ * 
+ * This test verifies that filters can be cleanly shut down even when their
+ * output buffers are blocked. It tests the force_return mechanism that allows
+ * filters to exit from blocking buffer operations during shutdown.
  */
 
 #include "common.h"
 
 void test_thread_shutdown_sync(void)
 {
-  SKIP_IF_NO_WORKER();
 
   Bp_EC err = g_fut_init(g_fut, g_fut_config);
   TEST_ASSERT_EQUAL(Bp_EC_OK, err);
