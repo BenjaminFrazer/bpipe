@@ -16,6 +16,20 @@
 
 #define MAX_LINE_LENGTH 4096
 
+// CSV sink requires float32 data
+static const InputConstraint_t csv_sink_constraints[] = {
+    {PROP_DATA_TYPE, CONSTRAINT_OP_EQ, {.dtype = DTYPE_FLOAT}},
+    {PROP_SAMPLE_RATE_HZ, CONSTRAINT_OP_EXISTS, {0}},  // Must know sample rate
+};
+
+static const FilterContract_t csv_sink_contract = {
+    .input_constraints = csv_sink_constraints,
+    .n_input_constraints =
+        sizeof(csv_sink_constraints) / sizeof(csv_sink_constraints[0]),
+    .output_behaviors = NULL,  // Sink has no outputs
+    .n_output_behaviors = 0,
+};
+
 // Forward declarations
 static void* csv_sink_worker(void* arg);
 static Bp_EC open_output_file(CSVSink_t* sink);
@@ -84,6 +98,9 @@ Bp_EC csv_sink_init(CSVSink_t* sink, CSVSink_config_t config)
 
   // Override describe operation
   sink->base.ops.describe = csv_sink_describe;
+
+  // Set filter contract
+  sink->base.contract = &csv_sink_contract;
 
   return Bp_EC_OK;
 }

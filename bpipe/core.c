@@ -68,6 +68,10 @@ static Bp_EC default_sink_connect(Filter_t* self, size_t output_port,
     }
   }
 
+  // Note: Property validation should be done at a higher level where we have
+  // access to both the source and destination filters. For now, we skip
+  // property validation here.
+
   self->sinks[output_port] = sink;
   self->n_sinks++;
 
@@ -290,6 +294,17 @@ Bp_EC filt_init(Filter_t* f, Core_filt_config_t config)
   // Initialize operations interface with defaults
   f->ops = default_ops;
 
+  // Initialize property contract to NULL (filters will set if needed)
+  f->contract = NULL;
+
+  // Initialize output properties based on input buffer configuration if
+  // available
+  f->output_properties = prop_table_init();
+  if (config.n_inputs > 0) {
+    // For filters with inputs, inherit properties from buffer config
+    f->output_properties = prop_from_buffer_config(&config.buff_config);
+  }
+
   return Bp_EC_OK;
 }
 
@@ -447,6 +462,34 @@ Bp_EC filt_stop(Filter_t* f)
   }
 
   return Bp_EC_OK;
+}
+
+Bp_EC filt_connect(Filter_t* source, size_t source_output, Filter_t* sink,
+                   size_t sink_input)
+{
+  if (source == NULL || sink == NULL) {
+    return Bp_EC_NULL_FILTER;
+  }
+
+  if (sink_input >= sink->n_input_buffers) {
+    return Bp_EC_INVALID_SINK_IDX;
+  }
+
+  // First check property compatibility if contracts are defined
+  if (sink->contract && sink->contract->n_input_constraints > 0) {
+    char error_msg[256];
+    Bp_EC err =
+        prop_validate_connection(&source->output_properties, sink->contract,
+                                 error_msg, sizeof(error_msg));
+    if (err != Bp_EC_OK) {
+      // TODO: Log error_msg when logging is available
+      return err;
+    }
+  }
+
+  // Properties are compatible, proceed with connection
+  return filt_sink_connect(source, source_output,
+                           sink->input_buffers[sink_input]);
 }
 
 void* matched_passthroug(void* arg)

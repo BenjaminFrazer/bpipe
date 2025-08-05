@@ -52,6 +52,7 @@ typedef enum _Bp_EC {
   Bp_EC_NO_SPACE,          /* No space available in buffer */
   Bp_EC_INVALID_PRECISION, /* No space available in buffer */
   Bp_EC_FILTER_STOPPING,   /* Filter is stopping - forced return from blocking op */
+  Bp_EC_PROPERTY_MISMATCH, /* Property validation failed during connection */
   Bp_EC_MAX,
 } Bp_EC;
 

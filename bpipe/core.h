@@ -22,6 +22,7 @@
 #include <unistd.h>
 #include "batch_buffer.h"
 #include "bperr.h"
+#include "properties.h"
 #include "utils.h"
 
 #define MAX_SINKS 10
@@ -140,7 +141,9 @@ typedef struct _Filter_t {
   pthread_mutex_t filter_mutex;  // Protects sinks arrays
   Batch_buff_t *input_buffers[MAX_INPUTS];
   Batch_buff_t *sinks[MAX_SINKS];
-  FilterOps ops;  // Embedded operations interface
+  FilterOps ops;                      // Embedded operations interface
+  const FilterContract_t *contract;   // Property contract (optional)
+  PropertyTable_t output_properties;  // Cached output properties
 } Filter_t;
 
 Worker_t matched_passthroug;
@@ -155,6 +158,10 @@ Bp_EC filt_sink_connect(Filter_t *f, size_t sink_idx,
                         Batch_buff_t *dest_buffer);
 
 Bp_EC filt_sink_disconnect(Filter_t *f, size_t sink_idx);
+
+/* High-level connection function with property validation */
+Bp_EC filt_connect(Filter_t *source, size_t source_output, Filter_t *sink,
+                   size_t sink_input);
 
 /* Filter lifecycle functions */
 Bp_EC filt_start(Filter_t *filter);
