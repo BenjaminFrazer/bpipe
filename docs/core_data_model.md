@@ -252,6 +252,17 @@ The architecture optimizes for:
 - **False sharing prevention** - producer/consumer fields in separate cache lines (64-byte aligned)
 - **Atomic operations** - for head/tail indices with appropriate memory ordering
 
+## Connection Requriements 
+
+- Depending on the application filters may be more or less flexible about the data and batch configurations which they can be connected to.
+- This is driven primerily by the simplicity & performance gain by not catering for corner cases.
+- Filters may or may not tollerate the following:
+    - **Incomplete input batches** - head != 2^batch_capacity_expo-1
+    - **Input output capacity missmatch** - Output batch capacity != input batch capacity.
+    - **Irregular Data** - Data does not hava a consistent sample rate.
+    - **Different sink batch sizes** - The sizes of the input buffer for each sink are not equal.
+    - **Un-aligned inputs** - Input timestamps & number of samples do not align.
+
 ## Usage Patterns
 
 ### Simple Pipeline

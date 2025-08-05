@@ -47,11 +47,25 @@ static Bp_EC default_sink_connect(Filter_t* self, size_t output_port,
     return Bp_EC_INVALID_SINK_IDX;
   }
 
+  // Check against filter's configured maximum sinks
+  if (output_port >= self->max_supported_sinks) {
+    return Bp_EC_INVALID_SINK_IDX;
+  }
+
   pthread_mutex_lock(&self->filter_mutex);
 
   if (self->sinks[output_port] != NULL) {
     pthread_mutex_unlock(&self->filter_mutex);
     return Bp_EC_CONNECTION_OCCUPIED;
+  }
+
+  // Type checking: If filter has input buffers, check type compatibility
+  // This assumes that filters with inputs should output the same type
+  if (self->n_input_buffers > 0 && self->input_buffers[0] != NULL) {
+    if (sink->dtype != self->input_buffers[0]->dtype) {
+      pthread_mutex_unlock(&self->filter_mutex);
+      return Bp_EC_DTYPE_MISMATCH;
+    }
   }
 
   self->sinks[output_port] = sink;
@@ -110,7 +124,7 @@ static Bp_EC default_reconfigure(Filter_t* self, void* config)
 
 static Bp_EC default_validate_connection(Filter_t* self, size_t sink_idx)
 {
-  if (sink_idx >= self->max_suppported_sinks) {
+  if (sink_idx >= self->max_supported_sinks) {
     return Bp_EC_INVALID_SINK_IDX;
   }
   return Bp_EC_OK;
@@ -203,7 +217,7 @@ Bp_EC filt_init(Filter_t* f, Core_filt_config_t config)
   if (config.max_supported_sinks > MAX_SINKS) {
     return Bp_EC_INVALID_CONFIG_MAX_SINKS;
   }
-  f->max_suppported_sinks = config.max_supported_sinks;
+  f->max_supported_sinks = config.max_supported_sinks;
 
   if (config.n_inputs > MAX_INPUTS) {
     return Bp_EC_INVALID_CONFIG_MAX_INPUTS;
@@ -285,6 +299,11 @@ Bp_EC filt_deinit(Filter_t* f)
     return Bp_EC_NULL_FILTER;
   }
 
+  // Check if filter has been initialized
+  if (f->filt_type == FILT_T_NDEF) {
+    return Bp_EC_INVALID_CONFIG;
+  }
+
   // Use custom deinit operation if available
   if (f->ops.deinit != NULL && f->ops.deinit != default_deinit) {
     return f->ops.deinit(f);
@@ -301,6 +320,9 @@ Bp_EC filt_deinit(Filter_t* f)
 
   // Destroy mutex
   pthread_mutex_destroy(&f->filter_mutex);
+
+  // Reset filter type to indicate it's deinitialized
+  f->filt_type = FILT_T_NDEF;
 
   return Bp_EC_OK;
 }
@@ -345,6 +367,11 @@ Bp_EC filt_start(Filter_t* f)
     return Bp_EC_NULL_FILTER;
   }
 
+  // Check if filter has been initialized
+  if (f->filt_type == FILT_T_NDEF) {
+    return Bp_EC_INVALID_CONFIG;
+  }
+
   // Use custom start operation if available
   if (f->ops.start != NULL && f->ops.start != default_start) {
     return f->ops.start(f);
@@ -352,6 +379,12 @@ Bp_EC filt_start(Filter_t* f)
 
   if (f->running) {
     return Bp_EC_ALREADY_RUNNING;
+  }
+
+  // If no worker thread, just mark as running and return
+  if (f->worker == NULL) {
+    f->running = true;
+    return Bp_EC_OK;
   }
 
   f->running = true;
@@ -370,6 +403,11 @@ Bp_EC filt_stop(Filter_t* f)
 {
   if (!f) {
     return Bp_EC_NULL_FILTER;
+  }
+
+  // Check if filter has been initialized
+  if (f->filt_type == FILT_T_NDEF) {
+    return Bp_EC_INVALID_CONFIG;
   }
 
   // Use custom stop operation if available

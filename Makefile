@@ -2,7 +2,8 @@ PROJECT_ROOT=./
 CC=gcc
 CFLAGS = -std=c99 -Wall -Werror -pthread -save-temps=obj -g 
 CFLAGS += -I$(PROJECT_ROOT)/bpipe -I$(PROJECT_ROOT)/tests -I$(PROJECT_ROOT)/lib/Unity/src
-#CFLAGS += -DUNITY_INCLUDE_CONFIG_H -DUNITY_DEBUG_BREAK_ON_FAIL
+CFLAGS += -DUNITY_OUTPUT_COLOR
+#CFLAGS += -DUNITY_DEBUG_BREAK_ON_FAIL
 LDFLAGS=-lm
 SRC_DIR=bpipe
 TEST_SRC_DIR=tests
@@ -15,6 +16,8 @@ DEP_FLAGS = -MMD -MP
 TEST_SOURCES=$(wildcard $(TEST_SRC_DIR)/test_*.c)
 # Generate test executable names from source files
 TEST_EXECUTABLES=$(patsubst $(TEST_SRC_DIR)/%.c,$(BUILD_DIR)/%,$(TEST_SOURCES))
+# Add filter compliance test to the list
+TEST_EXECUTABLES += $(BUILD_DIR)/test_filter_compliance
 # Find all source files in bpipe directory
 SRC_FILES=$(wildcard $(SRC_DIR)/*.c)
 # Generate object files from source files
@@ -25,7 +28,7 @@ WORKING_EXAMPLES=csv_to_debug_auto csv_to_csv_scale
 # Generate full paths for working examples
 EXAMPLE_EXECUTABLES=$(addprefix $(EXAMPLES_DIR)/,$(WORKING_EXAMPLES))
 
-.PHONY: all clean run test test-c test-py lint lint-c lint-py lint-fix clang-format-check clang-format-fix clang-tidy-check cppcheck-check ruff-check ruff-format-check ruff-fix examples
+.PHONY: all clean run test test-c test-py lint lint-c lint-py lint-fix clang-format-check clang-format-fix clang-tidy-check cppcheck-check ruff-check ruff-format-check ruff-fix examples compliance compliance-lifecycle compliance-dataflow compliance-buffer compliance-perf help-compliance
 
 all: | $(BUILD_DIR)
 all: $(TEST_EXECUTABLES) examples
@@ -47,8 +50,18 @@ $(BUILD_DIR)/unity.o: $(UNITY_SRC) | $(BUILD_DIR)
 $(BUILD_DIR)/test_%: $(BUILD_DIR)/test_%.o $(OBJ_FILES) $(BUILD_DIR)/unity.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
-# Special rule for test_filter_bench that needs additional object files
-$(BUILD_DIR)/test_filter_bench: $(BUILD_DIR)/test_filter_bench.o $(BUILD_DIR)/mock_filters.o $(BUILD_DIR)/test_bench_utils.o $(OBJ_FILES) $(BUILD_DIR)/unity.o
+
+# Filter compliance test suite
+FILTER_COMPLIANCE_DIR=tests/filter_compliance
+FILTER_COMPLIANCE_SOURCES=$(wildcard $(FILTER_COMPLIANCE_DIR)/test_*.c)
+FILTER_COMPLIANCE_OBJS=$(patsubst $(FILTER_COMPLIANCE_DIR)/%.c,$(BUILD_DIR)/filter_compliance_%.o,$(FILTER_COMPLIANCE_SOURCES))
+
+# Build rule for filter compliance object files
+$(BUILD_DIR)/filter_compliance_%.o: $(FILTER_COMPLIANCE_DIR)/%.c | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(DEP_FLAGS) -c -o $@ $<
+
+# Build the filter compliance test executable
+$(BUILD_DIR)/test_filter_compliance: $(BUILD_DIR)/filter_compliance_main.o $(BUILD_DIR)/filter_compliance_common.o $(FILTER_COMPLIANCE_OBJS) $(BUILD_DIR)/mock_filters.o $(OBJ_FILES) $(BUILD_DIR)/unity.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 # Examples target
@@ -62,6 +75,26 @@ $(EXAMPLES_DIR)/%: $(EXAMPLES_DIR)/%.c $(OBJ_FILES)
 clean:
 	rm -rf $(BUILD_DIR)
 	rm -f $(EXAMPLE_EXECUTABLES)
+
+# Help target for compliance testing
+help-compliance:
+	@echo "Filter Compliance Testing Targets:"
+	@echo "  make compliance                    - Run all compliance tests for all filters"
+	@echo "  make compliance FILTER=Passthrough - Run all tests for specific filter"
+	@echo "  make compliance-lifecycle          - Run only lifecycle tests"
+	@echo "  make compliance-dataflow           - Run only dataflow tests"
+	@echo "  make compliance-buffer             - Run only buffer configuration tests"
+	@echo "  make compliance-perf               - Run only performance tests"
+	@echo ""
+	@echo "All targets support the FILTER variable to test specific filters."
+	@echo ""
+	@echo "Examples:"
+	@echo "  make compliance FILTER=Passthrough"
+	@echo "  make compliance-buffer FILTER=ControllableConsumer"
+	@echo "  make compliance-lifecycle    # Run lifecycle tests for all filters"
+	@echo ""
+	@echo "The test executable also supports:"
+	@echo "  ./build/test_filter_compliance --filter <name> --test <pattern>"
 
 project_root:
 	echo $(PROJECT_ROOT)
@@ -104,9 +137,55 @@ test-debug-output: $(BUILD_DIR)/test_debug_output_filter
 	@echo "Running debug output filter tests..."
 	scripts/run_with_timeout.sh 30 $(BUILD_DIR)/test_debug_output_filter
 
-test-filter-bench: $(BUILD_DIR)/test_filter_bench
-	@echo "Running filter test bench..."
-	scripts/run_with_timeout.sh 60 $(BUILD_DIR)/test_filter_bench
+test-filter-compliance: $(BUILD_DIR)/test_filter_compliance
+	@echo "Running filter compliance tests..."
+	scripts/run_with_timeout.sh 60 $(BUILD_DIR)/test_filter_compliance
+
+# Run compliance tests with optional filter pattern
+# Usage: make compliance FILTER=Passthrough
+# Usage: make compliance (runs all filters)
+compliance: $(BUILD_DIR)/test_filter_compliance
+	@echo "Running filter compliance tests..."
+	@if [ -n "$(FILTER)" ]; then \
+		echo "Testing filter: $(FILTER)"; \
+		scripts/run_with_timeout.sh 60 $(BUILD_DIR)/test_filter_compliance --filter $(FILTER); \
+	else \
+		echo "Testing all filters"; \
+		scripts/run_with_timeout.sh 60 $(BUILD_DIR)/test_filter_compliance; \
+	fi
+
+# Run specific compliance test categories
+compliance-lifecycle: $(BUILD_DIR)/test_filter_compliance
+	@echo "Running lifecycle compliance tests..."
+	@if [ -n "$(FILTER)" ]; then \
+		scripts/run_with_timeout.sh 60 $(BUILD_DIR)/test_filter_compliance --filter $(FILTER) --test lifecycle; \
+	else \
+		scripts/run_with_timeout.sh 60 $(BUILD_DIR)/test_filter_compliance --test lifecycle; \
+	fi
+
+compliance-dataflow: $(BUILD_DIR)/test_filter_compliance
+	@echo "Running dataflow compliance tests..."
+	@if [ -n "$(FILTER)" ]; then \
+		scripts/run_with_timeout.sh 60 $(BUILD_DIR)/test_filter_compliance --filter $(FILTER) --test dataflow; \
+	else \
+		scripts/run_with_timeout.sh 60 $(BUILD_DIR)/test_filter_compliance --test dataflow; \
+	fi
+
+compliance-buffer: $(BUILD_DIR)/test_filter_compliance
+	@echo "Running buffer configuration compliance tests..."
+	@if [ -n "$(FILTER)" ]; then \
+		scripts/run_with_timeout.sh 60 $(BUILD_DIR)/test_filter_compliance --filter $(FILTER) --test buffer; \
+	else \
+		scripts/run_with_timeout.sh 60 $(BUILD_DIR)/test_filter_compliance --test buffer; \
+	fi
+
+compliance-perf: $(BUILD_DIR)/test_filter_compliance
+	@echo "Running performance compliance tests..."
+	@if [ -n "$(FILTER)" ]; then \
+		scripts/run_with_timeout.sh 60 $(BUILD_DIR)/test_filter_compliance --filter $(FILTER) --test perf; \
+	else \
+		scripts/run_with_timeout.sh 60 $(BUILD_DIR)/test_filter_compliance --test perf; \
+	fi
 
 # Linting targets
 lint: lint-c #lint-py
