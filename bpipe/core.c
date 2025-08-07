@@ -294,16 +294,25 @@ Bp_EC filt_init(Filter_t* f, Core_filt_config_t config)
   // Initialize operations interface with defaults
   f->ops = default_ops;
 
-  // Initialize property contract to NULL (filters will set if needed)
-  f->contract = NULL;
-
-  // Initialize output properties based on input buffer configuration if
-  // available
-  f->output_properties = prop_table_init();
-  if (config.n_inputs > 0) {
-    // For filters with inputs, inherit properties from buffer config
-    f->output_properties = prop_from_buffer_config(&config.buff_config);
+  // Initialize property system arrays and counts
+  for (int i = 0; i < MAX_CONSTRAINTS; i++) {
+    f->input_constraints[i].property = PROP_SLOT_AVAILABLE;
   }
+  f->n_input_constraints = 0;
+
+  for (int i = 0; i < MAX_BEHAVIORS; i++) {
+    f->output_behaviors[i].property = PROP_SLOT_AVAILABLE;
+  }
+  f->n_output_behaviors = 0;
+
+  // Set up contract to use the arrays
+  f->contract.input_constraints = f->input_constraints;
+  f->contract.n_input_constraints = 0;  // Will be updated via append functions
+  f->contract.output_behaviors = f->output_behaviors;
+  f->contract.n_output_behaviors = 0;  // Will be updated via append functions
+
+  // Initialize output properties
+  f->output_properties = prop_table_init();
 
   return Bp_EC_OK;
 }
@@ -476,10 +485,11 @@ Bp_EC filt_connect(Filter_t* source, size_t source_output, Filter_t* sink,
   }
 
   // First check property compatibility if contracts are defined
-  if (sink->contract && sink->contract->n_input_constraints > 0) {
+  // Check if sink has any input constraints
+  if (sink->n_input_constraints > 0) {
     char error_msg[256];
     Bp_EC err =
-        prop_validate_connection(&source->output_properties, sink->contract,
+        prop_validate_connection(&source->output_properties, &sink->contract,
                                  error_msg, sizeof(error_msg));
     if (err != Bp_EC_OK) {
       // TODO: Log error_msg when logging is available

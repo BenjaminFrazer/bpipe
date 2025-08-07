@@ -141,8 +141,16 @@ typedef struct _Filter_t {
   pthread_mutex_t filter_mutex;  // Protects sinks arrays
   Batch_buff_t *input_buffers[MAX_INPUTS];
   Batch_buff_t *sinks[MAX_SINKS];
-  FilterOps ops;                      // Embedded operations interface
-  const FilterContract_t *contract;   // Property contract (optional)
+  FilterOps ops;  // Embedded operations interface
+
+/* Property system - static arrays with explicit counts */
+#define MAX_CONSTRAINTS 16
+#define MAX_BEHAVIORS 16
+  InputConstraint_t input_constraints[MAX_CONSTRAINTS];
+  size_t n_input_constraints;  // Number of active constraints
+  OutputBehavior_t output_behaviors[MAX_BEHAVIORS];
+  size_t n_output_behaviors;          // Number of active behaviors
+  FilterContract_t contract;          // Uses above arrays
   PropertyTable_t output_properties;  // Cached output properties
 } Filter_t;
 

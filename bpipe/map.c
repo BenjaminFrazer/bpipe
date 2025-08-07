@@ -6,13 +6,7 @@
 #include "bperr.h"
 #include "core.h"
 
-// Map filter preserves most properties by default (empty behaviors = inherit)
-static const FilterContract_t map_contract = {
-    .input_constraints = NULL,  // Map accepts any input
-    .n_input_constraints = 0,
-    .output_behaviors = NULL,  // All properties are preserved
-    .n_output_behaviors = 0,
-};
+// Map filter preserves most properties by default
 
 void* map_worker(void* arg)
 {
@@ -223,8 +217,11 @@ Bp_EC map_init(Map_filt_t* f, Map_config_t config)
   f->base.ops.get_stats = map_get_stats;
   f->base.ops.dump_state = map_dump_state;
 
-  // Set filter contract - map preserves all properties
-  f->base.contract = &map_contract;
+  // Map filter constraints based on its buffer configuration
+  // Map can handle partial fills, so accepts any size up to buffer capacity
+  prop_constraints_from_buffer_append(&f->base, &config.buff_config, true);
+
+  // Map preserves all output properties (no behaviors = inherit from input)
 
   return Bp_EC_OK;
 };

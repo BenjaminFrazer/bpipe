@@ -1,9 +1,11 @@
 #include "properties.h"
 #include <stdio.h>
 #include <string.h>
+#include "core.h"
 
-/* Property metadata */
-static const char* property_names[PROP_COUNT_MVP] = {
+/* Property metadata - use explicit enum indexing */
+static const char* property_names[PROP_COUNT_MVP + 1] = {
+    [PROP_SLOT_AVAILABLE] = "slot_available",
     [PROP_DATA_TYPE] = "data_type",
     [PROP_MIN_BATCH_CAPACITY] = "min_batch_capacity",
     [PROP_MAX_BATCH_CAPACITY] = "max_batch_capacity",
@@ -194,16 +196,17 @@ Bp_EC prop_validate_connection(const PropertyTable_t* upstream_props,
     error_msg[0] = '\0';
   }
 
-  /* Check each constraint */
+  /* Check each constraint using count */
+  const InputConstraint_t* constraints = downstream_contract->input_constraints;
   for (size_t i = 0; i < downstream_contract->n_input_constraints; i++) {
-    const InputConstraint_t* constraint =
-        &downstream_contract->input_constraints[i];
+    const InputConstraint_t* constraint = &constraints[i];
 
     /* Validate property index */
-    if (constraint->property >= PROP_COUNT_MVP) {
+    if (constraint->property > PROP_COUNT_MVP || constraint->property < 1) {
       return Bp_EC_INVALID_CONFIG;
     }
 
+    /* Direct indexing - enums match array indices */
     const Property_t* prop = &upstream_props->properties[constraint->property];
 
     if (!validate_constraint(prop, constraint, error_msg, error_msg_size)) {
@@ -245,19 +248,37 @@ PropertyTable_t prop_propagate(const PropertyTable_t* upstream,
     return downstream;
   }
 
-  /* Apply filter's output behaviors */
-  for (size_t i = 0; i < filter_contract->n_output_behaviors; i++) {
-    const OutputBehavior_t* behavior = &filter_contract->output_behaviors[i];
+  /* Apply filter's output behaviors using count */
+  const OutputBehavior_t* behaviors = filter_contract->output_behaviors;
+  if (behaviors) {
+    for (size_t i = 0; i < filter_contract->n_output_behaviors; i++) {
+      const OutputBehavior_t* behavior = &behaviors[i];
 
-    /* Validate property index */
-    if (behavior->property >= PROP_COUNT_MVP) {
-      continue; /* Skip invalid properties */
+      /* Validate property index */
+      if (behavior->property > PROP_COUNT_MVP || behavior->property < 1) {
+        continue; /* Skip invalid properties */
+      }
+
+      /* Direct indexing - enums match array indices */
+      apply_behavior(&downstream.properties[behavior->property], behavior);
     }
-
-    apply_behavior(&downstream.properties[behavior->property], behavior);
   }
 
   return downstream;
+}
+
+/* Utility function to extract batch capacity from buffer config */
+static inline uint32_t prop_batch_cap_from_buff_config(
+    const BatchBuffer_config* config)
+{
+  return config ? (1U << config->batch_capacity_expo) : 0;
+}
+
+/* Utility function to extract data type from buffer config */
+static inline SampleDtype_t prop_dtype_from_buff_config(
+    const BatchBuffer_config* config)
+{
+  return config ? config->dtype : DTYPE_NDEF;
 }
 
 /* Extract properties from a batch buffer configuration */
@@ -269,13 +290,19 @@ PropertyTable_t prop_from_buffer_config(const BatchBuffer_config* config)
     return table;
   }
 
-  /* Set data type property */
-  prop_set_dtype(&table, config->dtype);
+  /* Set data type property using utility function */
+  SampleDtype_t dtype = prop_dtype_from_buff_config(config);
+  if (dtype != DTYPE_NDEF) {
+    prop_set_dtype(&table, dtype);
+  }
 
-  /* Calculate batch capacity from exponent */
-  uint32_t batch_capacity = 1U << config->batch_capacity_expo;
-  prop_set_min_batch_capacity(&table, batch_capacity);
-  prop_set_max_batch_capacity(&table, batch_capacity);
+  /* Set batch capacity properties - default to exact capacity match
+   * Filters that support partial batches should override these after init */
+  uint32_t batch_capacity = prop_batch_cap_from_buff_config(config);
+  if (batch_capacity > 0) {
+    prop_set_min_batch_capacity(&table, batch_capacity);
+    prop_set_max_batch_capacity(&table, batch_capacity);
+  }
 
   /* Note: Sample rate is not available in buffer config,
    * must be set separately if known */
@@ -314,8 +341,101 @@ void prop_describe_table(const PropertyTable_t* table, char* buffer,
 
 const char* prop_get_name(SignalProperty_t prop)
 {
-  if (prop >= PROP_COUNT_MVP) {
-    return "unknown";
+  if (prop < 0 || prop >= PROP_COUNT_MVP) return "unknown";
+  return property_names[prop] ? property_names[prop] : "unknown";
+}
+
+/* Append a constraint to filter's input constraints array */
+bool prop_append_constraint(Filter_t* filter, SignalProperty_t prop,
+                            ConstraintOp_t op, const void* operand)
+{
+  if (!filter || !operand) return false;
+
+  /* Check if array is full */
+  if (filter->n_input_constraints >= MAX_CONSTRAINTS) {
+    return false;
   }
-  return property_names[prop];
+
+  /* Add constraint at next available position */
+  InputConstraint_t* constraint =
+      &filter->input_constraints[filter->n_input_constraints];
+  constraint->property = prop;
+  constraint->op = op;
+
+  /* Set operand based on property type */
+  if (prop == PROP_DATA_TYPE) {
+    constraint->operand.dtype = *(const SampleDtype_t*) operand;
+  } else {
+    constraint->operand.u32 = *(const uint32_t*) operand;
+  }
+
+  /* Increment count */
+  filter->n_input_constraints++;
+
+  /* Update contract count */
+  filter->contract.n_input_constraints = filter->n_input_constraints;
+
+  return true;
+}
+
+/* Append a behavior to filter's output behaviors array */
+bool prop_append_behavior(Filter_t* filter, SignalProperty_t prop,
+                          BehaviorOp_t op, const void* operand)
+{
+  if (!filter || !operand) return false;
+
+  /* Check if array is full */
+  if (filter->n_output_behaviors >= MAX_BEHAVIORS) {
+    return false;
+  }
+
+  /* Add behavior at next available position */
+  OutputBehavior_t* behavior =
+      &filter->output_behaviors[filter->n_output_behaviors];
+  behavior->property = prop;
+  behavior->op = op;
+
+  /* Set operand based on property type */
+  if (prop == PROP_DATA_TYPE) {
+    behavior->operand.dtype = *(const SampleDtype_t*) operand;
+  } else {
+    behavior->operand.u32 = *(const uint32_t*) operand;
+  }
+
+  /* Increment count */
+  filter->n_output_behaviors++;
+
+  /* Update contract count */
+  filter->contract.n_output_behaviors = filter->n_output_behaviors;
+
+  return true;
+}
+
+/* Generate input constraints from buffer configuration */
+void prop_constraints_from_buffer_append(Filter_t* filter,
+                                         const BatchBuffer_config* config,
+                                         bool accepts_partial_fill)
+{
+  if (!filter || !config) return;
+
+  /* Add data type constraint */
+  prop_append_constraint(filter, PROP_DATA_TYPE, CONSTRAINT_OP_EQ,
+                         &config->dtype);
+
+  uint32_t capacity = 1U << config->batch_capacity_expo;
+
+  if (accepts_partial_fill) {
+    /* Can handle any size from 1 to capacity */
+    uint32_t min = 1;
+    prop_append_constraint(filter, PROP_MIN_BATCH_CAPACITY, CONSTRAINT_OP_GTE,
+                           &min);
+    prop_append_constraint(filter, PROP_MAX_BATCH_CAPACITY, CONSTRAINT_OP_LTE,
+                           &capacity);
+  } else {
+    /* Requires exact capacity */
+    prop_append_constraint(filter, PROP_MIN_BATCH_CAPACITY, CONSTRAINT_OP_EQ,
+                           &capacity);
+    prop_append_constraint(filter, PROP_MAX_BATCH_CAPACITY, CONSTRAINT_OP_EQ,
+                           &capacity);
+  }
 }

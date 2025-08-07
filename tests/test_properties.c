@@ -181,6 +181,7 @@ void test_property_propagation_preserve(void) {
 }
 
 void test_buffer_config_properties(void) {
+    // Test with full batches only (supports_partial_batches = false)
     BatchBuffer_config config = {
         .dtype = DTYPE_I32,
         .batch_capacity_expo = 6,  // 64 samples
@@ -199,11 +200,36 @@ void test_buffer_config_properties(void) {
     TEST_ASSERT_TRUE(prop_get_min_batch_capacity(&table, &min_cap));
     TEST_ASSERT_TRUE(prop_get_max_batch_capacity(&table, &max_cap));
     TEST_ASSERT_EQUAL(64, min_cap);
-    TEST_ASSERT_EQUAL(64, max_cap);
+    TEST_ASSERT_EQUAL(64, max_cap);  // Both min and max are 64 for full batches
     
     // Sample rate is not in buffer config
     uint32_t rate;
     TEST_ASSERT_FALSE(prop_get_sample_rate(&table, &rate));
+}
+
+void test_buffer_config_properties_partial(void) {
+    // Test that filters can override min/max after init
+    BatchBuffer_config config = {
+        .dtype = DTYPE_FLOAT,
+        .batch_capacity_expo = 7,  // 128 samples
+        .ring_capacity_expo = 8,
+        .overflow_behaviour = OVERFLOW_BLOCK
+    };
+    
+    PropertyTable_t table = prop_from_buffer_config(&config);
+    
+    // Default should be exact capacity
+    uint32_t min_cap, max_cap;
+    TEST_ASSERT_TRUE(prop_get_min_batch_capacity(&table, &min_cap));
+    TEST_ASSERT_TRUE(prop_get_max_batch_capacity(&table, &max_cap));
+    TEST_ASSERT_EQUAL(128, min_cap);
+    TEST_ASSERT_EQUAL(128, max_cap);
+    
+    // Filters that support partial batches would override like this:
+    prop_set_min_batch_capacity(&table, 1);
+    TEST_ASSERT_TRUE(prop_get_min_batch_capacity(&table, &min_cap));
+    TEST_ASSERT_EQUAL(1, min_cap);    // Now accepts partial
+    TEST_ASSERT_EQUAL(128, max_cap);  // Max unchanged
 }
 
 void test_signal_generator_properties(void) {
@@ -243,10 +269,10 @@ void test_signal_generator_properties(void) {
     TEST_ASSERT_TRUE(prop_get_max_batch_capacity(&sg.base.output_properties, &batch_cap));
     TEST_ASSERT_EQUAL(128, batch_cap);
     
-    // Check contract is set
-    TEST_ASSERT_NOT_NULL(sg.base.contract);
-    TEST_ASSERT_EQUAL(0, sg.base.contract->n_input_constraints);
-    TEST_ASSERT(sg.base.contract->n_output_behaviors > 0);
+    // Signal generator is a source filter with no input constraints
+    // but it should have set output properties
+    TEST_ASSERT(sg.base.output_properties.properties[PROP_DATA_TYPE].known);
+    TEST_ASSERT(sg.base.output_properties.properties[PROP_SAMPLE_RATE_HZ].known);
 }
 
 void test_csv_sink_type_constraint(void) {
@@ -327,6 +353,7 @@ int main(void) {
     
     // Integration with existing code
     RUN_TEST(test_buffer_config_properties);
+    RUN_TEST(test_buffer_config_properties_partial);
     RUN_TEST(test_signal_generator_properties);
     RUN_TEST(test_csv_sink_type_constraint);
     

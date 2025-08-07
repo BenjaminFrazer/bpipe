@@ -13,27 +13,8 @@
 #define M_PI 3.14159265358979323846
 #endif
 
-// Signal generator output behaviors - sets properties for generated signal
-static const OutputBehavior_t signal_gen_behaviors[] = {
-    // Set data type to float
-    {PROP_DATA_TYPE, BEHAVIOR_OP_SET, {.dtype = DTYPE_FLOAT}},
-
-    // Set batch capacity range (can produce various sizes)
-    {PROP_MIN_BATCH_CAPACITY, BEHAVIOR_OP_SET, {.u32 = 1}},
-    {PROP_MAX_BATCH_CAPACITY, BEHAVIOR_OP_SET, {.u32 = 65536}},
-
-    // Sample rate is determined by period_ns, but we'll set a default
-    // This will be updated dynamically based on configuration
-    {PROP_SAMPLE_RATE_HZ, BEHAVIOR_OP_SET, {.u32 = 0}},  // Will be set in init
-};
-
-static const FilterContract_t signal_gen_contract = {
-    .input_constraints = NULL,  // Source filter - no inputs
-    .n_input_constraints = 0,
-    .output_behaviors = signal_gen_behaviors,
-    .n_output_behaviors =
-        sizeof(signal_gen_behaviors) / sizeof(signal_gen_behaviors[0]),
-};
+// Signal generator is a source filter - no input constraints needed
+// Output properties are set explicitly during initialization
 
 // Generate sine waveform
 static void generate_sine(SignalGenerator_t* sg, float* samples, size_t n,
@@ -254,10 +235,11 @@ Bp_EC signal_generator_init(SignalGenerator_t* sg,
   sg->next_t_ns = 0;
   sg->samples_generated = 0;
 
-  // Set filter contract
-  sg->base.contract = &signal_gen_contract;
+  // Signal generator has no input constraints (source filter)
+  // Output behaviors are set via properties below
 
-  // Update output properties with actual sample rate
+  // Update output properties with data type and actual sample rate
+  prop_set_dtype(&sg->base.output_properties, config.buff_config.dtype);
   uint32_t sample_rate_hz =
       (uint32_t) (1000000000ULL / config.sample_period_ns);
   prop_set_sample_rate(&sg->base.output_properties, sample_rate_hz);

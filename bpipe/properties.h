@@ -7,19 +7,25 @@
 #include "batch_buffer.h"
 #include "bperr.h"
 
+/* Forward declaration */
+struct _Filter_t;
+
 /* Core Properties for MVP - focusing on most critical compatibility issues */
 typedef enum {
+  /* Special values for array management */
+  PROP_SLOT_AVAILABLE = 0, /* Empty slot that can be filled */
+
   /* Data type property */
-  PROP_DATA_TYPE, /* SampleDtype_t value */
+  PROP_DATA_TYPE = 1, /* SampleDtype_t value */
 
   /* Batch capacity properties (in samples, not exponents) */
-  PROP_MIN_BATCH_CAPACITY, /* Minimum accepted batch size in samples */
-  PROP_MAX_BATCH_CAPACITY, /* Maximum accepted batch size in samples */
+  PROP_MIN_BATCH_CAPACITY, /* Minimum batch size emitted by filter */
+  PROP_MAX_BATCH_CAPACITY, /* Maximum batch size emitted by filter */
 
   /* Timing property */
   PROP_SAMPLE_RATE_HZ, /* Fixed sample rate in Hz (0 = variable/unknown) */
 
-  PROP_COUNT_MVP /* Just 4 properties for MVP */
+  PROP_COUNT_MVP /* Count of actual properties */
 } SignalProperty_t;
 
 /* Constraint operators for input validation */
@@ -45,9 +51,11 @@ typedef struct {
   } value;
 } Property_t;
 
-/* Property table containing all properties */
+/* Property table containing all properties
+ * Array is sized to handle enum values starting at 1 */
 typedef struct {
-  Property_t properties[PROP_COUNT_MVP];
+  Property_t
+      properties[PROP_COUNT_MVP + 1];  // +1 for PROP_SLOT_AVAILABLE at index 0
 } PropertyTable_t;
 
 /* Input constraint structure */
@@ -106,8 +114,34 @@ Bp_EC prop_validate_connection(const PropertyTable_t* upstream_props,
 PropertyTable_t prop_propagate(const PropertyTable_t* upstream,
                                const FilterContract_t* filter_contract);
 
-/* Extract properties from a batch buffer configuration */
+/* Extract properties from a batch buffer configuration
+ * Sets both min and max batch capacity to the buffer's capacity
+ * Data type is set from the buffer config
+ * Sample rate must be set separately if known
+ */
 PropertyTable_t prop_from_buffer_config(const BatchBuffer_config* config);
+
+/* Append a constraint to a filter's input constraints array
+ * Returns true if successful, false if array is full
+ * The array must have been initialized with PROP_SENTINEL at the end
+ */
+bool prop_append_constraint(struct _Filter_t* filter, SignalProperty_t prop,
+                            ConstraintOp_t op, const void* operand);
+
+/* Append a behavior to a filter's output behaviors array
+ * Returns true if successful, false if array is full
+ * The array must have been initialized with PROP_SENTINEL at the end
+ */
+bool prop_append_behavior(struct _Filter_t* filter, SignalProperty_t prop,
+                          BehaviorOp_t op, const void* operand);
+
+/* Generate input constraints from buffer configuration
+ * Appends constraints to the filter's input_constraints array
+ * @param accepts_partial_fill: If true, accepts batches with head < capacity
+ */
+void prop_constraints_from_buffer_append(struct _Filter_t* filter,
+                                         const BatchBuffer_config* config,
+                                         bool accepts_partial_fill);
 
 /* Debug/logging utilities */
 void prop_describe_table(const PropertyTable_t* table, char* buffer,
