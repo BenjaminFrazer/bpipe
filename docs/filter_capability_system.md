@@ -35,7 +35,7 @@ Filters declare what they can accept during initialization:
 // CSV sink requires float data and known sample rate
 prop_append_constraint(&sink->base, PROP_DATA_TYPE, CONSTRAINT_OP_EQ, 
                       &(SampleDtype_t){DTYPE_FLOAT});
-prop_append_constraint(&sink->base, PROP_SAMPLE_RATE_HZ, CONSTRAINT_OP_EXISTS, 
+prop_append_constraint(&sink->base, PROP_SAMPLE_PERIOD_NS, CONSTRAINT_OP_EXISTS, 
                       NULL);
 ```
 
@@ -46,7 +46,7 @@ Source filters and transforms set their output properties:
 ```c
 // Signal generator sets output properties
 prop_set_dtype(&sg->base.output_properties, DTYPE_FLOAT);
-prop_set_sample_rate(&sg->base.output_properties, 48000);
+prop_set_sample_period(&sg->base.output_properties, sample_rate_to_period_ns(48000));
 prop_set_min_batch_capacity(&sg->base.output_properties, batch_capacity);
 prop_set_max_batch_capacity(&sg->base.output_properties, batch_capacity);
 ```
@@ -80,7 +80,7 @@ Bp_EC csv_sink_init(CSVSink_t* sink, CSVSink_config_t config)
     // Require float32 data and known sample rate
     prop_append_constraint(&sink->base, PROP_DATA_TYPE, CONSTRAINT_OP_EQ, 
                           &(SampleDtype_t){DTYPE_FLOAT});
-    prop_append_constraint(&sink->base, PROP_SAMPLE_RATE_HZ, CONSTRAINT_OP_EXISTS, 
+    prop_append_constraint(&sink->base, PROP_SAMPLE_PERIOD_NS, CONSTRAINT_OP_EXISTS, 
                           NULL);
     
     return Bp_EC_OK;
@@ -96,8 +96,8 @@ Bp_EC signal_generator_init(SignalGenerator_t* sg, SignalGenerator_config_t conf
     // Set output properties based on configuration
     prop_set_dtype(&sg->base.output_properties, config.buff_config.dtype);
     
-    uint32_t sample_rate_hz = (uint32_t)(1000000000ULL / config.sample_period_ns);
-    prop_set_sample_rate(&sg->base.output_properties, sample_rate_hz);
+    // Set sample period from configuration
+    prop_set_sample_period(&sg->base.output_properties, config.sample_period_ns);
     
     uint32_t batch_capacity = 1U << config.buff_config.batch_capacity_expo;
     prop_set_min_batch_capacity(&sg->base.output_properties, batch_capacity);
@@ -181,12 +181,13 @@ For implementation details and advanced features, see the appendix sections belo
 A resampler might require specific input sample rates and produce different output rates:
 
 ```c
-// Require 48kHz input
-prop_append_constraint(&filter->base, PROP_SAMPLE_RATE_HZ, CONSTRAINT_OP_EQ, 
-                      &(uint32_t){48000});
+// Require 48kHz input (20833ns period)
+uint64_t period_48khz = sample_rate_to_period_ns(48000);
+prop_append_constraint(&filter->base, PROP_SAMPLE_PERIOD_NS, CONSTRAINT_OP_EQ, 
+                      &period_48khz);
 
 // Set 44.1kHz output
-prop_set_sample_rate(&filter->base.output_properties, 44100);
+prop_set_sample_period(&filter->base.output_properties, sample_rate_to_period_ns(44100));
 ```
 
 ### Multi-rate Filter
@@ -196,7 +197,7 @@ A filter supporting multiple sample rates:
 // Accept common audio rates
 uint32_t rate = get_input_sample_rate();
 if (rate == 44100 || rate == 48000 || rate == 96000) {
-    prop_set_sample_rate(&filter->base.output_properties, rate);
+    prop_set_sample_period(&filter->base.output_properties, sample_rate_to_period_ns(rate));
 } else {
     return Bp_EC_UNSUPPORTED_RATE;
 }
@@ -204,12 +205,12 @@ if (rate == 44100 || rate == 48000 || rate == 96000) {
 
 ## Appendix B: Property System Architecture
 
-The property system uses embedded static arrays with sentinel values for efficient memory management. Each filter contains:
+The property system uses embedded static arrays with explicit count tracking for efficient memory management. Each filter contains:
 - Input constraint array (16 slots)
 - Output behavior array (16 slots)
 - Cached output properties table
 
-Arrays use sentinel values (PROP_SENTINEL) to mark the end, eliminating the need for separate count variables.
+Arrays use explicit count fields (n_input_constraints, n_output_behaviors) to track the number of active entries.
 
 ## Appendix C: Error Handling
 
