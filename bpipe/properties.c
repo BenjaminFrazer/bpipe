@@ -9,7 +9,7 @@ static const char* property_names[PROP_COUNT_MVP + 1] = {
     [PROP_DATA_TYPE] = "data_type",
     [PROP_MIN_BATCH_CAPACITY] = "min_batch_capacity",
     [PROP_MAX_BATCH_CAPACITY] = "max_batch_capacity",
-    [PROP_SAMPLE_RATE_HZ] = "sample_rate_hz"};
+    [PROP_SAMPLE_PERIOD_NS] = "sample_period_ns"};
 
 /* Initialize a property table with default values */
 PropertyTable_t prop_table_init(void)
@@ -44,11 +44,11 @@ Bp_EC prop_set_max_batch_capacity(PropertyTable_t* table, uint32_t capacity)
   return Bp_EC_OK;
 }
 
-Bp_EC prop_set_sample_rate(PropertyTable_t* table, uint32_t rate_hz)
+Bp_EC prop_set_sample_period(PropertyTable_t* table, uint64_t period_ns)
 {
   if (!table) return Bp_EC_NULL_POINTER;
-  table->properties[PROP_SAMPLE_RATE_HZ].known = true;
-  table->properties[PROP_SAMPLE_RATE_HZ].value.u32 = rate_hz;
+  table->properties[PROP_SAMPLE_PERIOD_NS].known = true;
+  table->properties[PROP_SAMPLE_PERIOD_NS].value.u64 = period_ns;
   return Bp_EC_OK;
 }
 
@@ -79,11 +79,11 @@ bool prop_get_max_batch_capacity(const PropertyTable_t* table,
   return true;
 }
 
-bool prop_get_sample_rate(const PropertyTable_t* table, uint32_t* rate_hz)
+bool prop_get_sample_period(const PropertyTable_t* table, uint64_t* period_ns)
 {
-  if (!table || !rate_hz) return false;
-  if (!table->properties[PROP_SAMPLE_RATE_HZ].known) return false;
-  *rate_hz = table->properties[PROP_SAMPLE_RATE_HZ].value.u32;
+  if (!table || !period_ns) return false;
+  if (!table->properties[PROP_SAMPLE_PERIOD_NS].known) return false;
+  *period_ns = table->properties[PROP_SAMPLE_PERIOD_NS].value.u64;
   return true;
 }
 
@@ -123,6 +123,17 @@ static bool validate_constraint(const Property_t* prop,
           }
           return false;
         }
+      } else if (constraint->property == PROP_SAMPLE_PERIOD_NS) {
+        if (prop->value.u64 != constraint->operand.u64) {
+          if (error_msg) {
+            snprintf(error_msg, error_msg_size,
+                     "Property '%s' mismatch: expected %llu, got %llu",
+                     property_names[constraint->property],
+                     (unsigned long long) constraint->operand.u64,
+                     (unsigned long long) prop->value.u64);
+          }
+          return false;
+        }
       } else {
         if (prop->value.u32 != constraint->operand.u32) {
           if (error_msg) {
@@ -139,42 +150,84 @@ static bool validate_constraint(const Property_t* prop,
     case CONSTRAINT_OP_GTE:
       if (!prop->known) {
         if (error_msg) {
-          snprintf(error_msg, error_msg_size,
-                   "Property '%s' is not present but must be >= %u",
-                   property_names[constraint->property],
-                   constraint->operand.u32);
+          if (constraint->property == PROP_SAMPLE_PERIOD_NS) {
+            snprintf(error_msg, error_msg_size,
+                     "Property '%s' is not present but must be >= %llu",
+                     property_names[constraint->property],
+                     (unsigned long long) constraint->operand.u64);
+          } else {
+            snprintf(error_msg, error_msg_size,
+                     "Property '%s' is not present but must be >= %u",
+                     property_names[constraint->property],
+                     constraint->operand.u32);
+          }
         }
         return false;
       }
-      if (prop->value.u32 < constraint->operand.u32) {
-        if (error_msg) {
-          snprintf(error_msg, error_msg_size,
-                   "Property '%s' (%u) is less than required minimum (%u)",
-                   property_names[constraint->property], prop->value.u32,
-                   constraint->operand.u32);
+      if (constraint->property == PROP_SAMPLE_PERIOD_NS) {
+        if (prop->value.u64 < constraint->operand.u64) {
+          if (error_msg) {
+            snprintf(
+                error_msg, error_msg_size,
+                "Property '%s' (%llu) is less than required minimum (%llu)",
+                property_names[constraint->property],
+                (unsigned long long) prop->value.u64,
+                (unsigned long long) constraint->operand.u64);
+          }
+          return false;
         }
-        return false;
+      } else {
+        if (prop->value.u32 < constraint->operand.u32) {
+          if (error_msg) {
+            snprintf(error_msg, error_msg_size,
+                     "Property '%s' (%u) is less than required minimum (%u)",
+                     property_names[constraint->property], prop->value.u32,
+                     constraint->operand.u32);
+          }
+          return false;
+        }
       }
       break;
 
     case CONSTRAINT_OP_LTE:
       if (!prop->known) {
         if (error_msg) {
-          snprintf(error_msg, error_msg_size,
-                   "Property '%s' is not present but must be <= %u",
-                   property_names[constraint->property],
-                   constraint->operand.u32);
+          if (constraint->property == PROP_SAMPLE_PERIOD_NS) {
+            snprintf(error_msg, error_msg_size,
+                     "Property '%s' is not present but must be <= %llu",
+                     property_names[constraint->property],
+                     (unsigned long long) constraint->operand.u64);
+          } else {
+            snprintf(error_msg, error_msg_size,
+                     "Property '%s' is not present but must be <= %u",
+                     property_names[constraint->property],
+                     constraint->operand.u32);
+          }
         }
         return false;
       }
-      if (prop->value.u32 > constraint->operand.u32) {
-        if (error_msg) {
-          snprintf(error_msg, error_msg_size,
-                   "Property '%s' (%u) is greater than required maximum (%u)",
-                   property_names[constraint->property], prop->value.u32,
-                   constraint->operand.u32);
+      if (constraint->property == PROP_SAMPLE_PERIOD_NS) {
+        if (prop->value.u64 > constraint->operand.u64) {
+          if (error_msg) {
+            snprintf(
+                error_msg, error_msg_size,
+                "Property '%s' (%llu) is greater than required maximum (%llu)",
+                property_names[constraint->property],
+                (unsigned long long) prop->value.u64,
+                (unsigned long long) constraint->operand.u64);
+          }
+          return false;
         }
-        return false;
+      } else {
+        if (prop->value.u32 > constraint->operand.u32) {
+          if (error_msg) {
+            snprintf(error_msg, error_msg_size,
+                     "Property '%s' (%u) is greater than required maximum (%u)",
+                     property_names[constraint->property], prop->value.u32,
+                     constraint->operand.u32);
+          }
+          return false;
+        }
       }
       break;
   }
@@ -365,6 +418,8 @@ bool prop_append_constraint(Filter_t* filter, SignalProperty_t prop,
   /* Set operand based on property type */
   if (prop == PROP_DATA_TYPE) {
     constraint->operand.dtype = *(const SampleDtype_t*) operand;
+  } else if (prop == PROP_SAMPLE_PERIOD_NS) {
+    constraint->operand.u64 = *(const uint64_t*) operand;
   } else {
     constraint->operand.u32 = *(const uint32_t*) operand;
   }
@@ -398,6 +453,8 @@ bool prop_append_behavior(Filter_t* filter, SignalProperty_t prop,
   /* Set operand based on property type */
   if (prop == PROP_DATA_TYPE) {
     behavior->operand.dtype = *(const SampleDtype_t*) operand;
+  } else if (prop == PROP_SAMPLE_PERIOD_NS) {
+    behavior->operand.u64 = *(const uint64_t*) operand;
   } else {
     behavior->operand.u32 = *(const uint32_t*) operand;
   }

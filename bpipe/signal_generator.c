@@ -238,11 +238,9 @@ Bp_EC signal_generator_init(SignalGenerator_t* sg,
   // Signal generator has no input constraints (source filter)
   // Output behaviors are set via properties below
 
-  // Update output properties with data type and actual sample rate
+  // Update output properties with data type and sample period
   prop_set_dtype(&sg->base.output_properties, config.buff_config.dtype);
-  uint32_t sample_rate_hz =
-      (uint32_t) (1000000000ULL / config.sample_period_ns);
-  prop_set_sample_rate(&sg->base.output_properties, sample_rate_hz);
+  prop_set_sample_period(&sg->base.output_properties, config.sample_period_ns);
 
   // Set batch capacity based on buffer configuration
   uint32_t batch_capacity = 1U << config.buff_config.batch_capacity_expo;

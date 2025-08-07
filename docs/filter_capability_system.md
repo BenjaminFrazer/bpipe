@@ -18,7 +18,7 @@ Without explicit capability declarations, filters fail at runtime when connected
 The system tracks four essential properties:
 - **Data Type**: The sample data type (float, int32, etc.)
 - **Batch Capacity**: Min/max batch sizes the filter can process
-- **Sample Rate**: Fixed sample rate in Hz (0 = variable/unknown)
+- **Sample Period**: Time between samples in nanoseconds (0 = variable/unknown)
 
 ### Constraints and Behaviors
 
@@ -143,7 +143,8 @@ Bp_EC map_init(Map_filt_t* f, Map_config_t config)
 - `prop_set_dtype(PropertyTable_t* table, SampleDtype_t dtype)`
 - `prop_set_min_batch_capacity(PropertyTable_t* table, uint32_t capacity)`
 - `prop_set_max_batch_capacity(PropertyTable_t* table, uint32_t capacity)`
-- `prop_set_sample_rate(PropertyTable_t* table, uint32_t rate_hz)`
+- `prop_set_sample_period(PropertyTable_t* table, uint64_t period_ns)`
+- `prop_set_sample_rate_hz(PropertyTable_t* table, uint32_t rate_hz)` - Helper that converts Hz to period
 
 ### Adding Constraints
 - `prop_append_constraint(Filter_t* filter, SignalProperty_t prop, ConstraintOp_t op, const void* operand)`

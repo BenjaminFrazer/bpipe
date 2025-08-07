@@ -44,9 +44,9 @@ void test_property_setters_getters(void) {
     TEST_ASSERT_EQUAL(1024, max_cap);
     
     // Test sample rate property
-    CHECK_ERR(prop_set_sample_rate(&table, 48000));
+    CHECK_ERR(prop_set_sample_rate_hz(&table, 48000));
     uint32_t rate;
-    TEST_ASSERT_TRUE(prop_get_sample_rate(&table, &rate));
+    TEST_ASSERT_TRUE(prop_get_sample_rate_hz(&table, &rate));
     TEST_ASSERT_EQUAL(48000, rate);
 }
 
@@ -55,7 +55,7 @@ void test_constraint_validation_exists(void) {
     
     // Constraint requires sample rate to exist
     InputConstraint_t constraints[] = {
-        { PROP_SAMPLE_RATE_HZ, CONSTRAINT_OP_EXISTS, {0} }
+        { PROP_SAMPLE_PERIOD_NS, CONSTRAINT_OP_EXISTS, {0} }
     };
     
     FilterContract_t contract = {
@@ -72,7 +72,7 @@ void test_constraint_validation_exists(void) {
     TEST_ASSERT_EQUAL(Bp_EC_PROPERTY_MISMATCH, err);
     
     // Should pass when property is set
-    prop_set_sample_rate(&table, 48000);
+    prop_set_sample_rate_hz(&table, 48000);
     err = prop_validate_connection(&table, &contract, error_msg, sizeof(error_msg));
     TEST_ASSERT_EQUAL(Bp_EC_OK, err);
 }
@@ -135,11 +135,12 @@ void test_constraint_validation_range(void) {
 
 void test_property_propagation_set(void) {
     PropertyTable_t upstream = prop_table_init();
-    prop_set_sample_rate(&upstream, 48000);
+    prop_set_sample_rate_hz(&upstream, 48000);
     
-    // Filter sets output to 44100
+    // Filter sets output to 44100 Hz (convert to period)
+    uint64_t period_44100 = sample_rate_to_period_ns(44100);
     OutputBehavior_t behaviors[] = {
-        { PROP_SAMPLE_RATE_HZ, BEHAVIOR_OP_SET, {.u32 = 44100} }
+        { PROP_SAMPLE_PERIOD_NS, BEHAVIOR_OP_SET, {.u64 = period_44100} }
     };
     
     FilterContract_t contract = {
@@ -152,14 +153,14 @@ void test_property_propagation_set(void) {
     PropertyTable_t downstream = prop_propagate(&upstream, &contract);
     
     uint32_t rate;
-    TEST_ASSERT_TRUE(prop_get_sample_rate(&downstream, &rate));
-    TEST_ASSERT_EQUAL(44100, rate);
+    TEST_ASSERT_TRUE(prop_get_sample_rate_hz(&downstream, &rate));
+    TEST_ASSERT_EQUAL(44101, rate);  // 1e9/22675 = 44100.77 rounds to 44101
 }
 
 void test_property_propagation_preserve(void) {
     PropertyTable_t upstream = prop_table_init();
     prop_set_dtype(&upstream, DTYPE_FLOAT);
-    prop_set_sample_rate(&upstream, 48000);
+    prop_set_sample_rate_hz(&upstream, 48000);
     
     // Filter preserves all properties (empty behaviors)
     FilterContract_t contract = {
@@ -175,7 +176,7 @@ void test_property_propagation_preserve(void) {
     SampleDtype_t dtype;
     uint32_t rate;
     TEST_ASSERT_TRUE(prop_get_dtype(&downstream, &dtype));
-    TEST_ASSERT_TRUE(prop_get_sample_rate(&downstream, &rate));
+    TEST_ASSERT_TRUE(prop_get_sample_rate_hz(&downstream, &rate));
     TEST_ASSERT_EQUAL(DTYPE_FLOAT, dtype);
     TEST_ASSERT_EQUAL(48000, rate);
 }
@@ -204,7 +205,7 @@ void test_buffer_config_properties(void) {
     
     // Sample rate is not in buffer config
     uint32_t rate;
-    TEST_ASSERT_FALSE(prop_get_sample_rate(&table, &rate));
+    TEST_ASSERT_FALSE(prop_get_sample_rate_hz(&table, &rate));
 }
 
 void test_buffer_config_properties_partial(void) {
@@ -263,7 +264,7 @@ void test_signal_generator_properties(void) {
     TEST_ASSERT_TRUE(prop_get_dtype(&sg.base.output_properties, &dtype));
     TEST_ASSERT_EQUAL(DTYPE_FLOAT, dtype);
     
-    TEST_ASSERT_TRUE(prop_get_sample_rate(&sg.base.output_properties, &rate));
+    TEST_ASSERT_TRUE(prop_get_sample_rate_hz(&sg.base.output_properties, &rate));
     TEST_ASSERT_EQUAL(48000, rate);  // 1e9 / 20833 ≈ 48000
     
     TEST_ASSERT_TRUE(prop_get_max_batch_capacity(&sg.base.output_properties, &batch_cap));
@@ -272,7 +273,7 @@ void test_signal_generator_properties(void) {
     // Signal generator is a source filter with no input constraints
     // but it should have set output properties
     TEST_ASSERT(sg.base.output_properties.properties[PROP_DATA_TYPE].known);
-    TEST_ASSERT(sg.base.output_properties.properties[PROP_SAMPLE_RATE_HZ].known);
+    TEST_ASSERT(sg.base.output_properties.properties[PROP_SAMPLE_PERIOD_NS].known);
 }
 
 void test_csv_sink_type_constraint(void) {
@@ -331,7 +332,7 @@ void test_property_name_lookup(void) {
     TEST_ASSERT_EQUAL_STRING("data_type", prop_get_name(PROP_DATA_TYPE));
     TEST_ASSERT_EQUAL_STRING("min_batch_capacity", prop_get_name(PROP_MIN_BATCH_CAPACITY));
     TEST_ASSERT_EQUAL_STRING("max_batch_capacity", prop_get_name(PROP_MAX_BATCH_CAPACITY));
-    TEST_ASSERT_EQUAL_STRING("sample_rate_hz", prop_get_name(PROP_SAMPLE_RATE_HZ));
+    TEST_ASSERT_EQUAL_STRING("sample_period_ns", prop_get_name(PROP_SAMPLE_PERIOD_NS));
     TEST_ASSERT_EQUAL_STRING("unknown", prop_get_name(PROP_COUNT_MVP));
 }
 

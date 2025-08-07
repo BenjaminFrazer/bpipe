@@ -23,7 +23,8 @@ typedef enum {
   PROP_MAX_BATCH_CAPACITY, /* Maximum batch size emitted by filter */
 
   /* Timing property */
-  PROP_SAMPLE_RATE_HZ, /* Fixed sample rate in Hz (0 = variable/unknown) */
+  PROP_SAMPLE_PERIOD_NS, /* Sample period in nanoseconds (0 = variable/unknown)
+                          */
 
   PROP_COUNT_MVP /* Count of actual properties */
 } SignalProperty_t;
@@ -48,6 +49,7 @@ typedef struct {
   union {
     SampleDtype_t dtype;
     uint32_t u32;
+    uint64_t u64;
   } value;
 } Property_t;
 
@@ -65,6 +67,7 @@ typedef struct {
   union {
     SampleDtype_t dtype;
     uint32_t u32;
+    uint64_t u64;
   } operand;
 } InputConstraint_t;
 
@@ -75,6 +78,7 @@ typedef struct {
   union {
     SampleDtype_t dtype;
     uint32_t u32;
+    uint64_t u64;
   } operand;
 } OutputBehavior_t;
 
@@ -95,7 +99,7 @@ PropertyTable_t prop_table_init(void);
 Bp_EC prop_set_dtype(PropertyTable_t* table, SampleDtype_t dtype);
 Bp_EC prop_set_min_batch_capacity(PropertyTable_t* table, uint32_t capacity);
 Bp_EC prop_set_max_batch_capacity(PropertyTable_t* table, uint32_t capacity);
-Bp_EC prop_set_sample_rate(PropertyTable_t* table, uint32_t rate_hz);
+Bp_EC prop_set_sample_period(PropertyTable_t* table, uint64_t period_ns);
 
 /* Get a property from the table (returns false if unknown) */
 bool prop_get_dtype(const PropertyTable_t* table, SampleDtype_t* dtype);
@@ -103,7 +107,7 @@ bool prop_get_min_batch_capacity(const PropertyTable_t* table,
                                  uint32_t* capacity);
 bool prop_get_max_batch_capacity(const PropertyTable_t* table,
                                  uint32_t* capacity);
-bool prop_get_sample_rate(const PropertyTable_t* table, uint32_t* rate_hz);
+bool prop_get_sample_period(const PropertyTable_t* table, uint64_t* period_ns);
 
 /* Validate that upstream properties meet downstream constraints */
 Bp_EC prop_validate_connection(const PropertyTable_t* upstream_props,
@@ -147,5 +151,35 @@ void prop_constraints_from_buffer_append(struct _Filter_t* filter,
 void prop_describe_table(const PropertyTable_t* table, char* buffer,
                          size_t size);
 const char* prop_get_name(SignalProperty_t prop);
+
+/* Conversion helpers for sample rate <-> period */
+static inline uint64_t sample_rate_to_period_ns(uint32_t rate_hz)
+{
+  if (rate_hz == 0) return 0;  // 0 means variable/undefined
+  return 1000000000ULL / rate_hz;
+}
+
+static inline uint32_t period_ns_to_sample_rate(uint64_t period_ns)
+{
+  if (period_ns == 0) return 0;  // 0 means variable/undefined
+  return (uint32_t) (1000000000ULL / period_ns);
+}
+
+/* Convenience functions for setting/getting sample rate in Hz */
+static inline Bp_EC prop_set_sample_rate_hz(PropertyTable_t* table,
+                                            uint32_t rate_hz)
+{
+  uint64_t period_ns = sample_rate_to_period_ns(rate_hz);
+  return prop_set_sample_period(table, period_ns);
+}
+
+static inline bool prop_get_sample_rate_hz(const PropertyTable_t* table,
+                                           uint32_t* rate_hz)
+{
+  uint64_t period_ns;
+  if (!prop_get_sample_period(table, &period_ns)) return false;
+  *rate_hz = period_ns_to_sample_rate(period_ns);
+  return true;
+}
 
 #endif /* BPIPE_PROPERTIES_H */

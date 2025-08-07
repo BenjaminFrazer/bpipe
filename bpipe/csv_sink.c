@@ -91,8 +91,8 @@ Bp_EC csv_sink_init(CSVSink_t* sink, CSVSink_config_t config)
   // CSV sink requires float32 data and known sample rate
   prop_append_constraint(&sink->base, PROP_DATA_TYPE, CONSTRAINT_OP_EQ,
                          &(SampleDtype_t){DTYPE_FLOAT});
-  prop_append_constraint(&sink->base, PROP_SAMPLE_RATE_HZ, CONSTRAINT_OP_EXISTS,
-                         NULL);
+  prop_append_constraint(&sink->base, PROP_SAMPLE_PERIOD_NS,
+                         CONSTRAINT_OP_EXISTS, NULL);
 
   return Bp_EC_OK;
 }
