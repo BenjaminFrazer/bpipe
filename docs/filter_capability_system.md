@@ -163,6 +163,38 @@ Bp_EC map_init(Map_filt_t* f, Map_config_t config)
 3. **Use Buffer Helpers**: Use `prop_constraints_from_buffer_append()` when appropriate
 4. **Test Validation**: Verify that incompatible connections are properly rejected
 
+## Remaining Work
+
+### Core System Improvements
+- **Pipeline-wide validation**: Implement graph traversal to propagate properties through entire pipeline
+- **Property propagation**: Actually apply declared behaviors (PRESERVE, SET) to compute filter output properties
+- **Error message retrieval**: Currently error messages are lost - need API to retrieve them
+- **Multi-input handling**: Support property merging for filters with multiple inputs
+
+### Missing Filter Features
+- **Output behavior declarations**: Many filters declare constraints but not how they transform properties
+- **Dynamic property updates**: Support for filters that determine properties at start time
+- **Property negotiation**: Allow filters to adapt based on downstream requirements
+- **Channel count property**: Add support for multi-channel data streams
+
+### Testing & Validation
+- **Comprehensive connection tests**: Test all constraint operators (GTE, LTE, EXISTS, EQ)
+- **Pipeline validation tests**: Test end-to-end property flow through complex DAGs
+- **Error case coverage**: Test all property mismatch scenarios
+- **Multi-input synchronization**: Test property conflicts from multiple sources
+
+### Documentation & Examples
+- **Complete migration guide**: Document all filters that still need migration
+- **Property flow diagrams**: Visual representation of property propagation
+- **Best practices guide**: When to use constraints vs behaviors
+- **Debugging guide**: How to troubleshoot property validation failures
+
+### Critical Gaps
+- **Intermediate filter properties never computed**: Filters declare behaviors but don't apply them
+- **No way to validate before start**: Need explicit validation API
+- **Silent failures**: Validation errors provide no feedback to users
+- **Incomplete filter migration**: Not all filters use the property system yet
+
 ## Future Extensions
 
 The system is designed to be extended with:
@@ -170,6 +202,7 @@ The system is designed to be extended with:
 - Complex constraint expressions
 - Multi-input synchronization requirements
 - Property negotiation and adaptation
+- Constraint solver for automatic resolution of compatible settings
 
 For implementation details and advanced features, see the appendix sections below.
 
