@@ -61,13 +61,41 @@ For filters that match their buffer configuration:
 prop_constraints_from_buffer_append(&f->base, &config.buff_config, true);
 ```
 
+### Declaring Output Behaviors
+
+Filters declare how they transform or preserve properties:
+
+```c
+// Passthrough filter preserves all properties and allows partial batches
+prop_set_output_behavior_for_buffer_filter(&pt->base, &config->buff_config,
+                                          false,  // passthrough (not adapt)
+                                          false); // allows partial batches
+
+// Batch matcher adapts batch sizes and guarantees full batches
+prop_set_output_behavior_for_buffer_filter(&matcher->base, &config.buff_config,
+                                          true,   // adapt batch size
+                                          true);  // guarantee full batches
+```
+
 ## Connection Validation
 
-The system automatically validates connections when filters are connected:
+The system performs validation at two levels:
 
-1. **Automatic Validation**: `filt_connect()` checks property compatibility
-2. **Error Messages**: Clear messages explain why connections fail
-3. **Early Detection**: Problems caught at configuration time, not runtime
+### Local (Pairwise) Validation
+Currently implemented - happens automatically during `filt_connect()`:
+
+1. **Automatic Validation**: `filt_connect()` checks property compatibility between two filters
+2. **Error Messages**: Clear messages explain why connections fail (though currently lost)
+3. **Early Detection**: Obvious problems caught at connection time
+4. **Limitation**: Only validates direct connections, not the entire pipeline
+
+### Global (Pipeline) Validation
+Proposed but not yet implemented - would happen before pipeline start:
+
+1. **Graph Traversal**: Walk entire filter DAG to propagate properties
+2. **Property Inference**: Compute intermediate filter properties from behaviors
+3. **End-to-End Validation**: Verify complete data flow compatibility
+4. **See**: `specs/pipeline_property_validation.md` for design details
 
 ## Examples
 
@@ -150,11 +178,23 @@ Bp_EC map_init(Map_filt_t* f, Map_config_t config)
 - `prop_append_constraint(Filter_t* filter, SignalProperty_t prop, ConstraintOp_t op, const void* operand)`
 - `prop_constraints_from_buffer_append(Filter_t* filter, const BatchBuffer_config* config, bool accepts_partial_fill)`
 
+### Adding Output Behaviors
+- `prop_append_behavior(Filter_t* filter, SignalProperty_t prop, BehaviorOp_t op, const void* operand)`
+- `prop_set_output_behavior_for_buffer_filter(Filter_t* filter, const BatchBuffer_config* config, bool adapt_batch_size, bool guarantee_full)` - Helper for common filter patterns
+
+### Validation Functions
+- `prop_validate_connection(const PropertyTable_t* upstream, const FilterContract_t* downstream, char* error_msg, size_t size)` - Validate pairwise connection
+- `prop_propagate(const PropertyTable_t* upstream, const FilterContract_t* filter)` - Propagate properties through a filter (not yet wired up)
+
 ### Constraint Operators
 - `CONSTRAINT_OP_EXISTS`: Property must be known
 - `CONSTRAINT_OP_EQ`: Property must equal specific value
 - `CONSTRAINT_OP_GTE`: Property must be >= value
 - `CONSTRAINT_OP_LTE`: Property must be <= value
+
+### Behavior Operators
+- `BEHAVIOR_OP_SET`: Set property to specific value
+- `BEHAVIOR_OP_PRESERVE`: Pass through upstream property unchanged
 
 ## Best Practices
 
