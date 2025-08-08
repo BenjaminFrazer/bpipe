@@ -161,6 +161,24 @@ Bp_EC batch_matcher_init(BatchMatcher_t* matcher, BatchMatcher_config_t config)
   matcher->batches_matched = 0;
   matcher->samples_skipped = 0;
 
+  // Set input constraints
+  prop_constraints_from_buffer_append(&matcher->base, &config.buff_config,
+                                      true);
+
+  // Require known sample period
+  prop_append_constraint(&matcher->base, PROP_SAMPLE_PERIOD_NS,
+                         CONSTRAINT_OP_EXISTS, NULL);
+
+  // Set output behaviors - adaptive mode with full batches
+  prop_set_output_behavior_for_buffer_filter(&matcher->base,
+                                             &config.buff_config,
+                                             true,   // adapt batch size
+                                             true);  // guarantee full batches
+
+  // Note: Later in start_impl when sink detected, we'll set the actual batch
+  // size using prop_append_behavior(&bm->base, PROP_MIN/MAX_BATCH_CAPACITY,
+  // ...)
+
   return Bp_EC_OK;
 }
 

@@ -276,6 +276,16 @@ Bp_EC debug_output_filter_init(DebugOutputFilter_t* filter,
   // Set custom destructor
   filter->base.ops.deinit = debug_output_deinit;
 
+  // Set input constraints based on buffer capacity
+  prop_constraints_from_buffer_append(&filter->base, &core_config.buff_config,
+                                      true);
+
+  // Set output behaviors - passthrough mode, allows partial batches
+  prop_set_output_behavior_for_buffer_filter(&filter->base,
+                                             &core_config.buff_config,
+                                             false,   // passthrough (not adapt)
+                                             false);  // allows partial batches
+
   return Bp_EC_OK;
 }
 

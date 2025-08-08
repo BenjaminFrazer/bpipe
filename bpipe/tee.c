@@ -106,5 +106,16 @@ Bp_EC tee_init(Tee_filt_t* tee, Tee_config_t config)
       .timeout_us = config.timeout_us,
       .worker = tee_worker};
 
-  return filt_init(&tee->base, core_config);
+  Bp_EC err = filt_init(&tee->base, core_config);
+  if (err != Bp_EC_OK) return err;
+
+  // Set input constraints based on buffer capacity
+  prop_constraints_from_buffer_append(&tee->base, &config.buff_config, true);
+
+  // Set output behaviors - passthrough mode, allows partial batches
+  prop_set_output_behavior_for_buffer_filter(&tee->base, &config.buff_config,
+                                             false,   // passthrough (not adapt)
+                                             false);  // allows partial batches
+
+  return Bp_EC_OK;
 }

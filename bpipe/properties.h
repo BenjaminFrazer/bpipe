@@ -147,6 +147,20 @@ void prop_constraints_from_buffer_append(struct _Filter_t* filter,
                                          const BatchBuffer_config* config,
                                          bool accepts_partial_fill);
 
+/* Helper function for buffer-based filters to set output behaviors
+ * Handles both input constraints and output behaviors for common filter
+ * patterns
+ * @param filter: The filter to configure
+ * @param config: Buffer configuration for the filter
+ * @param adapt_batch_size: false = passthrough input sizes (clamped to buffer),
+ *                          true = filter determines output size
+ * @param guarantee_full: false = allows partial batches,
+ *                       true = always outputs full batches (min==max)
+ */
+void prop_set_output_behavior_for_buffer_filter(
+    struct _Filter_t* filter, const BatchBuffer_config* config,
+    bool adapt_batch_size, bool guarantee_full);
+
 /* Debug/logging utilities */
 void prop_describe_table(const PropertyTable_t* table, char* buffer,
                          size_t size);

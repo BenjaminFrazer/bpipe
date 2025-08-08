@@ -496,3 +496,41 @@ void prop_constraints_from_buffer_append(Filter_t* filter,
                            &capacity);
   }
 }
+
+/* Helper function for buffer-based filters to set output behaviors */
+void prop_set_output_behavior_for_buffer_filter(
+    Filter_t* filter, const BatchBuffer_config* config, bool adapt_batch_size,
+    bool guarantee_full)
+{
+  if (!filter || !config) return;
+
+  /* Set data type behavior - always preserve */
+  prop_append_behavior(filter, PROP_DATA_TYPE, BEHAVIOR_OP_PRESERVE, NULL);
+
+  /* Set sample period behavior - always preserve */
+  prop_append_behavior(filter, PROP_SAMPLE_PERIOD_NS, BEHAVIOR_OP_PRESERVE,
+                       NULL);
+
+  uint32_t capacity = 1U << config->batch_capacity_expo;
+
+  if (adapt_batch_size) {
+    /* Filter will determine output sizes based on downstream requirements */
+    /* Don't set any batch size behaviors - will be set later when detected */
+  } else {
+    /* Passthrough mode - output sizes match input (clamped to buffer capacity)
+     */
+    if (guarantee_full) {
+      /* Always output full batches */
+      prop_append_behavior(filter, PROP_MIN_BATCH_CAPACITY, BEHAVIOR_OP_SET,
+                           &capacity);
+      prop_append_behavior(filter, PROP_MAX_BATCH_CAPACITY, BEHAVIOR_OP_SET,
+                           &capacity);
+    } else {
+      /* Output sizes can vary - preserve input behavior */
+      prop_append_behavior(filter, PROP_MIN_BATCH_CAPACITY,
+                           BEHAVIOR_OP_PRESERVE, NULL);
+      prop_append_behavior(filter, PROP_MAX_BATCH_CAPACITY,
+                           BEHAVIOR_OP_PRESERVE, NULL);
+    }
+  }
+}

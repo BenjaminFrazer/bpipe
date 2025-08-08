@@ -132,6 +132,17 @@ Bp_EC csvsource_init(CsvSource_t* self, CsvSource_config_t config)
   self->base.ops.describe = csvsource_describe;
   self->base.ops.get_stats = csvsource_get_stats;
 
+  // Set output properties explicitly (source filters have no inputs)
+  prop_set_dtype(&self->base.output_properties, DTYPE_FLOAT);
+
+  // Only set sample period if regular timing is detected
+  // Note: We'll update this later when/if we detect regular timing
+  // For now, leave it unset (0 means variable/undefined)
+
+  // Adaptive batching - source can produce various batch sizes
+  prop_set_min_batch_capacity(&self->base.output_properties, 1);
+  prop_set_max_batch_capacity(&self->base.output_properties, UINT32_MAX);
+
   return Bp_EC_OK;
 }
 
