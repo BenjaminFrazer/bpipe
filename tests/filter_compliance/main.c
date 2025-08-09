@@ -30,7 +30,7 @@ void test_buffer_large_batches(void);
 static ControllableProducerConfig_t default_producer_config = {
     .name = "default_producer",
     .timeout_us = 1000000,
-    .samples_per_second = 1000,
+    .samples_per_second = 50000,
     .pattern = PATTERN_SEQUENTIAL,
     .constant_value = 0.0,
     .sine_frequency = 0.0,
@@ -65,45 +65,65 @@ static Passthrough_config_t default_passthrough_config = {
 
 // Structure to hold test function and its name
 typedef struct {
-    void (*test_func)(void);
-    const char* test_name;
-    const char* test_file;
+  void (*test_func)(void);
+  const char* test_name;
+  const char* test_file;
 } ComplianceTest_t;
 
 // All compliance tests as Unity test functions with names
 static ComplianceTest_t compliance_tests[] = {
     // Lifecycle tests
-    {test_lifecycle_basic, "test_lifecycle_basic", "tests/filter_compliance/test_lifecycle_basic.c"},
-    {test_lifecycle_with_worker, "test_lifecycle_with_worker", "tests/filter_compliance/test_lifecycle_with_worker.c"},
-    {test_lifecycle_restart, "test_lifecycle_restart", "tests/filter_compliance/test_lifecycle_restart.c"},
-    {test_lifecycle_errors, "test_lifecycle_errors", "tests/filter_compliance/test_lifecycle_errors.c"},
+    {test_lifecycle_basic, "test_lifecycle_basic",
+     "tests/filter_compliance/test_lifecycle_basic.c"},
+    {test_lifecycle_with_worker, "test_lifecycle_with_worker",
+     "tests/filter_compliance/test_lifecycle_with_worker.c"},
+    {test_lifecycle_restart, "test_lifecycle_restart",
+     "tests/filter_compliance/test_lifecycle_restart.c"},
+    {test_lifecycle_errors, "test_lifecycle_errors",
+     "tests/filter_compliance/test_lifecycle_errors.c"},
 
     // Connection tests
-    {test_connection_single_sink, "test_connection_single_sink", "tests/filter_compliance/test_connection_single_sink.c"},
-    {test_connection_multi_sink, "test_connection_multi_sink", "tests/filter_compliance/test_connection_multi_sink.c"},
-    {test_connection_type_safety, "test_connection_type_safety", "tests/filter_compliance/test_connection_type_safety.c"},
+    {test_connection_single_sink, "test_connection_single_sink",
+     "tests/filter_compliance/test_connection_single_sink.c"},
+    {test_connection_multi_sink, "test_connection_multi_sink",
+     "tests/filter_compliance/test_connection_multi_sink.c"},
+    {test_connection_type_safety, "test_connection_type_safety",
+     "tests/filter_compliance/test_connection_type_safety.c"},
 
     // Data flow tests
-    {test_dataflow_passthrough, "test_dataflow_passthrough", "tests/filter_compliance/test_dataflow_passthrough.c"},
-    {test_dataflow_backpressure, "test_dataflow_backpressure", "tests/filter_compliance/test_dataflow_backpressure.c"},
+    {test_dataflow_passthrough, "test_dataflow_passthrough",
+     "tests/filter_compliance/test_dataflow_passthrough.c"},
+    {test_dataflow_backpressure, "test_dataflow_backpressure",
+     "tests/filter_compliance/test_dataflow_backpressure.c"},
 
     // Error handling tests
-    {test_error_invalid_config, "test_error_invalid_config", "tests/filter_compliance/test_error_invalid_config.c"},
-    {test_error_timeout, "test_error_timeout", "tests/filter_compliance/test_error_timeout.c"},
+    {test_error_invalid_config, "test_error_invalid_config",
+     "tests/filter_compliance/test_error_invalid_config.c"},
+    {test_error_timeout, "test_error_timeout",
+     "tests/filter_compliance/test_error_timeout.c"},
 
     // Threading tests
-    {test_thread_worker_lifecycle, "test_thread_worker_lifecycle", "tests/filter_compliance/test_thread_worker_lifecycle.c"},
-    {test_thread_shutdown_sync, "test_thread_shutdown_sync", "tests/filter_compliance/test_thread_shutdown_sync.c"},
+    {test_thread_worker_lifecycle, "test_thread_worker_lifecycle",
+     "tests/filter_compliance/test_thread_worker_lifecycle.c"},
+    {test_thread_shutdown_sync, "test_thread_shutdown_sync",
+     "tests/filter_compliance/test_thread_shutdown_sync.c"},
 
     // Performance tests
-    {test_perf_throughput, "test_perf_throughput", "tests/filter_compliance/test_perf_throughput.c"},
-    // {test_perf_latency, "test_perf_latency", "tests/filter_compliance/test_perf_latency.c"},  // TODO: Implement passthrough_metrics filter
-    
+    {test_perf_throughput, "test_perf_throughput",
+     "tests/filter_compliance/test_perf_throughput.c"},
+    // {test_perf_latency, "test_perf_latency",
+    // "tests/filter_compliance/test_perf_latency.c"},  // TODO: Implement
+    // passthrough_metrics filter
+
     // Buffer configuration tests
-    {test_buffer_minimum_size, "test_buffer_minimum_size", "tests/filter_compliance/test_buffer_edge_cases.c"},
-    {test_buffer_overflow_drop_head, "test_buffer_overflow_drop_head", "tests/filter_compliance/test_buffer_edge_cases.c"},
-    {test_buffer_overflow_drop_tail, "test_buffer_overflow_drop_tail", "tests/filter_compliance/test_buffer_edge_cases.c"},
-    {test_buffer_large_batches, "test_buffer_large_batches", "tests/filter_compliance/test_buffer_edge_cases.c"},
+    {test_buffer_minimum_size, "test_buffer_minimum_size",
+     "tests/filter_compliance/test_buffer_edge_cases.c"},
+    {test_buffer_overflow_drop_head, "test_buffer_overflow_drop_head",
+     "tests/filter_compliance/test_buffer_edge_cases.c"},
+    {test_buffer_overflow_drop_tail, "test_buffer_overflow_drop_tail",
+     "tests/filter_compliance/test_buffer_edge_cases.c"},
+    {test_buffer_large_batches, "test_buffer_large_batches",
+     "tests/filter_compliance/test_buffer_edge_cases.c"},
 };
 
 int main(int argc, char* argv[])
@@ -135,7 +155,8 @@ int main(int argc, char* argv[])
        .init = controllable_consumer_init_wrapper,
        .default_config = &default_consumer_config,
        .config_size = sizeof(ControllableConsumerConfig_t),
-       .buff_config_offset = offsetof(ControllableConsumerConfig_t, buff_config),
+       .buff_config_offset =
+           offsetof(ControllableConsumerConfig_t, buff_config),
        .has_buff_config = true},
       {.name = "Passthrough",
        .filter_size = sizeof(Passthrough_t),
@@ -170,15 +191,17 @@ int main(int argc, char* argv[])
     for (size_t i = 0;
          i < sizeof(compliance_tests) / sizeof(compliance_tests[0]); i++) {
       // Skip if test doesn't match pattern
-      if (test_pattern && !strstr(compliance_tests[i].test_name, test_pattern)) {
+      if (test_pattern &&
+          !strstr(compliance_tests[i].test_name, test_pattern)) {
         continue;
       }
-      
+
       // Set the correct file for this test
       UnitySetTestFile(compliance_tests[i].test_file);
-      
+
       // Call UnityDefaultTestRun directly with our test name
-      UnityDefaultTestRun(compliance_tests[i].test_func, compliance_tests[i].test_name, __LINE__);
+      UnityDefaultTestRun(compliance_tests[i].test_func,
+                          compliance_tests[i].test_name, __LINE__);
     }
 
     UNITY_END();

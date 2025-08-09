@@ -151,6 +151,21 @@ Bp_EC map_init(Map_filt_t* f, Map_config_t config)
 }
 ```
 
+### Multi-Input Alignment (Proposed)
+For filters requiring aligned inputs, use `CONSTRAINT_OP_MULTI_INPUT_ALIGNED` on specific properties:
+
+```c
+// Element-wise operation - all properties must match
+prop_append_constraint(&filter->base, PROP_DATA_TYPE,
+                      CONSTRAINT_OP_MULTI_INPUT_ALIGNED, NULL);
+prop_append_constraint(&filter->base, PROP_SAMPLE_PERIOD_NS,
+                      CONSTRAINT_OP_MULTI_INPUT_ALIGNED, NULL);
+
+// Audio mixer - only timing must match, batch sizes can differ
+prop_append_constraint(&mixer->base, PROP_SAMPLE_PERIOD_NS,
+                      CONSTRAINT_OP_MULTI_INPUT_ALIGNED, NULL);
+```
+
 ## Migration Guide
 
 ### For New Filters
@@ -191,6 +206,7 @@ Bp_EC map_init(Map_filt_t* f, Map_config_t config)
 - `CONSTRAINT_OP_EQ`: Property must equal specific value
 - `CONSTRAINT_OP_GTE`: Property must be >= value
 - `CONSTRAINT_OP_LTE`: Property must be <= value
+- `CONSTRAINT_OP_MULTI_INPUT_ALIGNED`: Property must match across all inputs (proposed)
 
 ### Behavior Operators
 - `BEHAVIOR_OP_SET`: Set property to specific value

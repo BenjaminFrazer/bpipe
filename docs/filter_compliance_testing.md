@@ -312,7 +312,31 @@ To add a new compliance test:
 
 5. **Multi-Input Sequence Validation**: Disabled for multi-input filters but could be enhanced to track sequences per input.
 
+
+## Property Contract Tests
+- test output guaranted then test.
+Test per property.
+
+
+### `property_sampling_stress_test`
+
+Properties tested:
+- `PROP_MIN_BATCH_CAPACITY`
+- `PROP_MAX_BATCH_CAPACITY`
+- `PROP_SAMPLE_PERIOD_NS`
+
+Fixtures:
+- **adaptive_sampling_input_generator**: Chooses the worst setting marked as acceptable by the filter. 
+- **adaptive_sampling_validator**: Asserts that every output batch complies the declared output properties.
+
+Method:
+1. Set a small batch capacity and ring size for the FUT (capacity/ring expo = 4)
+2. Connect to `sample_period_input` and input/output fixtures.
+3. Start the pipeline and allow input to generate 1000 batches.
+4. check validator for errors.
+
 ## Future Enhancements
+
 
 1. Add memory leak detection
 2. Add stress tests with random configurations
