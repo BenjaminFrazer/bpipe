@@ -5,6 +5,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include <string.h>
+#include "properties.h"
 #include "utils.h"
 
 #define LINE_BUFFER_SIZE 4096
@@ -132,17 +133,30 @@ Bp_EC csvsource_init(CsvSource_t* self, CsvSource_config_t config)
   self->base.ops.describe = csvsource_describe;
   self->base.ops.get_stats = csvsource_get_stats;
 
-  // Set output properties explicitly (source filters have no inputs)
-  // CSV source has 1 output port
-  prop_set_dtype(&self->base.output_properties[0], DTYPE_FLOAT);
-
-  // Only set sample period if regular timing is detected
-  // Note: We'll update this later when/if we detect regular timing
-  // For now, leave it unset (0 means variable/undefined)
-
+  // Configure output behaviors using behavior-based property system
+  // CSV source is a source filter that sets output properties explicitly
+  
+  // Set data type to FLOAT for all outputs
+  SampleDtype_t dtype = DTYPE_FLOAT;
+  prop_append_behavior(&self->base, PROP_DATA_TYPE, BEHAVIOR_OP_SET, &dtype,
+                       OUTPUT_ALL);
+  
+  // Sample period: Don't set a behavior if we don't know the sample rate yet
+  // CSV source may have regular or irregular timing, detected at runtime
+  // If regular timing is detected, the property could be updated later
+  // For now, leaving PROP_SAMPLE_PERIOD_NS without a behavior means it will be UNKNOWN
+  
   // Adaptive batching - source can produce various batch sizes
-  prop_set_min_batch_capacity(&self->base.output_properties[0], 1);
-  prop_set_max_batch_capacity(&self->base.output_properties[0], UINT32_MAX);
+  uint32_t min_batch = 1;
+  uint32_t max_batch = UINT32_MAX;
+  prop_append_behavior(&self->base, PROP_MIN_BATCH_CAPACITY, BEHAVIOR_OP_SET,
+                       &min_batch, OUTPUT_ALL);
+  prop_append_behavior(&self->base, PROP_MAX_BATCH_CAPACITY, BEHAVIOR_OP_SET,
+                       &max_batch, OUTPUT_ALL);
+  
+  // Compute output properties from behaviors
+  // CSV source is a source filter (0 inputs), compute for output port 0
+  self->base.output_properties[0] = prop_propagate(NULL, 0, &self->base.contract, 0);
 
   return Bp_EC_OK;
 }

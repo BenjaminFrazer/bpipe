@@ -90,6 +90,10 @@ Bp_EC pipeline_init(Pipeline_t* pipe, Pipeline_config_t config)
     pipe->n_connections = 0;
   }
 
+  /* Initialize pipeline inputs (empty by default) */
+  pipe->n_pipeline_inputs = 0;
+  /* pipeline_inputs is a fixed array, no need to set to NULL */
+
   /* Set up external interface (direct pointer references) */
   pipe->input_filter = config.input_filter;
   pipe->input_port = config.input_port;
