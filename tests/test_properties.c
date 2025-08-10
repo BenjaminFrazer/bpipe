@@ -1,4 +1,6 @@
 #include <stdio.h>
+#include <string.h>
+#include "bperr.h"
 #include "csv_sink.h"
 #include "map.h"
 #include "properties.h"
@@ -451,6 +453,277 @@ void test_port_mask_constants(void)
   TEST_ASSERT_EQUAL_UINT32(0x0000000C, INPUT_2 | INPUT_3);
 }
 
+/* Multi-input alignment constraint tests */
+
+void test_multi_input_alignment_matching_properties(void)
+{
+  // Create a mock filter with multi-input alignment constraint
+  Filter_t filter;
+  Core_filt_config_t config = {
+      .name = "test_alignment_filter",
+      .filt_type = FILT_T_MAP,
+      .size = sizeof(Filter_t),
+      .n_inputs = 2,
+      .max_supported_sinks = 1,
+      .buff_config = {.dtype = DTYPE_FLOAT,
+                      .batch_capacity_expo = 6,
+                      .ring_capacity_expo = 8,
+                      .overflow_behaviour = OVERFLOW_BLOCK},
+      .timeout_us = 1000000,
+      .worker = &matched_passthroug};
+
+  CHECK_ERR(filt_init(&filter, config));
+
+  // Add multi-input alignment constraint for data type on inputs 0 and 1
+  TEST_ASSERT_TRUE(prop_append_constraint(&filter, PROP_DATA_TYPE,
+                                          CONSTRAINT_OP_MULTI_INPUT_ALIGNED,
+                                          NULL, INPUT_0 | INPUT_1));
+
+  // Create source properties with matching data types
+  PropertyTable_t source1_props = prop_table_init();
+  PropertyTable_t source2_props = prop_table_init();
+  prop_set_dtype(&source1_props, DTYPE_FLOAT);
+  prop_set_dtype(&source2_props, DTYPE_FLOAT);
+
+  char error_msg[256];
+
+  // First connection should pass (no other inputs to compare against yet)
+  Bp_EC err = prop_validate_multi_input_alignment(&filter, 0, &source1_props,
+                                                  error_msg, sizeof(error_msg));
+  TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+
+  // Simulate first connection being stored
+  filter.input_properties[0] = source1_props;
+
+  // Second connection should pass (matching data type)
+  err = prop_validate_multi_input_alignment(&filter, 1, &source2_props,
+                                            error_msg, sizeof(error_msg));
+  TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+
+  CHECK_ERR(filt_deinit(&filter));
+}
+
+void test_multi_input_alignment_mismatched_properties(void)
+{
+  // Create a mock filter with multi-input alignment constraint
+  Filter_t filter;
+  Core_filt_config_t config = {
+      .name = "test_alignment_filter",
+      .filt_type = FILT_T_MAP,
+      .size = sizeof(Filter_t),
+      .n_inputs = 2,
+      .max_supported_sinks = 1,
+      .buff_config = {.dtype = DTYPE_FLOAT,
+                      .batch_capacity_expo = 6,
+                      .ring_capacity_expo = 8,
+                      .overflow_behaviour = OVERFLOW_BLOCK},
+      .timeout_us = 1000000,
+      .worker = &matched_passthroug};
+
+  CHECK_ERR(filt_init(&filter, config));
+
+  // Add multi-input alignment constraint for data type on inputs 0 and 1
+  TEST_ASSERT_TRUE(prop_append_constraint(&filter, PROP_DATA_TYPE,
+                                          CONSTRAINT_OP_MULTI_INPUT_ALIGNED,
+                                          NULL, INPUT_0 | INPUT_1));
+
+  // Create source properties with mismatched data types
+  PropertyTable_t source1_props = prop_table_init();
+  PropertyTable_t source2_props = prop_table_init();
+  prop_set_dtype(&source1_props, DTYPE_FLOAT);
+  prop_set_dtype(&source2_props, DTYPE_I32);
+
+  char error_msg[256];
+
+  // First connection should pass
+  Bp_EC err = prop_validate_multi_input_alignment(&filter, 0, &source1_props,
+                                                  error_msg, sizeof(error_msg));
+  TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+
+  // Simulate first connection being stored
+  filter.input_properties[0] = source1_props;
+
+  // Second connection should fail (mismatched data type)
+  err = prop_validate_multi_input_alignment(&filter, 1, &source2_props,
+                                            error_msg, sizeof(error_msg));
+  TEST_ASSERT_EQUAL(Bp_EC_PROPERTY_MISMATCH, err);
+
+  // Check that error message is meaningful
+  TEST_ASSERT_TRUE(strlen(error_msg) > 0);
+  TEST_ASSERT_TRUE(strstr(error_msg, "data type mismatch") != NULL);
+
+  CHECK_ERR(filt_deinit(&filter));
+}
+
+void test_multi_input_alignment_input_all_mask(void)
+{
+  // Create a mock filter with multi-input alignment constraint
+  Filter_t filter;
+  Core_filt_config_t config = {
+      .name = "test_alignment_filter",
+      .filt_type = FILT_T_MAP,
+      .size = sizeof(Filter_t),
+      .n_inputs = 3,
+      .max_supported_sinks = 1,
+      .buff_config = {.dtype = DTYPE_FLOAT,
+                      .batch_capacity_expo = 6,
+                      .ring_capacity_expo = 8,
+                      .overflow_behaviour = OVERFLOW_BLOCK},
+      .timeout_us = 1000000,
+      .worker = &matched_passthroug};
+
+  CHECK_ERR(filt_init(&filter, config));
+
+  // Add multi-input alignment constraint for sample period on all inputs
+  TEST_ASSERT_TRUE(prop_append_constraint(&filter, PROP_SAMPLE_PERIOD_NS,
+                                          CONSTRAINT_OP_MULTI_INPUT_ALIGNED,
+                                          NULL, INPUT_ALL));
+
+  // Create source properties with matching sample periods
+  PropertyTable_t source1_props = prop_table_init();
+  PropertyTable_t source2_props = prop_table_init();
+  PropertyTable_t source3_props = prop_table_init();
+  prop_set_sample_period(&source1_props, 1000000);  // 1ms period
+  prop_set_sample_period(&source2_props, 1000000);  // 1ms period
+  prop_set_sample_period(&source3_props, 1000000);  // 1ms period
+
+  char error_msg[256];
+
+  // First connection should pass
+  Bp_EC err = prop_validate_multi_input_alignment(&filter, 0, &source1_props,
+                                                  error_msg, sizeof(error_msg));
+  TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+  filter.input_properties[0] = source1_props;
+
+  // Second connection should pass
+  err = prop_validate_multi_input_alignment(&filter, 1, &source2_props,
+                                            error_msg, sizeof(error_msg));
+  TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+  filter.input_properties[1] = source2_props;
+
+  // Third connection should pass (all have matching periods)
+  err = prop_validate_multi_input_alignment(&filter, 2, &source3_props,
+                                            error_msg, sizeof(error_msg));
+  TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+
+  CHECK_ERR(filt_deinit(&filter));
+}
+
+void test_multi_input_alignment_specific_input_masks(void)
+{
+  // Create a mock filter with multi-input alignment constraint
+  Filter_t filter;
+  Core_filt_config_t config = {
+      .name = "test_alignment_filter",
+      .filt_type = FILT_T_MAP,
+      .size = sizeof(Filter_t),
+      .n_inputs = 4,
+      .max_supported_sinks = 1,
+      .buff_config = {.dtype = DTYPE_FLOAT,
+                      .batch_capacity_expo = 6,
+                      .ring_capacity_expo = 8,
+                      .overflow_behaviour = OVERFLOW_BLOCK},
+      .timeout_us = 1000000,
+      .worker = &matched_passthroug};
+
+  CHECK_ERR(filt_init(&filter, config));
+
+  // Add multi-input alignment constraint for data type on inputs 0 and 1 only
+  TEST_ASSERT_TRUE(prop_append_constraint(&filter, PROP_DATA_TYPE,
+                                          CONSTRAINT_OP_MULTI_INPUT_ALIGNED,
+                                          NULL, INPUT_0 | INPUT_1));
+
+  // Add separate alignment constraint for inputs 2 and 3
+  TEST_ASSERT_TRUE(prop_append_constraint(&filter, PROP_DATA_TYPE,
+                                          CONSTRAINT_OP_MULTI_INPUT_ALIGNED,
+                                          NULL, INPUT_2 | INPUT_3));
+
+  // Create source properties - inputs 0,1 have FLOAT, inputs 2,3 have I32
+  PropertyTable_t source_props[4];
+  for (int i = 0; i < 4; i++) {
+    source_props[i] = prop_table_init();
+  }
+  prop_set_dtype(&source_props[0], DTYPE_FLOAT);
+  prop_set_dtype(&source_props[1], DTYPE_FLOAT);
+  prop_set_dtype(&source_props[2], DTYPE_I32);
+  prop_set_dtype(&source_props[3], DTYPE_I32);
+
+  char error_msg[256];
+
+  // Connect inputs 0 and 1 - should both pass
+  Bp_EC err = prop_validate_multi_input_alignment(&filter, 0, &source_props[0],
+                                                  error_msg, sizeof(error_msg));
+  TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+  filter.input_properties[0] = source_props[0];
+
+  err = prop_validate_multi_input_alignment(&filter, 1, &source_props[1],
+                                            error_msg, sizeof(error_msg));
+  TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+  filter.input_properties[1] = source_props[1];
+
+  // Connect inputs 2 and 3 - should both pass
+  err = prop_validate_multi_input_alignment(&filter, 2, &source_props[2],
+                                            error_msg, sizeof(error_msg));
+  TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+  filter.input_properties[2] = source_props[2];
+
+  err = prop_validate_multi_input_alignment(&filter, 3, &source_props[3],
+                                            error_msg, sizeof(error_msg));
+  TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+
+  CHECK_ERR(filt_deinit(&filter));
+}
+
+void test_multi_input_alignment_unknown_properties(void)
+{
+  // Create a mock filter with multi-input alignment constraint
+  Filter_t filter;
+  Core_filt_config_t config = {
+      .name = "test_alignment_filter",
+      .filt_type = FILT_T_MAP,
+      .size = sizeof(Filter_t),
+      .n_inputs = 2,
+      .max_supported_sinks = 1,
+      .buff_config = {.dtype = DTYPE_FLOAT,
+                      .batch_capacity_expo = 6,
+                      .ring_capacity_expo = 8,
+                      .overflow_behaviour = OVERFLOW_BLOCK},
+      .timeout_us = 1000000,
+      .worker = &matched_passthroug};
+
+  CHECK_ERR(filt_init(&filter, config));
+
+  // Add multi-input alignment constraint for data type
+  TEST_ASSERT_TRUE(prop_append_constraint(&filter, PROP_DATA_TYPE,
+                                          CONSTRAINT_OP_MULTI_INPUT_ALIGNED,
+                                          NULL, INPUT_0 | INPUT_1));
+
+  // Create source properties - first has known type, second has unknown type
+  PropertyTable_t source1_props = prop_table_init();
+  PropertyTable_t source2_props = prop_table_init();
+  prop_set_dtype(&source1_props, DTYPE_FLOAT);
+  // source2_props deliberately left with unknown data type
+
+  char error_msg[256];
+
+  // First connection should pass
+  Bp_EC err = prop_validate_multi_input_alignment(&filter, 0, &source1_props,
+                                                  error_msg, sizeof(error_msg));
+  TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+  filter.input_properties[0] = source1_props;
+
+  // Second connection should fail (unknown property)
+  err = prop_validate_multi_input_alignment(&filter, 1, &source2_props,
+                                            error_msg, sizeof(error_msg));
+  TEST_ASSERT_EQUAL(Bp_EC_PROPERTY_MISMATCH, err);
+
+  // Check error message mentions property is not known
+  TEST_ASSERT_TRUE(strlen(error_msg) > 0);
+  TEST_ASSERT_TRUE(strstr(error_msg, "not known") != NULL);
+
+  CHECK_ERR(filt_deinit(&filter));
+}
+
 int main(void)
 {
   UNITY_BEGIN();
@@ -482,6 +755,13 @@ int main(void)
   RUN_TEST(test_input_all_mask_validation);
   RUN_TEST(test_bitmask_combination_constraints);
   RUN_TEST(test_port_mask_constants);
+
+  // Multi-input alignment constraint tests
+  RUN_TEST(test_multi_input_alignment_matching_properties);
+  RUN_TEST(test_multi_input_alignment_mismatched_properties);
+  RUN_TEST(test_multi_input_alignment_input_all_mask);
+  RUN_TEST(test_multi_input_alignment_specific_input_masks);
+  RUN_TEST(test_multi_input_alignment_unknown_properties);
 
   return UNITY_END();
 }

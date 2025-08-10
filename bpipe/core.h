@@ -152,6 +152,8 @@ typedef struct _Filter_t {
   size_t n_output_behaviors;          // Number of active behaviors
   FilterContract_t contract;          // Uses above arrays
   PropertyTable_t output_properties;  // Cached output properties
+  PropertyTable_t
+      input_properties[MAX_INPUTS];  // Properties of connected inputs
 } Filter_t;
 
 Worker_t matched_passthroug;

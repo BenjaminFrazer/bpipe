@@ -314,6 +314,11 @@ Bp_EC filt_init(Filter_t* f, Core_filt_config_t config)
   // Initialize output properties
   f->output_properties = prop_table_init();
 
+  // Initialize input properties
+  for (int i = 0; i < MAX_INPUTS; i++) {
+    f->input_properties[i] = prop_table_init();
+  }
+
   return Bp_EC_OK;
 }
 
@@ -497,7 +502,20 @@ Bp_EC filt_connect(Filter_t* source, size_t source_output, Filter_t* sink,
     }
   }
 
-  // Properties are compatible, proceed with connection
+  // Check multi-input alignment constraints before storing properties
+  char alignment_error_msg[256];
+  Bp_EC alignment_err = prop_validate_multi_input_alignment(
+      sink, sink_input, &source->output_properties, alignment_error_msg,
+      sizeof(alignment_error_msg));
+  if (alignment_err != Bp_EC_OK) {
+    // TODO: Log alignment_error_msg when logging is available
+    return alignment_err;
+  }
+
+  // Properties are compatible, store the input properties for this connection
+  sink->input_properties[sink_input] = source->output_properties;
+
+  // Proceed with connection
   return filt_sink_connect(source, source_output,
                            sink->input_buffers[sink_input]);
 }

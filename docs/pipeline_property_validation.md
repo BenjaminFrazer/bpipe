@@ -104,6 +104,70 @@ When multiple inputs converge:
 2. **Merge Properties**: Determine output based on all inputs
 3. **Apply Behaviors**: Transform merged properties per filter rules
 
+## Property Propagation Function Specification
+
+### Function Signature
+```c
+PropertyTable_t prop_propagate(
+    const PropertyTable_t* input_properties,  /* Array of input property tables */
+    size_t n_inputs,                          /* Number of input tables */
+    const FilterContract_t* filter_contract,  /* Filter's behavior definitions */
+    uint32_t output_port                      /* Output port to compute properties for */
+);
+```
+
+### Behavior Rules
+
+1. **Default Preservation**: If no behavior is specified for a property, it is automatically preserved from input 0 (or remains UNKNOWN if no inputs).
+
+2. **Behavior Application**: For each property:
+   - If a behavior with matching `output_mask` applies to this `output_port`:
+     - **SET**: Property takes the specified value, regardless of input
+     - **PRESERVE**: Property is copied from input 0 (first input)
+   - If no behavior matches: Property is preserved from input 0
+
+3. **Multi-Input Handling**:
+   - PRESERVE always uses input 0 as the source
+   - Filters requiring specific multi-input logic must use SET behaviors
+   - Multi-input alignment is validated separately (not part of propagation)
+
+4. **UNKNOWN Propagation**:
+   - UNKNOWN is propagated unless a SET behavior provides a value
+   - PRESERVE of UNKNOWN remains UNKNOWN
+   - No inputs (source filters) start with all properties UNKNOWN
+
+5. **Error Conditions**:
+   - Multiple behaviors targeting the same property for the same output port is an error
+   - Returns table with all properties UNKNOWN on error
+
+### Usage Examples
+
+```c
+// Source filter: Apply behaviors to UNKNOWN inputs
+PropertyTable_t unknown = prop_table_init();
+prop_set_all_unknown(&unknown);
+filter->output_properties = prop_propagate(&unknown, 0, &filter->contract, 0);
+
+// Transform filter: Apply behaviors to actual inputs
+filter->output_properties = prop_propagate(filter->input_properties, 
+                                          filter->n_inputs, 
+                                          &filter->contract, 0);
+
+// Multi-output filter: Compute each output separately
+for (int port = 0; port < filter->n_outputs; port++) {
+    filter->output_properties[port] = prop_propagate(filter->input_properties,
+                                                     filter->n_inputs,
+                                                     &filter->contract, port);
+}
+```
+
+### Implementation Notes
+
+- Function is pure: no side effects, deterministic output
+- Called once per output port during connection or validation
+- Results should be cached in `filter->output_properties`
+- Validation occurs separately after propagation
+
 ## Multi-Input Validation
 
 ### Alignment Constraints

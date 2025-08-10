@@ -35,6 +35,8 @@ typedef enum {
   CONSTRAINT_OP_EQ,     /* Property must equal value */
   CONSTRAINT_OP_GTE,    /* Property must be >= value (for capacities) */
   CONSTRAINT_OP_LTE,    /* Property must be <= value (for capacities) */
+  CONSTRAINT_OP_MULTI_INPUT_ALIGNED /* Property must match across all inputs in
+                                       mask */
 } ConstraintOp_t;
 
 /* Behavior operators for output transformation */
@@ -135,6 +137,18 @@ Bp_EC prop_validate_connection(const PropertyTable_t* upstream_props,
                                const FilterContract_t* downstream_contract,
                                uint32_t input_port, char* error_msg,
                                size_t error_msg_size);
+
+/* Validate multi-input alignment constraints for a specific connection
+ * This checks if the new connection's properties align with already-connected
+ * inputs
+ * @param sink: The filter receiving the connection
+ * @param new_input_port: The input port being connected (0-based index)
+ * @param new_input_props: Properties of the upstream filter being connected
+ */
+Bp_EC prop_validate_multi_input_alignment(
+    const struct _Filter_t* sink, uint32_t new_input_port,
+    const PropertyTable_t* new_input_props, char* error_msg,
+    size_t error_msg_size);
 
 /* Propagate properties through a filter (inheritance + behaviors) */
 PropertyTable_t prop_propagate(const PropertyTable_t* upstream,

@@ -327,7 +327,7 @@ prop_append_constraint(&filter->base, INPUT_0 | INPUT_1, PROP_SAMPLE_PERIOD_NS,
 
 ### Validation Functions
 - `prop_validate_connection(const PropertyTable_t* upstream, const FilterContract_t* downstream, char* error_msg, size_t size)` - Validate pairwise connection
-- `prop_propagate(const PropertyTable_t* upstream, const FilterContract_t* filter)` - Propagate properties through a filter (not yet wired up)
+- `prop_propagate(const PropertyTable_t* input_properties, size_t n_inputs, const FilterContract_t* filter, uint32_t output_port)` - Compute output properties by applying behaviors (see pipeline_property_validation.md for full spec)
 
 ### Constraint Operators
 - `CONSTRAINT_OP_EXISTS`: Property must be known

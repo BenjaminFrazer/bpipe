@@ -230,6 +230,13 @@ static bool validate_constraint(const Property_t* prop,
         }
       }
       break;
+
+    case CONSTRAINT_OP_MULTI_INPUT_ALIGNED:
+      /* This constraint type requires special handling with access to all
+       * inputs. It should be validated separately, not during individual
+       * connection validation. Skip it here and return true - validation
+       * happens elsewhere. */
+      return true;
   }
 
   return true;
@@ -276,6 +283,148 @@ Bp_EC prop_validate_connection(const PropertyTable_t* upstream_props,
   }
 
   /* All constraints satisfied */
+  return Bp_EC_OK;
+}
+
+/* Helper function to check if two property values match */
+static bool properties_match(const Property_t* prop1, const Property_t* prop2,
+                             SignalProperty_t property_type)
+{
+  // Both properties must be known for alignment
+  if (!prop1->known || !prop2->known) {
+    return false;
+  }
+
+  // Compare based on property type
+  if (property_type == PROP_DATA_TYPE) {
+    return prop1->value.dtype == prop2->value.dtype;
+  } else if (property_type == PROP_SAMPLE_PERIOD_NS) {
+    return prop1->value.u64 == prop2->value.u64;
+  } else {
+    return prop1->value.u32 == prop2->value.u32;
+  }
+}
+
+/* Validate multi-input alignment constraints for a specific connection */
+Bp_EC prop_validate_multi_input_alignment(
+    const Filter_t* sink, uint32_t new_input_port,
+    const PropertyTable_t* new_input_props, char* error_msg,
+    size_t error_msg_size)
+{
+  if (!sink || !new_input_props) {
+    return Bp_EC_NULL_POINTER;
+  }
+
+  /* Clear error message if provided */
+  if (error_msg && error_msg_size > 0) {
+    error_msg[0] = '\0';
+  }
+
+  /* Check each multi-input alignment constraint */
+  const InputConstraint_t* constraints = sink->input_constraints;
+  uint32_t new_port_mask = 1U << new_input_port;
+
+  for (size_t i = 0; i < sink->n_input_constraints; i++) {
+    const InputConstraint_t* constraint = &constraints[i];
+
+    /* Only process multi-input alignment constraints */
+    if (constraint->op != CONSTRAINT_OP_MULTI_INPUT_ALIGNED) {
+      continue;
+    }
+
+    /* Skip constraints that don't apply to this input port */
+    if ((constraint->input_mask & new_port_mask) == 0) {
+      continue;
+    }
+
+    /* Validate property index */
+    if (constraint->property > PROP_COUNT_MVP || constraint->property < 1) {
+      return Bp_EC_INVALID_CONFIG;
+    }
+
+    const Property_t* new_prop =
+        &new_input_props->properties[constraint->property];
+
+    /* Check if new property is known - required for alignment */
+    if (!new_prop->known) {
+      if (error_msg) {
+        snprintf(error_msg, error_msg_size,
+                 "Multi-input alignment failed: property '%s' is not known in "
+                 "new input (port %u)",
+                 property_names[constraint->property], new_input_port);
+      }
+      return Bp_EC_PROPERTY_MISMATCH;
+    }
+
+    /* Compare against all other inputs included in the constraint mask */
+    for (uint32_t port = 0; port < MAX_INPUTS; port++) {
+      uint32_t port_mask = 1U << port;
+
+      /* Skip ports not in the constraint mask */
+      if ((constraint->input_mask & port_mask) == 0) {
+        continue;
+      }
+
+      /* Skip the port we're currently connecting */
+      if (port == new_input_port) {
+        continue;
+      }
+
+      /* Skip ports that haven't been connected yet.
+       * Only ports with lower indices than the current one should be connected.
+       */
+      if (port >= new_input_port) {
+        continue;
+      }
+
+      /* Skip unconnected ports */
+      if (port >= sink->n_input_buffers || sink->input_buffers[port] == NULL) {
+        continue;
+      }
+
+      const Property_t* existing_prop =
+          &sink->input_properties[port].properties[constraint->property];
+
+      /* If existing property is not known, we can't validate alignment */
+      if (!existing_prop->known) {
+        if (error_msg) {
+          snprintf(error_msg, error_msg_size,
+                   "Multi-input alignment failed: property '%s' is not known "
+                   "in existing input (port %u)",
+                   property_names[constraint->property], port);
+        }
+        return Bp_EC_PROPERTY_MISMATCH;
+      }
+
+      /* Check if properties match */
+      if (!properties_match(new_prop, existing_prop, constraint->property)) {
+        if (error_msg) {
+          if (constraint->property == PROP_DATA_TYPE) {
+            snprintf(error_msg, error_msg_size,
+                     "Multi-input alignment failed: data type mismatch between "
+                     "port %u (%d) and port %u (%d)",
+                     new_input_port, new_prop->value.dtype, port,
+                     existing_prop->value.dtype);
+          } else if (constraint->property == PROP_SAMPLE_PERIOD_NS) {
+            snprintf(error_msg, error_msg_size,
+                     "Multi-input alignment failed: sample period mismatch "
+                     "between port %u (%llu ns) and port %u (%llu ns)",
+                     new_input_port, (unsigned long long) new_prop->value.u64,
+                     port, (unsigned long long) existing_prop->value.u64);
+          } else {
+            snprintf(error_msg, error_msg_size,
+                     "Multi-input alignment failed: property '%s' mismatch "
+                     "between port %u (%u) and port %u (%u)",
+                     property_names[constraint->property], new_input_port,
+                     new_prop->value.u32, port, existing_prop->value.u32);
+          }
+        }
+        return Bp_EC_PROPERTY_MISMATCH;
+      }
+    }
+  }
+
+  /* All multi-input alignment constraints satisfied */
   return Bp_EC_OK;
 }
 
@@ -413,8 +562,11 @@ bool prop_append_constraint(Filter_t* filter, SignalProperty_t prop,
 {
   if (!filter) return false;
 
-  /* CONSTRAINT_OP_EXISTS doesn't need an operand, others do */
-  if (op != CONSTRAINT_OP_EXISTS && !operand) return false;
+  /* CONSTRAINT_OP_EXISTS and CONSTRAINT_OP_MULTI_INPUT_ALIGNED don't need an
+   * operand, others do */
+  if (op != CONSTRAINT_OP_EXISTS && op != CONSTRAINT_OP_MULTI_INPUT_ALIGNED &&
+      !operand)
+    return false;
 
   /* Check if array is full */
   if (filter->n_input_constraints >= MAX_CONSTRAINTS) {
