@@ -30,9 +30,11 @@ The system tracks essential properties:
 
 ### Property Computation
 
-Output properties are not stored directly but computed during validation by:
+Output properties are computed using `prop_propagate()` and cached in the filter:
 1. For source filters: Propagating an UNKNOWN property table through SET behaviors
 2. For transform filters: Propagating input properties through behaviors (PRESERVE/SET)
+
+All property computation happens during the validation phase (not during connection). The validation traverses the DAG in topological order, computing and caching properties in `filter->output_properties[port]`.
 
 ### Unknown Properties
 
@@ -112,12 +114,12 @@ prop_set_output_behavior_for_buffer_filter(&matcher->base, &config.buff_config,
 The system performs validation at two levels:
 
 ### Local (Pairwise) Validation
-Currently implemented - happens automatically during `filt_connect()`:
+Currently implemented behavior during `filt_connect()`:
 
-1. **Automatic Validation**: `filt_connect()` checks property compatibility between two filters
-2. **Error Messages**: Clear messages explain why connections fail (though currently lost)
-3. **Early Detection**: Obvious problems caught at connection time
-4. **Limitation**: Only validates direct connections, not the entire pipeline
+1. **Simple connection**: `filt_connect()` just establishes DAG edges
+2. **No validation**: Connection doesn't validate properties (they may not be computed yet)
+3. **Order-independent**: Filters can be connected in any order
+4. **Deferred validation**: Property validation happens during pipeline validation phase
 
 ### Global (Pipeline) Validation
 Proposed but not yet implemented - would happen before pipeline start:
@@ -422,8 +424,8 @@ uint64_t period_48khz = sample_rate_to_period_ns(48000);
 prop_append_constraint(&filter->base, PROP_SAMPLE_PERIOD_NS, CONSTRAINT_OP_EQ, 
                       &period_48khz);
 
-// Set 44.1kHz output
-prop_set_sample_period(&filter->base.output_properties, sample_rate_to_period_ns(44100));
+// Set 44.1kHz output (for single-output filter, use port 0)
+prop_set_sample_period(&filter->base.output_properties[0], sample_rate_to_period_ns(44100));
 ```
 
 ### Multi-rate Filter
@@ -433,7 +435,7 @@ A filter supporting multiple sample rates:
 // Accept common audio rates
 uint32_t rate = get_input_sample_rate();
 if (rate == 44100 || rate == 48000 || rate == 96000) {
-    prop_set_sample_period(&filter->base.output_properties, sample_rate_to_period_ns(rate));
+    prop_set_sample_period(&filter->base.output_properties[0], sample_rate_to_period_ns(rate));
 } else {
     return Bp_EC_UNSUPPORTED_RATE;
 }

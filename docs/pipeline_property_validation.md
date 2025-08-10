@@ -49,7 +49,7 @@ Source filters (no inputs) propagate from UNKNOWN through their SET behaviors:
 ```c
 PropertyTable_t unknown;
 prop_set_all_unknown(&unknown);
-computed_props[source_idx] = propagate_properties(source, &unknown, 0);
+computed_props[source_idx] = prop_propagate(&unknown, 0, &source->contract, 0);
 ```
 
 Source filters use SET behaviors for properties they can determine:
@@ -112,9 +112,16 @@ PropertyTable_t prop_propagate(
     const PropertyTable_t* input_properties,  /* Array of input property tables */
     size_t n_inputs,                          /* Number of input tables */
     const FilterContract_t* filter_contract,  /* Filter's behavior definitions */
-    uint32_t output_port                      /* Output port to compute properties for */
+    uint32_t output_port                      /* Which output port to compute properties for */
 );
+/* Returns: PropertyTable for the specified output port */
 ```
+
+### When Called
+- **Source filters**: During validation phase (inputs are UNKNOWN)
+- **Transform filters**: During validation phase (uses actual input properties)
+- **Multi-output filters**: Called once per output port (0 to n_outputs-1)
+- **Validation phase only**: All property computation happens during pipeline validation
 
 ### Behavior Rules
 
@@ -161,7 +168,7 @@ OutputBehavior_t behaviors[] = {
     {PROP_SAMPLE_PERIOD_NS, BEHAVIOR_OP_PRESERVE, OUTPUT_ALL, {.u32 = 0}} // all from input 0
 };
 
-// Multi-output filter: Compute each output separately
+// Multi-output filter: Compute properties for each output port
 for (int port = 0; port < filter->n_outputs; port++) {
     filter->output_properties[port] = prop_propagate(filter->input_properties,
                                                      filter->n_inputs,
@@ -172,9 +179,34 @@ for (int port = 0; port < filter->n_outputs; port++) {
 ### Implementation Notes
 
 - Function is pure: no side effects, deterministic output
-- Called once per output port during connection or validation
-- Results should be cached in `filter->output_properties`
-- Validation occurs separately after propagation
+- Called once per output port during validation phase only
+- The `output_port` parameter filters which behaviors apply based on output_mask
+- Not called during connection (connection just builds DAG)
+
+### Caching Strategy
+
+Properties are computed once and cached in `filter->output_properties[port]` because:
+1. **Performance**: Avoids recomputation if validation is run multiple times
+2. **Consistency**: Single source of truth for filter's output properties
+3. **Static nature**: Behaviors don't change after filter initialization
+
+**When computed and cached**:
+- **During validation only**: All filters compute properties during pipeline validation
+- **Topological order**: Sources first, then filters in dependency order
+- **Recomputation**: If pipeline structure changes, validation must be re-run
+
+### Structural Requirements
+
+For multi-output support, the Filter structure needs:
+```c
+typedef struct _Filter_t {
+    // ... other fields ...
+    PropertyTable_t output_properties[MAX_OUTPUTS];  // One table per output port
+    // ... other fields ...
+} Filter_t;
+```
+
+Single-output filters can use `output_properties[0]` for backward compatibility.
 
 
 ## Multi-Input Validation
@@ -216,35 +248,60 @@ SignalGen1 → Passthrough → Mixer → BatchMatcher → Sink
 SignalGen2 ────────────────↗
 ```
 
-### Validation Steps
+### During Pipeline Initialization
+```c
+// Define all connections upfront
+Connection_t connections[] = {
+    {&signalGen1, 0, &passthrough, 0},
+    {&passthrough, 0, &mixer, 0},
+    {&signalGen2, 0, &mixer, 1},
+    {&mixer, 0, &batchMatcher, 0},
+    {&batchMatcher, 0, &sink, 0}
+};
+
+// Pipeline init creates all connections
+Pipeline_config_t config = {
+    .filters = all_filters,
+    .n_filters = 5,
+    .connections = connections,
+    .n_connections = 5,
+    // ...
+};
+pipeline_init(&pipeline, config);  // Connections made here
+```
+
+### During Validation Phase (Topological Order)
+
+The validation traverses the DAG and computes properties:
 
 1. **Process SignalGen1** (source)
-   - Output: float, 48kHz, batch=256
+   - Compute: `prop_propagate(UNKNOWN, ...)` with SET behaviors
+   - Result: float, 48kHz, batch=256
 
-2. **Process SignalGen2** (source)
-   - Output: float, 48kHz, batch=128
+2. **Process SignalGen2** (source) 
+   - Compute: `prop_propagate(UNKNOWN, ...)` with SET behaviors
+   - Result: float, 48kHz, batch=128
 
-3. **Process Passthrough**
-   - Input: float, 48kHz, batch=256
-   - Behaviors: PRESERVE all
-   - Output: float, 48kHz, batch=256
+3. **Process Passthrough** (has all inputs ready)
+   - Input properties: [SignalGen1: float, 48kHz, batch=256]
+   - Compute: `prop_propagate(inputs, ...)` with PRESERVE behaviors
+   - Result: float, 48kHz, batch=256
 
-4. **Process Mixer** (multi-input)
-   - Input1: float, 48kHz, batch=256
-   - Input2: float, 48kHz, batch=128
-   - Constraints: MULTI_INPUT_ALIGNED on sample_period
-   - Validation: ✓ Both 48kHz (aligned)
-   - Output: float, 48kHz, batch=1-256 (can handle variable)
+4. **Process Mixer** (has all inputs ready)
+   - Input properties: [Passthrough: float, 48kHz, batch=256], [SignalGen2: float, 48kHz, batch=128]
+   - Validate: MULTI_INPUT_ALIGNED on sample_period ✓ (both 48kHz)
+   - Compute: `prop_propagate(inputs, ...)` 
+   - Result: float, 48kHz, batch=1-256 (variable)
 
-5. **Process BatchMatcher**
-   - Input: float, 48kHz, batch=1-256
-   - Behaviors: ADAPT batch size, GUARANTEE full
-   - Output: float, 48kHz, batch=512-512 (detected from sink)
+5. **Process BatchMatcher** (has all inputs ready)
+   - Input properties: [Mixer: float, 48kHz, batch=1-256]
+   - Compute: `prop_propagate(inputs, ...)` with ADAPT behaviors
+   - Result: float, 48kHz, batch=512-512
 
-6. **Process Sink**
-   - Input: float, 48kHz, batch=512
-   - Constraints: dtype=float, sample_period EXISTS
-   - Validation: ✓ All constraints met
+6. **Validate Sink** (terminal node)
+   - Input properties: [BatchMatcher: float, 48kHz, batch=512]
+   - Validate constraints: dtype=float ✓, sample_period EXISTS ✓
+   - No output computation needed (sink has no outputs)
 
 ## Validation Strategy
 
@@ -299,6 +356,98 @@ Property validation failed at 'IntProcessor':
   IntProcessor requires INT32 but upstream provides FLOAT
 ```
 
+## Pipeline Construction and Validation Sequence
+
+### Phase 1: Filter Initialization
+```c
+// 1. Create and initialize filters
+SignalGenerator_t source;
+signal_generator_init(&source, config);  // Sets behaviors, computes properties for sources
+
+Map_filt_t transform; 
+map_init(&transform, config);  // Sets behaviors, but can't compute properties yet (no inputs)
+
+CSVSink_t sink;
+csv_sink_init(&sink, config);  // Sets constraints
+```
+
+**At this point**:
+- Source filters have computed `output_properties` (from UNKNOWN inputs)
+- Transform/sink filters have behaviors/constraints but no computed properties
+
+### Phase 2: Connection (Order-Independent)
+```c
+// 2. Connect filters in any order - just establishes the DAG structure
+filt_connect(&source, 0, &transform, 0);  
+filt_connect(&transform, 0, &sink, 0);
+
+// Or connect in reverse order - doesn't matter!
+filt_connect(&transform, 0, &sink, 0);
+filt_connect(&source, 0, &transform, 0);
+```
+
+**During connection**:
+- Simply records the connection in the DAG structure
+- No validation performed (properties may not be computed yet)
+- No property propagation (deferred to validation phase)
+
+### Handling Complex Topologies
+
+For DAGs with multiple paths and convergence points:
+
+```c
+// Example: Diamond topology
+//     Source1 → Transform1 ↘
+//                           Mixer → Sink
+//     Source2 → Transform2 ↗
+
+// Connect in ANY order - just building the graph
+filt_connect(&mixer, 0, &sink, 0);           // Can start anywhere
+filt_connect(&transform1, 0, &mixer, 0);     
+filt_connect(&source2, 0, &transform2, 0);   
+filt_connect(&transform2, 0, &mixer, 1);     
+filt_connect(&source1, 0, &transform1, 0);   // Order doesn't matter
+```
+
+**Connection is simple**:
+- Just establishes edges in the DAG
+- No computation or validation
+- Order-independent
+
+### Phase 3: Pipeline Validation (Required Before Execution)
+```c
+// 3. Validate entire pipeline DAG
+Pipeline_t pipeline;
+pipeline_init(&pipeline, config);
+pipeline_add_filter(&pipeline, &source);
+pipeline_add_filter(&pipeline, &transform);
+pipeline_add_filter(&pipeline, &sink);
+
+Bp_EC err = pipeline_validate_properties(&pipeline, NULL, 0, 
+                                        error_msg, sizeof(error_msg));
+if (err != Bp_EC_OK) {
+    printf("Validation failed: %s\n", error_msg);
+    return err;
+}
+```
+
+**During validation** (happens in topological order):
+1. **Identify sources** (filters with no inputs)
+2. **Compute source properties**: `prop_propagate(UNKNOWN, ...)`
+3. **Traverse DAG topologically**:
+   - For each filter in dependency order:
+     - Validate input properties against constraints
+     - Compute output properties via `prop_propagate()`
+     - Store computed properties for downstream filters
+4. **Check multi-input alignment** where required
+5. **Report any validation errors** with full context
+
+### Phase 4: Pipeline Execution
+```c
+// 4. Start pipeline (properties are now guaranteed valid)
+pipeline_start(&pipeline);
+```
+
 ## Usage Pattern
 
 ```c
@@ -334,26 +483,6 @@ Bp_EC pipeline_validate_properties(const Pipeline_t* pipeline,
 - Top-level pipelines: Call with `external_inputs=NULL, n_external_inputs=0`
 - Nested pipelines: Provide actual input properties from containing pipeline
 
-
-## Testing Strategy
-
-### Unit Tests
-1. Linear pipeline (source → transform → sink)
-2. Branching pipeline (one source → multiple sinks)
-3. Merging pipeline (multiple sources → one sink)
-4. Complex DAG with multiple merge/branch points
-
-### Property Tests
-1. Property preservation through passthrough
-2. Property modification through adapters
-3. Multi-input alignment validation
-4. Constraint violation detection
-
-### Error Case Tests
-1. Mismatched data types
-2. Incompatible sample rates
-3. Unaligned multi-inputs
-4. Cyclic dependencies
 
 ## Nested Pipeline Handling
 
@@ -420,74 +549,3 @@ When `pipeline_validate_properties()` is called:
 2. **Validate internal topology**: Propagate properties through internal filters
 3. **Verify contract**: Ensure declared behaviors match computed outputs
 4. **Report errors with context**: Include full path for nested pipelines
-
-For nested pipelines, the outer pipeline calls this function with actual input properties during its own validation process.
-
-### Example: Nested Pipeline Validation
-
-```
-Outer Pipeline:
-  SignalGen → [NestedPipeline] → Sink
-  
-  NestedPipeline:
-    Input → Passthrough → BatchMatcher → Output
-```
-
-Validation sequence:
-1. Validate NestedPipeline internally:
-   - Input has no constraints
-   - Passthrough preserves properties
-   - BatchMatcher adapts batch size
-   - Output properties computed: float, 48kHz, batch=512
-2. Set NestedPipeline's external properties:
-   - Input constraints: none (from Input filter)
-   - Output properties: float, 48kHz, batch=512 (from Output filter)
-3. Validate Outer Pipeline:
-   - SignalGen output: float, 48kHz, batch=256
-   - NestedPipeline accepts any input (no constraints)
-   - NestedPipeline output: float, 48kHz, batch=512
-   - Sink validates against: float, 48kHz, batch=512 ✓
-
-### Error Reporting for Nested Pipelines
-
-Include full path in error messages:
-
-```
-Property validation failed:
-  In pipeline 'Main':
-    In nested pipeline 'AudioProcessor':
-      In nested pipeline 'EffectsChain':
-        At filter 'Reverb':
-          Input sample_period (22675ns) doesn't match required (20833ns)
-  Path: Main → AudioProcessor → EffectsChain → Reverb
-```
-
-### Performance Considerations
-
-1. **Cache Validation Results**: Don't re-validate unchanged nested pipelines
-2. **Lazy Validation**: Only validate when pipeline structure changes
-3. **Partial Validation**: Validate only affected sub-graphs when possible
-
-### Special Cases
-
-#### Recursive Pipeline References
-Detect and prevent infinite recursion:
-```c
-if (is_in_ancestor_chain(pipeline, nested)) {
-    return Bp_EC_CIRCULAR_REFERENCE;
-}
-```
-
-#### Dynamic Pipeline Modification
-If nested pipelines can change at runtime:
-- Invalidate cached validation results
-- Re-validate affected portions
-- Propagate changes to parent pipelines
-
-## Future Enhancements
-
-1. **Incremental Validation**: Re-validate only affected portions when pipeline changes
-2. **Property Negotiation**: Allow filters to adjust properties based on downstream needs
-3. **Constraint Solving**: Automatically find valid property configurations
-4. **Runtime Property Updates**: Support dynamic property changes during execution
-5. **Pipeline Templates**: Pre-validated pipeline patterns for common use cases
