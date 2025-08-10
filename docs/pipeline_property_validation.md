@@ -245,9 +245,41 @@ Bp_EC validate_multi_input_alignment(const PropertyTable_t* inputs[],
 
 Pipelines can contain other pipelines as filters, creating a hierarchical structure. The validation system must handle this recursively while maintaining efficiency and clear error reporting.
 
-### Pipeline as Filter
+### Pipeline as Filter - Property Encapsulation
 
-A `Pipeline_t` contains a `Filter_t base` member, making it appear as a regular filter to containing pipelines. The pipeline's external interface is determined by its designated input and output filters.
+A `Pipeline_t` contains a `Filter_t base` member, making it appear as a regular filter to containing pipelines. The key principle is **complete encapsulation**: the pipeline's external property contract is derived from its internal topology.
+
+#### Property Contract Derivation
+
+The pipeline's external contract is computed from the path between its designated input and output filters:
+
+1. **Input Constraints** (Backward Flow):
+   - Aggregated from ALL filters on the path from input to output
+   - Represents the union of requirements that must be satisfied
+   - Most restrictive constraints dominate
+
+2. **Output Behaviors** (Forward Flow):
+   - Composed from behaviors along the path from input to output  
+   - Describes how the pipeline transforms properties
+   - Last SET behavior wins for each property
+
+#### Example Contract Computation
+
+```
+Internal: [Input] → [Passthrough] → [BatchMatcher] → [CSVSink] → [Output]
+          ↓          ↓                ↓                ↓
+          none       PRESERVE all     ADAPT batch     Requires float,
+                                      SET full        known rate
+
+Pipeline External Contract:
+- Input Constraints: dtype==float, sample_period EXISTS (aggregated backward)
+- Output Behaviors: dtype PRESERVE, period PRESERVE, batch SET (composed forward)
+```
+
+This encapsulation means:
+- External code never needs to know internal structure
+- Pipelines compose naturally as black-box filters
+- Validation works identically for atomic filters and pipelines
 
 ### Validation Approach
 
@@ -277,28 +309,37 @@ Bp_EC pipeline_validate_properties(const Pipeline_t* pipeline,
 }
 ```
 
-#### 2. Property Computation for Nested Pipelines
+#### 2. Pipeline Contract Computation
 
-After validating a nested pipeline's internals, compute its external properties:
+The pipeline's external contract should ideally be computed at init time by analyzing the internal topology:
 
 ```c
-void compute_nested_pipeline_properties(Pipeline_t* nested,
-                                        ValidationState_t* parent_state)
+Bp_EC pipeline_init(Pipeline_t* pipe, Pipeline_config_t config)
 {
-    // The nested pipeline's output properties are the computed properties
-    // of its designated output filter after internal validation
-    size_t output_filter_idx = find_filter_index(nested, nested->output_filter);
-    PropertyTable_t* output_props = &nested->internal_computed_props[output_filter_idx];
+    // ... standard initialization ...
     
-    // Set the pipeline filter's output properties for parent validation
-    nested->base.output_properties = *output_props;
+    // Compute external contract from internal topology
+    compute_pipeline_contract(pipe);
+    return Bp_EC_OK;
+}
+
+void compute_pipeline_contract(Pipeline_t* pipe)
+{
+    // Step 1: Backward - Aggregate constraints along path
+    // All constraints from filters between input and output must be satisfied
+    aggregate_path_constraints(pipe, pipe->input_filter, pipe->output_filter);
     
-    // The pipeline's input constraints come from its input filter
-    if (nested->input_filter) {
-        copy_constraints(&nested->base, nested->input_filter);
-    }
+    // Step 2: Forward - Compose behaviors along path  
+    // Behaviors transform as they flow through the pipeline
+    compose_path_behaviors(pipe, pipe->input_filter, pipe->output_filter);
+    
+    // Note: Actual output PROPERTIES can only be computed when input 
+    // properties are known (during validation), but BEHAVIORS can be 
+    // determined from topology alone
 }
 ```
+
+The key insight is that behaviors (transformations) can be computed statically from topology, while actual property values require runtime input.
 
 #### 3. Connection Mapping
 

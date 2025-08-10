@@ -219,6 +219,17 @@ prop_append_constraint(&mixer->base, PROP_SAMPLE_PERIOD_NS,
 3. **Use Buffer Helpers**: Use `prop_constraints_from_buffer_append()` when appropriate
 4. **Test Validation**: Verify that incompatible connections are properly rejected
 
+## Pipeline Integration
+
+### Pipeline as Filter
+Pipelines inherit from `Filter_t` and must present a property contract like any filter. This contract is derived from the internal topology:
+
+1. **Input Constraints**: Aggregated backward from all filters on the path from input to output
+2. **Output Behaviors**: Composed forward along the path from input to output
+3. **Encapsulation**: External code treats pipelines identically to atomic filters
+
+See `docs/pipeline_property_validation.md` for detailed pipeline validation specification.
+
 ## Remaining Work
 
 ### Core System Improvements
@@ -226,6 +237,7 @@ prop_append_constraint(&mixer->base, PROP_SAMPLE_PERIOD_NS,
 - **Property propagation**: Actually apply declared behaviors (PRESERVE, SET) to compute filter output properties
 - **Error message retrieval**: Currently error messages are lost - need API to retrieve them
 - **Multi-input handling**: Support property merging for filters with multiple inputs
+- **Pipeline contract computation**: Implement backward constraint aggregation and forward behavior composition
 
 ### Missing Filter Features
 - **Output behavior declarations**: Many filters declare constraints but not how they transform properties
