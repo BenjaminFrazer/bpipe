@@ -28,15 +28,6 @@ Top-level pipelines are self-contained with no external inputs - all sources are
    - Input properties meet filter constraints
    - Multi-input alignment requirements are satisfied
 
-### Data Structures
-
-```c
-typedef struct {
-    PropertyTable_t computed_props[MAX_FILTERS];  // Computed output per filter
-    bool visited[MAX_FILTERS];                    // Traversal tracking
-    size_t in_degree[MAX_FILTERS];               // Number of inputs per filter
-} ValidationState_t;
-```
 
 ### Core Validation Function
 
@@ -182,22 +173,18 @@ SignalGen2 ────────────────↗
    - Constraints: dtype=float, sample_period EXISTS
    - Validation: ✓ All constraints met
 
-## Implementation Phases
+## Validation Strategy
 
-### Phase 1: Core Algorithm
-- Topological sort implementation
-- Basic property propagation
-- Single-input validation
+### Connection-Time (Local)
+- Basic pairwise compatibility check during `filt_connect()`
+- Catches obvious errors early (type mismatches, etc.)
+- Limited to directly connected filters
 
-### Phase 2: Multi-Input Support
-- Alignment constraint validation
-- Property merging for multi-input filters
-- Comprehensive error messages
-
-### Phase 3: Advanced Features
-- Cycle detection in DAG
-- Partial pipeline validation
-- Property conflict resolution
+### Pipeline-Wide (Global)
+- Full DAG traversal before pipeline start
+- Propagates properties through entire graph
+- Validates with computed properties, not just declared ones
+- Detects issues requiring global context
 
 ## Error Reporting
 
@@ -239,6 +226,28 @@ Property validation failed at 'IntProcessor':
   IntProcessor requires INT32 but upstream provides FLOAT
 ```
 
+## Usage Pattern
+
+```c
+// Build pipeline
+Pipeline_t pipeline;
+pipeline_init(&pipeline, config);
+
+// Make connections (basic validation happens here)
+filt_connect(source, 0, sink, 0);  // Quick local checks
+
+// Validate entire pipeline before starting
+Bp_EC err = pipeline_validate_properties(&pipeline, NULL, 0, 
+                                        error_msg, sizeof(error_msg));
+if (err != Bp_EC_OK) {
+    printf("Validation failed: %s\n", error_msg);
+    return err;
+}
+
+// Start pipeline (properties are now guaranteed valid)
+pipeline_start(&pipeline);
+```
+
 ## API Functions
 
 ### Main Validation
@@ -252,26 +261,6 @@ Bp_EC pipeline_validate_properties(const Pipeline_t* pipeline,
 - Top-level pipelines: Call with `external_inputs=NULL, n_external_inputs=0`
 - Nested pipelines: Provide actual input properties from containing pipeline
 
-### Helper Functions
-```c
-// Build validation state from pipeline
-ValidationState_t* build_validation_state(const Pipeline_t* pipeline);
-
-// Find source filters in pipeline
-void find_source_filters(const Pipeline_t* pipeline, 
-                        Filter_t** sources, size_t* n_sources);
-
-// Propagate properties through single filter
-PropertyTable_t propagate_through_filter(const PropertyTable_t* inputs[],
-                                         size_t n_inputs,
-                                         const FilterContract_t* contract);
-
-// Validate multi-input alignment
-Bp_EC validate_multi_input_alignment(const PropertyTable_t* inputs[],
-                                     size_t n_inputs,
-                                     const InputConstraint_t* constraints,
-                                     size_t n_constraints);
-```
 
 ## Testing Strategy
 
@@ -337,97 +326,23 @@ This encapsulation means:
 
 ### Validation Approach
 
-#### 1. Validation with External Inputs
+#### Validation Process
 
-```c
-Bp_EC pipeline_validate_properties(const Pipeline_t* pipeline,
-                                   PropertyTable_t* external_inputs,
-                                   size_t n_external_inputs,
-                                   char* error_msg, size_t error_msg_size)
-{
-    ValidationState_t state;
-    
-    // Initialize starting points
-    for (size_t i = 0; i < pipeline->n_filters; i++) {
-        Filter_t* filter = pipeline->filters[i];
-        
-        if (is_source_filter(filter)) {
-            // Sources: propagate UNKNOWN through SET behaviors
-            PropertyTable_t unknown;
-            prop_set_all_unknown(&unknown);
-            state.computed_props[i] = propagate_properties(filter, &unknown, 0);
-            state.validated[i] = true;
-        }
-    }
-    
-    // Use external inputs if provided (for nested pipelines)
-    if (n_external_inputs > 0) {
-        // Map external inputs to pipeline input filters
-        apply_external_inputs(&state, pipeline, external_inputs, n_external_inputs);
-    }
-    
-    // Topological propagation and validation
-    return validate_pipeline_dag(&state, pipeline, error_msg, error_msg_size);
-}
-```
+1. **Initialize starting points**: Sources propagate UNKNOWN through SET behaviors
+2. **Apply external inputs**: For nested pipelines, use provided property tables
+3. **Topological traversal**: Process filters in dependency order
+4. **Property propagation**: Apply behaviors to compute outputs
+5. **Constraint validation**: Check all requirements are met
 
-#### 2. Pipeline Contract Computation
+#### Pipeline Contract Computation
 
-The pipeline's external contract should ideally be computed at init time by analyzing the internal topology:
+At init time, pipelines compute their external contract from internal topology:
 
-```c
-Bp_EC pipeline_init(Pipeline_t* pipe, Pipeline_config_t config)
-{
-    // ... standard initialization ...
-    
-    // Compute external contract from internal topology
-    compute_pipeline_contract(pipe);
-    return Bp_EC_OK;
-}
+1. **Backward aggregation**: Collect all constraints from filters on the path
+2. **Forward composition**: Combine behaviors along the path
+3. **Port mapping**: Only expose constraints/behaviors for designated input/output ports
 
-void compute_pipeline_contract(Pipeline_t* pipe)
-{
-    // Step 1: Backward - Aggregate constraints along path
-    // All constraints from filters between input and output must be satisfied
-    // Only constraints applying to the exposed input port are propagated
-    aggregate_path_constraints(pipe, pipe->input_filter, pipe->input_port,
-                              pipe->output_filter);
-    
-    // Step 2: Forward - Compose behaviors along path  
-    // Behaviors transform as they flow through the pipeline
-    // Only behaviors from the exposed output port are propagated
-    compose_path_behaviors(pipe, pipe->input_filter, 
-                          pipe->output_filter, pipe->output_port);
-    
-    // Note: Actual output PROPERTIES can only be computed when input 
-    // properties are known (during validation), but BEHAVIORS can be 
-    // determined from topology alone
-}
-```
-
-The key insight is that behaviors (transformations) can be computed statically from topology, while actual property values require runtime input.
-
-#### 3. Connection Mapping
-
-When validating connections to/from nested pipelines:
-
-```c
-// Connection to nested pipeline input
-if (to_filter->filt_type == FILT_T_PIPELINE) {
-    Pipeline_t* nested = (Pipeline_t*)to_filter;
-    // Validate against the nested pipeline's input filter constraints
-    Filter_t* actual_input = nested->input_filter;
-    validate_connection(from_filter, actual_input);
-}
-
-// Connection from nested pipeline output  
-if (from_filter->filt_type == FILT_T_PIPELINE) {
-    Pipeline_t* nested = (Pipeline_t*)from_filter;
-    // Use computed properties from nested pipeline's output filter
-    PropertyTable_t* actual_output_props = get_computed_props(nested->output_filter);
-    validate_with_properties(actual_output_props, to_filter);
-}
-```
+Note: Behaviors (transformations) can be computed statically, but actual property values require input properties.
 
 ### Example: Nested Pipeline Validation
 
