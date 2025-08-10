@@ -61,14 +61,21 @@ prop_set_all_unknown(&unknown);
 computed_props[source_idx] = propagate_properties(source, &unknown, 0);
 ```
 
-Source filters must use SET behaviors for all properties they generate:
+Source filters use SET behaviors for properties they can determine:
 ```c
-// Signal generator example
+// Signal generator - knows all properties
 prop_append_behavior(&sg->base, OUTPUT_0, PROP_DATA_TYPE, 
                     BEHAVIOR_OP_SET, &(SampleDtype_t){DTYPE_FLOAT});
 prop_append_behavior(&sg->base, OUTPUT_0, PROP_SAMPLE_PERIOD_NS,
                     BEHAVIOR_OP_SET, &period_ns);
+
+// CSV source - might not know sample rate
+prop_append_behavior(&csv->base, OUTPUT_0, PROP_DATA_TYPE,
+                    BEHAVIOR_OP_SET, &(SampleDtype_t){DTYPE_FLOAT});
+// No behavior for SAMPLE_PERIOD_NS if unknown - stays UNKNOWN
 ```
+
+Properties without SET behaviors remain UNKNOWN, which is a valid state that will cause validation to fail if downstream filters require them.
 
 ### 2. Transform Filters
 Transform filters compute output properties based on behaviors:
@@ -197,16 +204,39 @@ SignalGen2 ────────────────↗
 Error messages should include:
 1. Which filters are involved
 2. Which property failed validation
-3. Expected vs actual values
+3. Expected vs actual values (including UNKNOWN)
 4. Path through pipeline to failure point
 
-Example:
+### Common Validation Failures
+
+#### Unknown Property Required
+```
+Property validation failed at 'CSVSink':
+  Input 0 (from CSVSource): sample_period = UNKNOWN
+  Constraint: sample_period EXISTS
+  CSVSink requires sample_period but upstream provides UNKNOWN
+  
+  Solutions:
+  - Provide sample_rate_hz when configuring CSVSource
+  - Add a resampler or other filter that sets sample_period
+  - Use a sink that doesn't require sample_period
+```
+
+#### Property Mismatch
 ```
 Property validation failed at 'Mixer':
   Input 0 (from Passthrough): sample_period = 20833ns (48kHz)
   Input 1 (from SignalGen2): sample_period = 22675ns (44.1kHz)
   Constraint: MULTI_INPUT_ALIGNED on sample_period
   All inputs must have matching sample periods
+```
+
+#### Type Mismatch
+```
+Property validation failed at 'IntProcessor':
+  Input 0 (from FloatSource): data_type = FLOAT
+  Constraint: data_type == INT32
+  IntProcessor requires INT32 but upstream provides FLOAT
 ```
 
 ## API Functions

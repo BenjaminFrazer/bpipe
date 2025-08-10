@@ -34,6 +34,15 @@ Output properties are not stored directly but computed during validation by:
 1. For source filters: Propagating an UNKNOWN property table through SET behaviors
 2. For transform filters: Propagating input properties through behaviors (PRESERVE/SET)
 
+### Unknown Properties
+
+Properties remain UNKNOWN when:
+- Source filters cannot determine them (e.g., file sources before reading)
+- No behavior is specified for that property
+- Upstream filters provide UNKNOWN and filter uses PRESERVE
+
+UNKNOWN is a valid state that causes validation to fail if downstream filters require that property. This ensures explicit handling of missing information.
+
 ## Filter API Usage
 
 ### Declaring Input Requirements
@@ -111,6 +120,67 @@ Proposed but not yet implemented - would happen before pipeline start:
 2. **Property Inference**: Compute intermediate filter properties from behaviors
 3. **End-to-End Validation**: Verify complete data flow compatibility
 4. **See**: `specs/pipeline_property_validation.md` for design details
+
+## Handling Unknown Properties
+
+### When Properties Are Unknown
+
+Some source filters cannot determine all properties at initialization:
+
+```c
+// CSV source might not know sample rate until file is read
+Bp_EC csv_source_init(CSVSource_t* src, CSVSource_config_t config)
+{
+    // Data type is known
+    prop_append_behavior(&src->base, OUTPUT_0, PROP_DATA_TYPE,
+                        BEHAVIOR_OP_SET, &(SampleDtype_t){DTYPE_FLOAT});
+    
+    // Sample rate might be unknown
+    if (config.sample_rate_hz > 0) {
+        // User provided it
+        uint64_t period = 1000000000ULL / config.sample_rate_hz;
+        prop_append_behavior(&src->base, OUTPUT_0, PROP_SAMPLE_PERIOD_NS,
+                            BEHAVIOR_OP_SET, &period);
+    }
+    // No behavior = property remains UNKNOWN
+}
+```
+
+### Validation with Unknown Properties
+
+Validation correctly fails when required properties are UNKNOWN:
+
+```
+Pipeline: CSVSource → CSVSink
+          ↓
+  sample_period: UNKNOWN
+                      ↓
+              CSVSink requires: sample_period EXISTS
+                      ↓
+              VALIDATION FAILS
+```
+
+### Solutions for Unknown Properties
+
+1. **Provide the property value at configuration**:
+   ```c
+   CSVSource_config_t config = {
+       .sample_rate_hz = 48000  // User knows the rate
+   };
+   ```
+
+2. **Add signal conditioning filters**:
+   ```c
+   // Pipeline: CSVSource → Resampler → CSVSink
+   //                        ↑
+   //                Sets sample_period
+   ```
+
+3. **Use tolerant downstream filters**:
+   ```c
+   // Use DebugOutput instead of CSVSink
+   // DebugOutput doesn't require sample_period
+   ```
 
 ## Examples
 
@@ -276,6 +346,7 @@ prop_append_constraint(&filter->base, INPUT_0 | INPUT_1, PROP_SAMPLE_PERIOD_NS,
 2. **Set Output Properties**: Always set properties for data your filter produces
 3. **Use Buffer Helpers**: Use `prop_constraints_from_buffer_append()` when appropriate
 4. **Test Validation**: Verify that incompatible connections are properly rejected
+5. **Handle Unknown Properties**: Source filters should leave properties UNKNOWN if they cannot be determined
 
 ## Pipeline Integration
 
