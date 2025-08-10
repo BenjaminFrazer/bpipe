@@ -27,6 +27,7 @@
 
 #define MAX_SINKS 10
 #define MAX_INPUTS 10
+#define MAX_OUTPUTS 8               // max 8 output ports per filter
 #define MAX_CAPACITY_EXPO 30       // max 1GB capacity
 #define MAX_RING_CAPACITY_EXPO 12  // max 4016 entries in ring buffer
 //
@@ -151,7 +152,8 @@ typedef struct _Filter_t {
   OutputBehavior_t output_behaviors[MAX_BEHAVIORS];
   size_t n_output_behaviors;          // Number of active behaviors
   FilterContract_t contract;          // Uses above arrays
-  PropertyTable_t output_properties;  // Cached output properties
+  PropertyTable_t output_properties[MAX_OUTPUTS];  // Cached output properties per port
+  uint32_t n_outputs;                 // Number of output ports (default 1)
   PropertyTable_t
       input_properties[MAX_INPUTS];  // Properties of connected inputs
 } Filter_t;

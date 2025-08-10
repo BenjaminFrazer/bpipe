@@ -1,6 +1,7 @@
 #include "pipeline.h"
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 
 /* Forward declarations */
 static Bp_EC pipeline_start(Filter_t* self);
@@ -143,6 +144,18 @@ static Bp_EC pipeline_start(Filter_t* self)
 {
   Pipeline_t* pipe = (Pipeline_t*) self;
 
+  /* Phase 0.4: Validate properties before starting filters */
+  char error_msg[256];
+  Bp_EC validation_err =
+      pipeline_validate_properties(pipe, error_msg, sizeof(error_msg));
+  if (validation_err != Bp_EC_OK) {
+    /* Log error message if validation fails */
+    if (strlen(error_msg) > 0) {
+      fprintf(stderr, "Pipeline validation failed: %s\n", error_msg);
+    }
+    return validation_err;
+  }
+
   /* Start internal filters (order doesn't matter - they're already connected)
    */
   for (size_t i = 0; i < pipe->n_filters; i++) {
@@ -253,4 +266,329 @@ static void* pipeline_worker(void* arg)
    */
   (void) arg; /* Suppress unused parameter warning */
   return NULL;
+}
+
+/* Add a filter as a pipeline input with expected properties */
+Bp_EC pipeline_add_input(Pipeline_t* pipeline, Filter_t* filter,
+                        const PropertyTable_t* expected_properties,
+                        size_t n_inputs)
+{
+  if (!pipeline || !filter) {
+    return Bp_EC_NULL_POINTER;
+  }
+  
+  if (pipeline->n_pipeline_inputs >= MAX_INPUTS) {
+    return Bp_EC_INVALID_CONFIG;
+  }
+  
+  /* Verify the filter is in our pipeline */
+  if (!pipeline_contains_filter(pipeline, filter)) {
+    return Bp_EC_INVALID_CONFIG;
+  }
+  
+  /* Store the pipeline input declaration */
+  PipelineInput_t* input = &pipeline->pipeline_inputs[pipeline->n_pipeline_inputs];
+  input->filter = filter;
+  input->n_inputs = n_inputs;
+  
+  /* Copy the expected properties if provided */
+  if (expected_properties && n_inputs > 0) {
+    for (size_t i = 0; i < n_inputs && i < MAX_INPUTS; i++) {
+      input->expected_properties[i] = expected_properties[i];
+    }
+  }
+  
+  pipeline->n_pipeline_inputs++;
+  return Bp_EC_OK;
+}
+
+/* Helper function for topological sort using DFS */
+static Bp_EC topological_sort_visit(Filter_t* filter, Pipeline_t* pipe,
+                                    Filter_t** sorted, size_t* n_sorted,
+                                    bool* visited, bool* visiting)
+{
+  /* Find the index of this filter */
+  size_t filter_idx = 0;
+  for (size_t i = 0; i < pipe->n_filters; i++) {
+    if (pipe->filters[i] == filter) {
+      filter_idx = i;
+      break;
+    }
+  }
+  
+  if (visiting[filter_idx]) {
+    /* Cycle detected */
+    return Bp_EC_INVALID_CONFIG;
+  }
+  
+  if (visited[filter_idx]) {
+    /* Already processed */
+    return Bp_EC_OK;
+  }
+  
+  visiting[filter_idx] = true;
+  
+  /* Visit all filters that depend on this filter (downstream filters) */
+  for (size_t i = 0; i < pipe->n_connections; i++) {
+    if (pipe->connections[i].from_filter == filter) {
+      Bp_EC err = topological_sort_visit(pipe->connections[i].to_filter, pipe,
+                                         sorted, n_sorted, visited, visiting);
+      if (err != Bp_EC_OK) {
+        return err;
+      }
+    }
+  }
+  
+  visiting[filter_idx] = false;
+  visited[filter_idx] = true;
+  
+  /* Add to sorted list (in reverse order - we'll process from end) */
+  sorted[(*n_sorted)++] = filter;
+  
+  return Bp_EC_OK;
+}
+
+/* Perform topological sort of filters in the pipeline */
+static Bp_EC topological_sort(Pipeline_t* pipe, Filter_t** sorted,
+                              size_t* n_sorted)
+{
+  if (!pipe || !sorted || !n_sorted) {
+    return Bp_EC_NULL_POINTER;
+  }
+  
+  bool visited[pipe->n_filters];
+  bool visiting[pipe->n_filters];
+  memset(visited, 0, sizeof(visited));
+  memset(visiting, 0, sizeof(visiting));
+  *n_sorted = 0;
+  
+  /* Start with source filters (no inputs) and pipeline inputs */
+  for (size_t i = 0; i < pipe->n_filters; i++) {
+    Filter_t* filter = pipe->filters[i];
+    bool is_source = (filter->n_input_buffers == 0);
+    bool is_pipeline_input = false;
+    
+    /* Check if it's a declared pipeline input */
+    for (size_t j = 0; j < pipe->n_pipeline_inputs; j++) {
+      if (pipe->pipeline_inputs[j].filter == filter) {
+        is_pipeline_input = true;
+        break;
+      }
+    }
+    
+    /* Also check for filters with no upstream connections in the pipeline */
+    bool has_upstream = false;
+    for (size_t j = 0; j < pipe->n_connections; j++) {
+      if (pipe->connections[j].to_filter == filter) {
+        has_upstream = true;
+        break;
+      }
+    }
+    
+    if (is_source || is_pipeline_input || !has_upstream) {
+      Bp_EC err = topological_sort_visit(filter, pipe, sorted, n_sorted,
+                                         visited, visiting);
+      if (err != Bp_EC_OK) {
+        return err;
+      }
+    }
+  }
+  
+  /* Check if all filters were visited */
+  if (*n_sorted != pipe->n_filters) {
+    /* Some filters are unreachable or there's a disconnected component */
+    for (size_t i = 0; i < pipe->n_filters; i++) {
+      if (!visited[i]) {
+        Bp_EC err = topological_sort_visit(pipe->filters[i], pipe, sorted,
+                                           n_sorted, visited, visiting);
+        if (err != Bp_EC_OK) {
+          return err;
+        }
+      }
+    }
+  }
+  
+  /* Reverse the sorted array (we built it in reverse order) */
+  for (size_t i = 0; i < *n_sorted / 2; i++) {
+    Filter_t* tmp = sorted[i];
+    sorted[i] = sorted[*n_sorted - 1 - i];
+    sorted[*n_sorted - 1 - i] = tmp;
+  }
+  
+  return Bp_EC_OK;
+}
+
+/* Helper to find pipeline input properties for a filter */
+static PropertyTable_t* find_pipeline_input_properties(Pipeline_t* pipe,
+                                                       Filter_t* filter,
+                                                       size_t input_port)
+{
+  for (size_t i = 0; i < pipe->n_pipeline_inputs; i++) {
+    if (pipe->pipeline_inputs[i].filter == filter &&
+        input_port < pipe->pipeline_inputs[i].n_inputs) {
+      return &pipe->pipeline_inputs[i].expected_properties[input_port];
+    }
+  }
+  return NULL;
+}
+
+/* Validate properties throughout the pipeline
+ * Phase 2: Full DAG support with topological sort
+ */
+Bp_EC pipeline_validate_properties(Pipeline_t* pipe, char* error_msg,
+                                   size_t error_msg_size)
+{
+  if (!pipe) {
+    return Bp_EC_NULL_POINTER;
+  }
+
+  /* Clear error message if provided */
+  if (error_msg && error_msg_size > 0) {
+    error_msg[0] = '\0';
+  }
+
+  /* Phase 2: Full DAG support with topological sort */
+  
+  /* Perform topological sort */
+  Filter_t* sorted[pipe->n_filters];
+  size_t n_sorted = 0;
+  Bp_EC sort_err = topological_sort(pipe, sorted, &n_sorted);
+  if (sort_err != Bp_EC_OK) {
+    if (error_msg && error_msg_size > 0) {
+      snprintf(error_msg, error_msg_size, "Pipeline contains a cycle");
+    }
+    return sort_err;
+  }
+
+  /* Process filters in topological order */
+  for (size_t i = 0; i < n_sorted; i++) {
+    Filter_t* filter = sorted[i];
+    if (!filter) continue;
+
+    /* Check if this is a source filter (no inputs) */
+    bool is_source = (filter->n_input_buffers == 0);
+
+    if (is_source) {
+      /* Source filter: propagate from UNKNOWN inputs */
+      PropertyTable_t unknown = prop_table_init();
+      prop_set_all_unknown(&unknown);
+
+      /* Propagate properties through the filter for each output port */
+      for (uint32_t port = 0; port < filter->n_outputs; port++) {
+        filter->output_properties[port] = prop_propagate(NULL, 0, &filter->contract, port);
+      }
+    } else {
+      /* Transform/sink filter: collect input properties and validate */
+      
+      /* Collect input properties for all input ports */
+      for (size_t input_port = 0; input_port < filter->n_input_buffers; input_port++) {
+        /* First check if this is a declared pipeline input */
+        PropertyTable_t* pipeline_input_props = 
+            find_pipeline_input_properties(pipe, filter, input_port);
+        
+        if (pipeline_input_props) {
+          /* Use the declared pipeline input properties */
+          filter->input_properties[input_port] = *pipeline_input_props;
+        } else {
+          /* Find the upstream filter that connects to this input port */
+          Filter_t* upstream = NULL;
+          size_t upstream_port = 0;
+          bool found_connection = false;
+
+          for (size_t j = 0; j < pipe->n_connections; j++) {
+            if (pipe->connections[j].to_filter == filter &&
+                pipe->connections[j].to_port == input_port) {
+              upstream = pipe->connections[j].from_filter;
+              upstream_port = pipe->connections[j].from_port;
+              found_connection = true;
+              break;
+            }
+          }
+
+          if (found_connection && upstream) {
+            /* Validate connection constraints */
+            Bp_EC err = prop_validate_connection(
+                &upstream->output_properties[upstream_port],
+                &filter->contract, input_port,
+                error_msg, error_msg_size);
+            
+            if (err != Bp_EC_OK) {
+              /* Add context to error message */
+              if (error_msg && error_msg_size > 0) {
+                size_t len = strlen(error_msg);
+                if (len < error_msg_size - 1) {
+                  snprintf(error_msg + len, error_msg_size - len,
+                           " (Connection: %s[%zu] -> %s[%zu])",
+                           upstream->name, upstream_port,
+                           filter->name, input_port);
+                }
+              }
+              return err;
+            }
+            
+            /* Store input properties for this connection */
+            filter->input_properties[input_port] = 
+                upstream->output_properties[upstream_port];
+          } else if (filter == pipe->input_filter && input_port == pipe->input_port) {
+            /* This is the pipeline's input port - use UNKNOWN */
+            PropertyTable_t unknown = prop_table_init();
+            prop_set_all_unknown(&unknown);
+            filter->input_properties[input_port] = unknown;
+          } else {
+            /* No upstream connection and not a pipeline input - error */
+            if (error_msg && error_msg_size > 0) {
+              snprintf(error_msg, error_msg_size,
+                       "Filter '%s' input port %zu has no upstream connection",
+                       filter->name, input_port);
+            }
+            return Bp_EC_INVALID_CONFIG;
+          }
+        }
+      }
+      
+      /* Validate multi-input alignment constraints if applicable */
+      for (size_t j = 0; j < filter->n_input_constraints; j++) {
+        const InputConstraint_t* constraint = &filter->input_constraints[j];
+        if (constraint->op == CONSTRAINT_OP_MULTI_INPUT_ALIGNED) {
+          /* Check alignment across specified input ports */
+          Property_t* first_prop = NULL;
+          size_t first_port = 0;
+          
+          for (size_t port = 0; port < filter->n_input_buffers; port++) {
+            if (constraint->input_mask & (1 << port)) {
+              Property_t* prop = &filter->input_properties[port].properties[constraint->property];
+              
+              if (!first_prop) {
+                first_prop = prop;
+                first_port = port;
+              } else {
+                /* Compare with first property */
+                if (prop->known != first_prop->known ||
+                    (prop->known && memcmp(&prop->value, &first_prop->value, sizeof(prop->value)) != 0)) {
+                  if (error_msg && error_msg_size > 0) {
+                    snprintf(error_msg, error_msg_size,
+                             "Multi-input alignment constraint failed for property '%s' on filter '%s': "
+                             "input port %zu differs from port %zu",
+                             prop_get_name(constraint->property), filter->name,
+                             port, first_port);
+                  }
+                  return Bp_EC_PROPERTY_MISMATCH;
+                }
+              }
+            }
+          }
+        }
+      }
+      
+      /* Propagate properties through this filter for each output port */
+      for (uint32_t port = 0; port < filter->n_outputs; port++) {
+        filter->output_properties[port] = prop_propagate(
+            filter->input_properties, filter->n_input_buffers,
+            &filter->contract, port);
+      }
+    }
+  }
+
+  /* All filters validated successfully */
+  return Bp_EC_OK;
 }

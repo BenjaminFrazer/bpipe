@@ -1,5 +1,15 @@
 # Pipeline Property Validation Specification
 
+## Implementation Status
+
+**This document describes the DESIGN SPECIFICATION for pipeline-wide property validation.**
+
+**Current Status**: NOT YET IMPLEMENTED
+- The algorithms and APIs described here are the target design
+- Individual filters can declare constraints and behaviors (implemented)
+- Pipeline-wide validation and property propagation (not implemented)
+- See `filter_capability_system.md` for what's currently implemented
+
 ## Overview
 
 This document specifies how property validation works across an entire filter pipeline (DAG), including propagation of properties through filters and validation of multi-input alignment constraints.
@@ -199,14 +209,18 @@ Properties are computed once and cached in `filter->output_properties[port]` bec
 
 For multi-output support, the Filter structure needs:
 ```c
+#define MAX_OUTPUTS 8  // Maximum number of output ports per filter
+
 typedef struct _Filter_t {
     // ... other fields ...
     PropertyTable_t output_properties[MAX_OUTPUTS];  // One table per output port
+    uint32_t n_outputs;                              // Actual number of outputs
     // ... other fields ...
 } Filter_t;
 ```
 
 Single-output filters can use `output_properties[0]` for backward compatibility.
+Most filters have 1 output, but multi-output filters (routers, splitters) need multiple property tables.
 
 
 ## Multi-Input Validation
@@ -455,8 +469,8 @@ pipeline_start(&pipeline);
 Pipeline_t pipeline;
 pipeline_init(&pipeline, config);
 
-// Make connections (basic validation happens here)
-filt_connect(source, 0, sink, 0);  // Quick local checks
+// Make connections (no validation, just DAG building)
+filt_connect(source, 0, sink, 0);  // Just establishes edges
 
 // Validate entire pipeline before starting
 Bp_EC err = pipeline_validate_properties(&pipeline, NULL, 0, 

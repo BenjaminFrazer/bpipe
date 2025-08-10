@@ -154,7 +154,7 @@ void test_property_propagation_set(void)
                                .output_behaviors = behaviors,
                                .n_output_behaviors = 1};
 
-  PropertyTable_t downstream = prop_propagate(&upstream, &contract);
+  PropertyTable_t downstream = prop_propagate(&upstream, 1, &contract, 0);
 
   uint32_t rate;
   TEST_ASSERT_TRUE(prop_get_sample_rate_hz(&downstream, &rate));
@@ -173,7 +173,7 @@ void test_property_propagation_preserve(void)
                                .output_behaviors = NULL,
                                .n_output_behaviors = 0};
 
-  PropertyTable_t downstream = prop_propagate(&upstream, &contract);
+  PropertyTable_t downstream = prop_propagate(&upstream, 1, &contract, 0);
 
   // All properties should be preserved
   SampleDtype_t dtype;
@@ -260,21 +260,21 @@ void test_signal_generator_properties(void)
   SampleDtype_t dtype;
   uint32_t rate, batch_cap;
 
-  TEST_ASSERT_TRUE(prop_get_dtype(&sg.base.output_properties, &dtype));
+  TEST_ASSERT_TRUE(prop_get_dtype(&sg.base.output_properties[0], &dtype));
   TEST_ASSERT_EQUAL(DTYPE_FLOAT, dtype);
 
-  TEST_ASSERT_TRUE(prop_get_sample_rate_hz(&sg.base.output_properties, &rate));
+  TEST_ASSERT_TRUE(prop_get_sample_rate_hz(&sg.base.output_properties[0], &rate));
   TEST_ASSERT_EQUAL(48000, rate);  // 1e9 / 20833 ≈ 48000
 
   TEST_ASSERT_TRUE(
-      prop_get_max_batch_capacity(&sg.base.output_properties, &batch_cap));
+      prop_get_max_batch_capacity(&sg.base.output_properties[0], &batch_cap));
   TEST_ASSERT_EQUAL(128, batch_cap);
 
   // Signal generator is a source filter with no input constraints
   // but it should have set output properties
-  TEST_ASSERT(sg.base.output_properties.properties[PROP_DATA_TYPE].known);
+  TEST_ASSERT(sg.base.output_properties[0].properties[PROP_DATA_TYPE].known);
   TEST_ASSERT(
-      sg.base.output_properties.properties[PROP_SAMPLE_PERIOD_NS].known);
+      sg.base.output_properties[0].properties[PROP_SAMPLE_PERIOD_NS].known);
 }
 
 void test_csv_sink_type_constraint(void)

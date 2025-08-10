@@ -12,6 +12,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
    - `docs/public_api_reference.md` - MUST know API conventions
    - `docs/threading_model.md` - MUST understand threading requirements
    - `docs/error_handling_guide.md` - MUST follow error patterns
+   - `docs/filter_capability_system.md` - MUST understand property constraints and behaviors
+   - `docs/pipeline_property_validation.md` - MUST understand pipeline-wide validation
 
 **IMPORTANT**: If you have not read the above documents, STOP and read them NOW. Do not proceed with any implementation work until you understand these core concepts. This is non-negotiable.
 

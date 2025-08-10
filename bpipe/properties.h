@@ -116,6 +116,11 @@ typedef struct {
 /* Initialize a property table with default values */
 PropertyTable_t prop_table_init(void);
 
+/* Set all properties in a table to unknown state
+ * Used by source filters to create UNKNOWN input for prop_propagate
+ */
+void prop_set_all_unknown(PropertyTable_t* table);
+
 /* Set a property in the table */
 Bp_EC prop_set_dtype(PropertyTable_t* table, SampleDtype_t dtype);
 Bp_EC prop_set_min_batch_capacity(PropertyTable_t* table, uint32_t capacity);
@@ -150,9 +155,18 @@ Bp_EC prop_validate_multi_input_alignment(
     const PropertyTable_t* new_input_props, char* error_msg,
     size_t error_msg_size);
 
-/* Propagate properties through a filter (inheritance + behaviors) */
-PropertyTable_t prop_propagate(const PropertyTable_t* upstream,
-                               const FilterContract_t* filter_contract);
+/* Propagate properties through a filter (inheritance + behaviors)
+ * @param input_properties: Array of properties from all input ports
+ * @param n_inputs: Number of connected inputs (0 for source filters)
+ * @param filter_contract: Filter's contract defining behaviors
+ * @param output_port: Which output port to compute properties for (0-based)
+ * For source filters (n_inputs == 0), uses UNKNOWN properties
+ * For PRESERVE behavior, uses operand.u32 to select input to preserve from
+ */
+PropertyTable_t prop_propagate(const PropertyTable_t* input_properties,
+                               size_t n_inputs,
+                               const FilterContract_t* filter_contract,
+                               uint32_t output_port);
 
 /* Extract properties from a batch buffer configuration
  * Sets both min and max batch capacity to the buffer's capacity

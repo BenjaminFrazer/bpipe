@@ -19,6 +19,19 @@ PropertyTable_t prop_table_init(void)
   return table;
 }
 
+/* Set all properties in a table to unknown state */
+void prop_set_all_unknown(PropertyTable_t* table)
+{
+  if (!table) return;
+
+  /* Set all properties to unknown (known=false) */
+  for (int i = 0; i <= PROP_COUNT_MVP; i++) {
+    table->properties[i].known = false;
+    /* Clear values for safety */
+    memset(&table->properties[i].value, 0, sizeof(table->properties[i].value));
+  }
+}
+
 /* Set a property in the table */
 Bp_EC prop_set_dtype(PropertyTable_t* table, SampleDtype_t dtype)
 {
@@ -429,30 +442,52 @@ Bp_EC prop_validate_multi_input_alignment(
 }
 
 /* Apply a single behavior */
-static void apply_behavior(Property_t* prop, const OutputBehavior_t* behavior)
+static void apply_behavior(Property_t* prop, const OutputBehavior_t* behavior,
+                          const PropertyTable_t* input_properties,
+                          size_t n_inputs)
 {
   switch (behavior->op) {
     case BEHAVIOR_OP_SET:
       prop->known = true;
       if (behavior->property == PROP_DATA_TYPE) {
         prop->value.dtype = behavior->operand.dtype;
+      } else if (behavior->property == PROP_SAMPLE_PERIOD_NS) {
+        prop->value.u64 = behavior->operand.u64;
       } else {
         prop->value.u32 = behavior->operand.u32;
       }
       break;
 
     case BEHAVIOR_OP_PRESERVE:
-      /* Property already inherited from upstream - do nothing */
+      /* Preserve from specified input (default to input 0) */
+      if (n_inputs > 0 && input_properties != NULL) {
+        uint32_t input_idx = behavior->operand.u32;  /* Which input to preserve from */
+        if (input_idx >= n_inputs) {
+          input_idx = 0;  /* Default to input 0 if out of range */
+        }
+        /* Copy the property from the selected input */
+        *prop = input_properties[input_idx].properties[behavior->property];
+      }
       break;
   }
 }
 
 /* Propagate properties through a filter (inheritance + behaviors) */
-PropertyTable_t prop_propagate(const PropertyTable_t* upstream,
-                               const FilterContract_t* filter_contract)
+PropertyTable_t prop_propagate(const PropertyTable_t* input_properties,
+                               size_t n_inputs,
+                               const FilterContract_t* filter_contract,
+                               uint32_t output_port)
 {
-  /* Start with upstream properties (inheritance by default) */
-  PropertyTable_t downstream = *upstream;
+  PropertyTable_t downstream;
+  
+  /* For source filters (n_inputs == 0), start with UNKNOWN properties */
+  if (n_inputs == 0 || input_properties == NULL) {
+    downstream = prop_table_init();
+    prop_set_all_unknown(&downstream);
+  } else {
+    /* Start with properties from first input (inheritance by default) */
+    downstream = input_properties[0];
+  }
 
   if (!filter_contract) {
     return downstream;
@@ -460,9 +495,16 @@ PropertyTable_t prop_propagate(const PropertyTable_t* upstream,
 
   /* Apply filter's output behaviors using count */
   const OutputBehavior_t* behaviors = filter_contract->output_behaviors;
+  uint32_t output_mask = 1U << output_port;
+  
   if (behaviors) {
     for (size_t i = 0; i < filter_contract->n_output_behaviors; i++) {
       const OutputBehavior_t* behavior = &behaviors[i];
+
+      /* Skip behaviors that don't apply to this output port */
+      if ((behavior->output_mask & output_mask) == 0) {
+        continue;
+      }
 
       /* Validate property index */
       if (behavior->property > PROP_COUNT_MVP || behavior->property < 1) {
@@ -470,7 +512,8 @@ PropertyTable_t prop_propagate(const PropertyTable_t* upstream,
       }
 
       /* Direct indexing - enums match array indices */
-      apply_behavior(&downstream.properties[behavior->property], behavior);
+      apply_behavior(&downstream.properties[behavior->property], behavior,
+                    input_properties, n_inputs);
     }
   }
 

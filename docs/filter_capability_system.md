@@ -1,5 +1,26 @@
 # Filter Capability and Requirements System
 
+## Implementation Status
+
+**Implemented**:
+- Basic property table structure and operations
+- Input constraint declarations via `prop_append_constraint()`
+- Output behavior declarations via `prop_append_behavior()`
+- SET and PRESERVE behavior operators
+- Basic constraint operators (EXISTS, EQ, GTE, LTE)
+- Helper functions for buffer-based filters
+
+**Specified but Not Implemented**:
+- Pipeline-wide validation (`pipeline_validate_properties()`)
+- Property propagation through `prop_propagate()`
+- Multi-input alignment constraints (CONSTRAINT_OP_MULTI_INPUT_ALIGNED)
+- Error message retrieval API
+- Multi-output filter support with MAX_OUTPUTS
+
+**Connection Validation Status**:
+- `filt_connect()` currently only establishes DAG edges, no validation
+- Full validation is deferred to the pipeline validation phase (not yet implemented)
+
 ## Overview
 
 The property system allows filters to explicitly declare their input requirements and output capabilities, enabling automatic validation of filter connections and preventing runtime failures from incompatible configurations.
@@ -114,20 +135,23 @@ prop_set_output_behavior_for_buffer_filter(&matcher->base, &config.buff_config,
 The system performs validation at two levels:
 
 ### Local (Pairwise) Validation
-Currently implemented behavior during `filt_connect()`:
+**Current Implementation**: `filt_connect()` behavior:
 
 1. **Simple connection**: `filt_connect()` just establishes DAG edges
 2. **No validation**: Connection doesn't validate properties (they may not be computed yet)
 3. **Order-independent**: Filters can be connected in any order
 4. **Deferred validation**: Property validation happens during pipeline validation phase
 
-### Global (Pipeline) Validation
-Proposed but not yet implemented - would happen before pipeline start:
+**Future Enhancement**: The `prop_validate_connection()` function exists in the API but is not called during connection. It could be used for eager validation once property computation is implemented.
 
+### Global (Pipeline) Validation
+**Status**: NOT YET IMPLEMENTED (see `pipeline_property_validation.md` for full specification)
+
+Would happen before pipeline start:
 1. **Graph Traversal**: Walk entire filter DAG to propagate properties
 2. **Property Inference**: Compute intermediate filter properties from behaviors
 3. **End-to-End Validation**: Verify complete data flow compatibility
-4. **See**: `specs/pipeline_property_validation.md` for design details
+4. **Multi-input Alignment**: Validate synchronized input requirements
 
 ## Handling Unknown Properties
 
@@ -252,8 +276,10 @@ Bp_EC map_init(Map_filt_t* f, Map_config_t config)
 }
 ```
 
-### Multi-Input Alignment (Proposed)
-For filters requiring aligned inputs, use `CONSTRAINT_OP_MULTI_INPUT_ALIGNED` on specific properties:
+### Multi-Input Alignment (NOT YET IMPLEMENTED)
+**Status**: Specified in `pipeline_property_validation.md` but not yet implemented.
+
+For filters requiring aligned inputs, will use `CONSTRAINT_OP_MULTI_INPUT_ALIGNED` on specific properties:
 
 ```c
 // Element-wise operation - inputs 0 and 1 must have matching properties
@@ -266,6 +292,8 @@ prop_append_constraint(&filter->base, INPUT_0 | INPUT_1, PROP_SAMPLE_PERIOD_NS,
 prop_append_constraint(&mixer->base, INPUT_ALL, PROP_SAMPLE_PERIOD_NS,
                       CONSTRAINT_OP_MULTI_INPUT_ALIGNED, NULL);
 ```
+
+When implemented, validation will verify that specified properties match across all indicated input ports.
 
 ### Multi-Port Filter Example
 ```c
@@ -367,38 +395,37 @@ Pipelines inherit from `Filter_t` and must present a property contract like any 
 
 See `docs/pipeline_property_validation.md` for detailed pipeline validation specification.
 
-## Remaining Work
+## Implementation Roadmap
 
-### Core System Improvements
-- **Pipeline-wide validation**: Implement graph traversal to propagate properties through entire pipeline
-- **Property propagation**: Actually apply declared behaviors (PRESERVE, SET) to compute filter output properties
-- **Error message retrieval**: Currently error messages are lost - need API to retrieve them
-- **Multi-input handling**: Support property merging for filters with multiple inputs
-- **Pipeline contract computation**: Implement backward constraint aggregation and forward behavior composition
+### Phase 1: Core Infrastructure (NOT YET IMPLEMENTED)
+- **Property propagation**: Implement `prop_propagate()` to compute output properties from behaviors
+- **Pipeline validation**: Implement `pipeline_validate_properties()` for DAG traversal
+- **Error reporting**: Add error message retrieval API with context
+- **Structural support**: Add `MAX_OUTPUTS` definition and multi-output property tables
 
-### Missing Filter Features
-- **Output behavior declarations**: Many filters declare constraints but not how they transform properties
-- **Dynamic property updates**: Support for filters that determine properties at start time
-- **Property negotiation**: Allow filters to adapt based on downstream requirements
-- **Channel count property**: Add support for multi-channel data streams
+### Phase 2: Advanced Features (NOT YET IMPLEMENTED)
+- **Multi-input alignment**: Implement CONSTRAINT_OP_MULTI_INPUT_ALIGNED validation
+- **Nested pipelines**: Support external input property tables
+- **Property negotiation**: Allow adaptive filters to query downstream requirements
+- **Channel count**: Add channel property support
 
-### Testing & Validation
-- **Comprehensive connection tests**: Test all constraint operators (GTE, LTE, EXISTS, EQ)
-- **Pipeline validation tests**: Test end-to-end property flow through complex DAGs
-- **Error case coverage**: Test all property mismatch scenarios
-- **Multi-input synchronization**: Test property conflicts from multiple sources
+### Phase 3: Filter Migration (PARTIALLY COMPLETE)
+**Completed**:
+- Signal generator: Full constraint and behavior declarations
+- CSV sink: Input constraints declared
+- Map filter: Buffer-based constraints and behaviors
+- Batch matcher: Adaptive behavior declarations
 
-### Documentation & Examples
-- **Complete migration guide**: Document all filters that still need migration
-- **Property flow diagrams**: Visual representation of property propagation
-- **Best practices guide**: When to use constraints vs behaviors
-- **Debugging guide**: How to troubleshoot property validation failures
+**Needs Migration**:
+- CSV source: Add proper UNKNOWN handling for sample rate
+- Remaining filters: Add constraint and behavior declarations
+- Multi-output filters: Update to use port-specific properties
 
-### Critical Gaps
-- **Intermediate filter properties never computed**: Filters declare behaviors but don't apply them
-- **No way to validate before start**: Need explicit validation API
-- **Silent failures**: Validation errors provide no feedback to users
-- **Incomplete filter migration**: Not all filters use the property system yet
+### Phase 4: Testing & Polish
+- **Unit tests**: Property system operations
+- **Integration tests**: End-to-end pipeline validation
+- **Error cases**: Comprehensive mismatch scenarios
+- **Documentation**: Complete examples and debugging guides
 
 ## Future Extensions
 
@@ -452,9 +479,11 @@ Arrays use explicit count fields (n_input_constraints, n_output_behaviors) to tr
 
 ## Appendix C: Error Handling
 
-Connection validation provides specific error codes:
+**Current State**: Error codes are defined but validation is not yet implemented.
+
+When implemented, validation will provide specific error codes:
 - `Bp_EC_PROPERTY_MISMATCH`: Properties don't meet constraints
 - `Bp_EC_INVALID_CONFIG`: Invalid constraint configuration
 - `Bp_EC_TYPE_ERROR`: Data type mismatch
 
-Error messages can be retrieved for debugging (future enhancement).
+Error messages will be retrievable through the validation API (see `pipeline_property_validation.md` for examples).
