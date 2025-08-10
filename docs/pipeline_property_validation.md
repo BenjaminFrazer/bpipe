@@ -327,11 +327,15 @@ void compute_pipeline_contract(Pipeline_t* pipe)
 {
     // Step 1: Backward - Aggregate constraints along path
     // All constraints from filters between input and output must be satisfied
-    aggregate_path_constraints(pipe, pipe->input_filter, pipe->output_filter);
+    // Only constraints applying to the exposed input port are propagated
+    aggregate_path_constraints(pipe, pipe->input_filter, pipe->input_port,
+                              pipe->output_filter);
     
     // Step 2: Forward - Compose behaviors along path  
     // Behaviors transform as they flow through the pipeline
-    compose_path_behaviors(pipe, pipe->input_filter, pipe->output_filter);
+    // Only behaviors from the exposed output port are propagated
+    compose_path_behaviors(pipe, pipe->input_filter, 
+                          pipe->output_filter, pipe->output_port);
     
     // Note: Actual output PROPERTIES can only be computed when input 
     // properties are known (during validation), but BEHAVIORS can be 

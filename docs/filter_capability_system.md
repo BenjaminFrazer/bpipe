@@ -105,11 +105,11 @@ Bp_EC csv_sink_init(CSVSink_t* sink, CSVSink_config_t config)
 {
     // ... initialization code ...
     
-    // Require float32 data and known sample rate
-    prop_append_constraint(&sink->base, PROP_DATA_TYPE, CONSTRAINT_OP_EQ, 
-                          &(SampleDtype_t){DTYPE_FLOAT});
-    prop_append_constraint(&sink->base, PROP_SAMPLE_PERIOD_NS, CONSTRAINT_OP_EXISTS, 
-                          NULL);
+    // Require float32 data and known sample rate on input 0
+    prop_append_constraint(&sink->base, INPUT_0, PROP_DATA_TYPE, 
+                          CONSTRAINT_OP_EQ, &(SampleDtype_t){DTYPE_FLOAT});
+    prop_append_constraint(&sink->base, INPUT_0, PROP_SAMPLE_PERIOD_NS, 
+                          CONSTRAINT_OP_EXISTS, NULL);
     
     return Bp_EC_OK;
 }
@@ -141,11 +141,16 @@ Bp_EC map_init(Map_filt_t* f, Map_config_t config)
 {
     // ... initialization code ...
     
-    // Accept batches matching buffer configuration
+    // Accept batches matching buffer configuration on all inputs
     // true = accepts partial fills (variable batch sizes)
-    prop_constraints_from_buffer_append(&f->base, &config.buff_config, true);
+    prop_constraints_from_buffer_append(&f->base, INPUT_ALL, 
+                                       &config.buff_config, true);
     
-    // Map preserves all properties (no explicit output behaviors needed)
+    // Preserve all properties on all outputs
+    prop_append_behavior(&f->base, OUTPUT_ALL, PROP_DATA_TYPE, 
+                        BEHAVIOR_OP_PRESERVE, NULL);
+    prop_append_behavior(&f->base, OUTPUT_ALL, PROP_SAMPLE_PERIOD_NS, 
+                        BEHAVIOR_OP_PRESERVE, NULL);
     
     return Bp_EC_OK;
 }
@@ -155,15 +160,36 @@ Bp_EC map_init(Map_filt_t* f, Map_config_t config)
 For filters requiring aligned inputs, use `CONSTRAINT_OP_MULTI_INPUT_ALIGNED` on specific properties:
 
 ```c
-// Element-wise operation - all properties must match
-prop_append_constraint(&filter->base, PROP_DATA_TYPE,
+// Element-wise operation - inputs 0 and 1 must have matching properties
+prop_append_constraint(&filter->base, INPUT_0 | INPUT_1, PROP_DATA_TYPE,
                       CONSTRAINT_OP_MULTI_INPUT_ALIGNED, NULL);
-prop_append_constraint(&filter->base, PROP_SAMPLE_PERIOD_NS,
+prop_append_constraint(&filter->base, INPUT_0 | INPUT_1, PROP_SAMPLE_PERIOD_NS,
                       CONSTRAINT_OP_MULTI_INPUT_ALIGNED, NULL);
 
-// Audio mixer - only timing must match, batch sizes can differ
-prop_append_constraint(&mixer->base, PROP_SAMPLE_PERIOD_NS,
+// Audio mixer - all inputs must have matching sample periods
+prop_append_constraint(&mixer->base, INPUT_ALL, PROP_SAMPLE_PERIOD_NS,
                       CONSTRAINT_OP_MULTI_INPUT_ALIGNED, NULL);
+```
+
+### Multi-Port Filter Example
+```c
+// Stereo splitter: 1 stereo input → 2 mono outputs
+Bp_EC stereo_splitter_init(StereoSplitter_t* splitter, config)
+{
+    // Input 0: Must be stereo float
+    prop_append_constraint(&splitter->base, INPUT_0, PROP_DATA_TYPE,
+                          CONSTRAINT_OP_EQ, &(SampleDtype_t){DTYPE_FLOAT});
+    prop_append_constraint(&splitter->base, INPUT_0, PROP_CHANNEL_COUNT,
+                          CONSTRAINT_OP_EQ, &(uint32_t){2});
+    
+    // Both outputs: Mono float, preserve sample rate
+    prop_append_behavior(&splitter->base, OUTPUT_0 | OUTPUT_1, PROP_DATA_TYPE,
+                        BEHAVIOR_OP_SET, &(SampleDtype_t){DTYPE_FLOAT});
+    prop_append_behavior(&splitter->base, OUTPUT_0 | OUTPUT_1, PROP_CHANNEL_COUNT,
+                        BEHAVIOR_OP_SET, &(uint32_t){1});
+    prop_append_behavior(&splitter->base, OUTPUT_ALL, PROP_SAMPLE_PERIOD_NS,
+                        BEHAVIOR_OP_PRESERVE, NULL);
+}
 ```
 
 ## Migration Guide
@@ -190,12 +216,28 @@ prop_append_constraint(&mixer->base, PROP_SAMPLE_PERIOD_NS,
 - `prop_set_sample_rate_hz(PropertyTable_t* table, uint32_t rate_hz)` - Helper that converts Hz to period
 
 ### Adding Constraints
-- `prop_append_constraint(Filter_t* filter, SignalProperty_t prop, ConstraintOp_t op, const void* operand)`
-- `prop_constraints_from_buffer_append(Filter_t* filter, const BatchBuffer_config* config, bool accepts_partial_fill)`
+- `prop_append_constraint(Filter_t* filter, uint32_t input_mask, SignalProperty_t prop, ConstraintOp_t op, const void* operand)` - Apply constraint to specific inputs via bitmask
+- `prop_constraints_from_buffer_append(Filter_t* filter, uint32_t input_mask, const BatchBuffer_config* config, bool accepts_partial_fill)`
 
 ### Adding Output Behaviors
-- `prop_append_behavior(Filter_t* filter, SignalProperty_t prop, BehaviorOp_t op, const void* operand)`
-- `prop_set_output_behavior_for_buffer_filter(Filter_t* filter, const BatchBuffer_config* config, bool adapt_batch_size, bool guarantee_full)` - Helper for common filter patterns
+- `prop_append_behavior(Filter_t* filter, uint32_t output_mask, SignalProperty_t prop, BehaviorOp_t op, const void* operand)` - Apply behavior to specific outputs via bitmask
+- `prop_set_output_behavior_for_buffer_filter(Filter_t* filter, uint32_t output_mask, const BatchBuffer_config* config, bool adapt_batch_size, bool guarantee_full)` - Helper for common filter patterns
+
+### Port Targeting
+Constraints and behaviors use bitmasks to specify which ports they apply to:
+```c
+#define INPUT_0     0x00000001
+#define INPUT_1     0x00000002
+#define INPUT_ALL   0xFFFFFFFF
+#define OUTPUT_0    0x00000001
+#define OUTPUT_ALL  0xFFFFFFFF
+
+// Examples
+prop_append_constraint(&filter->base, INPUT_ALL, PROP_DATA_TYPE, 
+                      CONSTRAINT_OP_EQ, &dtype);  // All inputs
+prop_append_constraint(&filter->base, INPUT_0 | INPUT_1, PROP_SAMPLE_PERIOD_NS,
+                      CONSTRAINT_OP_MULTI_INPUT_ALIGNED, NULL);  // Inputs 0 and 1
+```
 
 ### Validation Functions
 - `prop_validate_connection(const PropertyTable_t* upstream, const FilterContract_t* downstream, char* error_msg, size_t size)` - Validate pairwise connection
