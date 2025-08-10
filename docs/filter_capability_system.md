@@ -68,9 +68,15 @@ prop_append_behavior(&sg->base, OUTPUT_0, PROP_DATA_TYPE,
 prop_append_behavior(&sg->base, OUTPUT_0, PROP_SAMPLE_PERIOD_NS,
                     BEHAVIOR_OP_SET, &sample_period_ns);
 
-// Transform filter: Uses PRESERVE to pass through properties
+// Transform filter: Uses PRESERVE to pass through properties from input 0
 prop_append_behavior(&filter->base, OUTPUT_0, PROP_DATA_TYPE,
-                    BEHAVIOR_OP_PRESERVE, NULL);
+                    BEHAVIOR_OP_PRESERVE, NULL);  // NULL operand defaults to input 0
+
+// Multi-input router: Preserve from specific inputs
+prop_append_behavior(&router->base, OUTPUT_0, PROP_DATA_TYPE,
+                    BEHAVIOR_OP_PRESERVE, &(uint32_t){0});  // from input 0
+prop_append_behavior(&router->base, OUTPUT_1, PROP_DATA_TYPE,
+                    BEHAVIOR_OP_PRESERVE, &(uint32_t){1});  // from input 1
 ```
 
 Note: Output properties are computed by propagating input properties (or UNKNOWN for sources) through these behaviors during validation.
@@ -337,8 +343,8 @@ prop_append_constraint(&filter->base, INPUT_0 | INPUT_1, PROP_SAMPLE_PERIOD_NS,
 - `CONSTRAINT_OP_MULTI_INPUT_ALIGNED`: Property must match across all inputs (proposed)
 
 ### Behavior Operators
-- `BEHAVIOR_OP_SET`: Set property to specific value
-- `BEHAVIOR_OP_PRESERVE`: Pass through upstream property unchanged
+- `BEHAVIOR_OP_SET`: Set property to specific value (operand contains the value)
+- `BEHAVIOR_OP_PRESERVE`: Pass through property from specified input (operand.u32 contains input port, defaults to 0)
 
 ## Best Practices
 

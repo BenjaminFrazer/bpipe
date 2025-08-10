@@ -123,12 +123,12 @@ PropertyTable_t prop_propagate(
 2. **Behavior Application**: For each property:
    - If a behavior with matching `output_mask` applies to this `output_port`:
      - **SET**: Property takes the specified value, regardless of input
-     - **PRESERVE**: Property is copied from input 0 (first input)
+     - **PRESERVE**: Property is copied from the input port specified in `operand.u32` (defaults to 0 if not specified)
    - If no behavior matches: Property is preserved from input 0
 
 3. **Multi-Input Handling**:
-   - PRESERVE always uses input 0 as the source
-   - Filters requiring specific multi-input logic must use SET behaviors
+   - PRESERVE uses the input port specified in `operand.u32`
+   - If multiple inputs need the same value, use CONSTRAINT_OP_MULTI_INPUT_ALIGNED to ensure they match, then preserve from any
    - Multi-input alignment is validated separately (not part of propagation)
 
 4. **UNKNOWN Propagation**:
@@ -153,6 +153,14 @@ filter->output_properties = prop_propagate(filter->input_properties,
                                           filter->n_inputs, 
                                           &filter->contract, 0);
 
+// Multi-input filter with selective preservation
+// Output 0 preserves from input 0, Output 1 preserves from input 1
+OutputBehavior_t behaviors[] = {
+    {PROP_DATA_TYPE, BEHAVIOR_OP_PRESERVE, OUTPUT_0, {.u32 = 0}},  // from input 0
+    {PROP_DATA_TYPE, BEHAVIOR_OP_PRESERVE, OUTPUT_1, {.u32 = 1}},  // from input 1
+    {PROP_SAMPLE_PERIOD_NS, BEHAVIOR_OP_PRESERVE, OUTPUT_ALL, {.u32 = 0}} // all from input 0
+};
+
 // Multi-output filter: Compute each output separately
 for (int port = 0; port < filter->n_outputs; port++) {
     filter->output_properties[port] = prop_propagate(filter->input_properties,
@@ -167,6 +175,7 @@ for (int port = 0; port < filter->n_outputs; port++) {
 - Called once per output port during connection or validation
 - Results should be cached in `filter->output_properties`
 - Validation occurs separately after propagation
+
 
 ## Multi-Input Validation
 
