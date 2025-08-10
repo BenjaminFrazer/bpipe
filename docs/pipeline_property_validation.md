@@ -339,15 +339,16 @@ This encapsulation means:
 4. **Property propagation**: Apply behaviors to compute outputs
 5. **Constraint validation**: Check all requirements are met
 
-#### Pipeline Internal Validation
+#### Pipeline Validation Function Behavior
 
-During validation, pipelines:
+When `pipeline_validate_properties()` is called:
 
-1. **Validate internal topology**: Use provided external inputs (or none for top-level)
-2. **Check contract accuracy**: Verify declared behaviors match actual behavior
-3. **Report context**: Include nested pipeline path in error messages
+1. **Initialize sources or use external inputs**: Top-level uses internal sources, nested uses provided inputs
+2. **Validate internal topology**: Propagate properties through internal filters
+3. **Verify contract**: Ensure declared behaviors match computed outputs
+4. **Report errors with context**: Include full path for nested pipelines
 
-The pipeline's declared contract is trusted by outer pipelines - internal validation happens separately to verify correctness.
+For nested pipelines, the outer pipeline calls this function with actual input properties during its own validation process.
 
 ### Example: Nested Pipeline Validation
 
