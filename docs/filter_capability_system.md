@@ -2,20 +2,25 @@
 
 ## Implementation Status
 
-**Implemented**:
-- Basic property table structure and operations
-- Input constraint declarations via `prop_append_constraint()`
-- Output behavior declarations via `prop_append_behavior()`
-- SET and PRESERVE behavior operators
-- Basic constraint operators (EXISTS, EQ, GTE, LTE)
-- Helper functions for buffer-based filters
+**Implemented (Phases 0-3)**:
+- ✅ Basic property table structure and operations
+- ✅ Input constraint declarations via `prop_append_constraint()`
+- ✅ Output behavior declarations via `prop_append_behavior()`
+- ✅ SET and PRESERVE behavior operators
+- ✅ Basic constraint operators (EXISTS, EQ, GTE, LTE)
+- ✅ Helper functions for buffer-based filters
+- ✅ Pipeline-wide validation (`pipeline_validate_properties()`)
+- ✅ Property propagation through `prop_propagate()` with multi-input support
+- ✅ Multi-input alignment validation (`prop_validate_multi_input_alignment()`)
+- ✅ Input property tables (input_properties[MAX_INPUTS])
+- ✅ Validation automatically called during `pipeline_start()`
+- ✅ Source filters using behaviors and prop_propagate
 
-**Specified but Not Implemented**:
-- Pipeline-wide validation (`pipeline_validate_properties()`)
-- Property propagation through `prop_propagate()`
-- Multi-input alignment constraints (CONSTRAINT_OP_MULTI_INPUT_ALIGNED)
-- Error message retrieval API
-- Multi-output filter support with MAX_OUTPUTS
+**Not Yet Implemented**:
+- ❌ Multi-output filter support (no MAX_OUTPUTS, single output_properties only)
+- ❌ Nested pipeline external inputs (parameter exists but not used)
+- ❌ Full topological DAG traversal (linear validation only)
+- ❌ Output port parameter in prop_propagate (always uses port 0)
 
 **Connection Validation Status**:
 - `filt_connect()` currently only establishes DAG edges, no validation
@@ -145,13 +150,13 @@ The system performs validation at two levels:
 **Future Enhancement**: The `prop_validate_connection()` function exists in the API but is not called during connection. It could be used for eager validation once property computation is implemented.
 
 ### Global (Pipeline) Validation
-**Status**: NOT YET IMPLEMENTED (see `pipeline_property_validation.md` for full specification)
+**Status**: IMPLEMENTED (see `pipeline_property_validation.md` for full specification)
 
-Would happen before pipeline start:
-1. **Graph Traversal**: Walk entire filter DAG to propagate properties
-2. **Property Inference**: Compute intermediate filter properties from behaviors
-3. **End-to-End Validation**: Verify complete data flow compatibility
-4. **Multi-input Alignment**: Validate synchronized input requirements
+Happens automatically during `pipeline_start()`:
+1. **Linear Traversal**: Validates filters in array order (topological sort not yet implemented)
+2. **Property Propagation**: Computes filter output properties using `prop_propagate()`
+3. **End-to-End Validation**: Verifies complete data flow compatibility
+4. **Multi-input Alignment**: Validates synchronized input requirements via `prop_validate_multi_input_alignment()`
 
 ## Handling Unknown Properties
 
@@ -276,10 +281,10 @@ Bp_EC map_init(Map_filt_t* f, Map_config_t config)
 }
 ```
 
-### Multi-Input Alignment (NOT YET IMPLEMENTED)
-**Status**: Specified in `pipeline_property_validation.md` but not yet implemented.
+### Multi-Input Alignment
+**Status**: IMPLEMENTED - validation function exists and is called during pipeline validation.
 
-For filters requiring aligned inputs, will use `CONSTRAINT_OP_MULTI_INPUT_ALIGNED` on specific properties:
+For filters requiring aligned inputs, use `CONSTRAINT_OP_MULTI_INPUT_ALIGNED` on specific properties:
 
 ```c
 // Element-wise operation - inputs 0 and 1 must have matching properties
@@ -397,19 +402,22 @@ See `docs/pipeline_property_validation.md` for detailed pipeline validation spec
 
 ## Implementation Roadmap
 
-### Phase 1: Core Infrastructure (NOT YET IMPLEMENTED)
-- **Property propagation**: Implement `prop_propagate()` to compute output properties from behaviors
-- **Pipeline validation**: Implement `pipeline_validate_properties()` for DAG traversal
-- **Error reporting**: Add error message retrieval API with context
-- **Structural support**: Add `MAX_OUTPUTS` definition and multi-output property tables
+### Phase 0-3: Core Infrastructure (COMPLETED)
+- ✅ **Property propagation**: `prop_propagate()` computes output properties from behaviors
+- ✅ **Pipeline validation**: `pipeline_validate_properties()` validates entire pipeline
+- ✅ **Multi-input support**: prop_propagate accepts multiple input property tables
+- ✅ **Multi-input alignment**: `prop_validate_multi_input_alignment()` validates aligned inputs
+- ✅ **Error reporting**: Basic error messages with context
+- ✅ **Source filter migration**: Signal generator and others use behaviors
 
-### Phase 2: Advanced Features (NOT YET IMPLEMENTED)
-- **Multi-input alignment**: Implement CONSTRAINT_OP_MULTI_INPUT_ALIGNED validation
-- **Nested pipelines**: Support external input property tables
-- **Property negotiation**: Allow adaptive filters to query downstream requirements
-- **Channel count**: Add channel property support
+### Phase 4: Advanced Features (NOT YET IMPLEMENTED)
+- ❌ **Multi-output support**: Add MAX_OUTPUTS and output_properties array
+- ❌ **Topological sort**: Full DAG traversal for complex pipelines
+- ❌ **Nested pipelines**: Support external input property tables
+- ❌ **Property negotiation**: Allow adaptive filters to query downstream requirements
+- ❌ **Channel count**: Add channel property support
 
-### Phase 3: Filter Migration (PARTIALLY COMPLETE)
+### Phase 5: Filter Migration (PARTIALLY COMPLETE)
 **Completed**:
 - Signal generator: Full constraint and behavior declarations
 - CSV sink: Input constraints declared

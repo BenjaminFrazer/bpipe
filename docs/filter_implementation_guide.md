@@ -6,8 +6,9 @@ Every filter in bpipe2 follows a consistent pattern:
 1. **Inheritance**: All filters inherit from `Filter_t` base struct
 2. **Configuration**: Two-stage config (filter-specific → core config)
 3. **Worker Thread**: Each filter runs processing in a dedicated thread
-4. **Operations Interface**: Filters can override default operations
-5. **Common Utilities**: Shared macros and functions in `bpipe/utils.h`
+4. **Property System**: Filters declare input constraints and output behaviors
+5. **Operations Interface**: Filters can override default operations
+6. **Common Utilities**: Shared macros and functions in `bpipe/utils.h`
 
 ## Implementation Steps
 
@@ -85,7 +86,41 @@ void* yourfilter_worker(void* arg) {
 }
 ```
 
-### 3. Implement Operations (Optional)
+### 3. Declare Property Constraints and Behaviors
+
+Every filter MUST declare its property requirements and behaviors during initialization:
+
+```c
+Bp_EC yourfilter_init(YourFilter_t* f, YourFilter_config_t config) {
+    // ... core initialization ...
+    
+    // Declare input constraints (what we require)
+    prop_append_constraint(&f->base, PROP_DATA_TYPE, 
+                          CONSTRAINT_OP_EQ, &expected_dtype, INPUT_0);
+    
+    // For transform filters: declare output behaviors
+    prop_append_behavior(&f->base, PROP_DATA_TYPE,
+                        BEHAVIOR_OP_PRESERVE, NULL, OUTPUT_0);
+    
+    // For source filters: use SET behaviors
+    prop_append_behavior(&f->base, PROP_SAMPLE_PERIOD_NS,
+                        BEHAVIOR_OP_SET, &period_ns, OUTPUT_0);
+    
+    // Source filters must compute output properties
+    if (is_source_filter) {
+        PropertyTable_t unknown = prop_table_init();
+        prop_set_all_unknown(&unknown);
+        f->base.output_properties = prop_propagate(NULL, 0, 
+                                                   &f->base.contract, 0);
+    }
+    
+    return Bp_EC_OK;
+}
+```
+
+See `docs/filter_capability_system.md` for complete property system documentation.
+
+### 4. Implement Operations (Optional)
 
 ```c
 static Bp_EC yourfilter_flush(Filter_t* self) {
@@ -123,6 +158,13 @@ Bp_EC yourfilter_init(YourFilter_t* f, YourFilter_config_t config) {
     if (err != Bp_EC_OK) return err;
     
     // Initialize filter-specific state
+    
+    // IMPORTANT: Declare property constraints and behaviors
+    // See section 3 above for details
+    prop_append_constraint(&f->base, PROP_DATA_TYPE, 
+                          CONSTRAINT_OP_EQ, &config.buff_config.dtype, INPUT_0);
+    prop_append_behavior(&f->base, PROP_DATA_TYPE,
+                        BEHAVIOR_OP_PRESERVE, NULL, OUTPUT_0);
     
     // Override operations
     f->base.ops.flush = yourfilter_flush;

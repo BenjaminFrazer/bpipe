@@ -48,9 +48,9 @@ Filters declare what properties they require from their inputs:
 
 ```c
 // CSV sink requires float data and known sample rate
-prop_append_constraint(&sink->base, 0, PROP_DATA_TYPE, 
+prop_append_constraint(&sink->base, PROP_DATA_TYPE, 
                       CONSTRAINT_OP_EQ, &(SampleDtype_t){DTYPE_FLOAT}, INPUT_0);
-prop_append_constraint(&sink->base, 0, PROP_SAMPLE_PERIOD_NS, 
+prop_append_constraint(&sink->base, PROP_SAMPLE_PERIOD_NS, 
                       CONSTRAINT_OP_EXISTS, NULL, INPUT_0);
 ```
 
@@ -60,11 +60,11 @@ Filters declare how they generate or transform properties:
 
 ```c
 // Source filter sets output properties
-prop_append_behavior(&source->base, 0, PROP_DATA_TYPE,
+prop_append_behavior(&source->base, PROP_DATA_TYPE,
                     BEHAVIOR_OP_SET, &dtype, OUTPUT_0);
 
 // Transform filter preserves properties from input
-prop_append_behavior(&filter->base, 0, PROP_DATA_TYPE,
+prop_append_behavior(&filter->base, PROP_DATA_TYPE,
                     BEHAVIOR_OP_PRESERVE, NULL, OUTPUT_0);
 ```
 
@@ -84,11 +84,11 @@ Bp_EC my_source_init(MySource_t* src, MySource_config_t config)
     uint64_t period_ns = 1000000000 / config.sample_rate_hz;
     uint32_t batch_size = 1 << config.batch_expo;
     
-    prop_append_behavior(&src->base, 0, PROP_DATA_TYPE,
+    prop_append_behavior(&src->base, PROP_DATA_TYPE,
                         BEHAVIOR_OP_SET, &dtype, OUTPUT_0);
-    prop_append_behavior(&src->base, 0, PROP_SAMPLE_PERIOD_NS,
+    prop_append_behavior(&src->base, PROP_SAMPLE_PERIOD_NS,
                         BEHAVIOR_OP_SET, &period_ns, OUTPUT_0);
-    prop_append_behavior(&src->base, 0, PROP_MIN_BATCH_CAPACITY,
+    prop_append_behavior(&src->base, PROP_MIN_BATCH_CAPACITY,
                         BEHAVIOR_OP_SET, &batch_size, OUTPUT_0);
     
     // Compute output properties from behaviors
@@ -115,9 +115,9 @@ Bp_EC my_filter_init(MyFilter_t* f, MyFilter_config_t config)
                                        true, INPUT_ALL);
     
     // Declare output behaviors (preserve all properties)
-    prop_append_behavior(&f->base, 0, PROP_DATA_TYPE,
+    prop_append_behavior(&f->base, PROP_DATA_TYPE,
                         BEHAVIOR_OP_PRESERVE, NULL, OUTPUT_ALL);
-    prop_append_behavior(&f->base, 0, PROP_SAMPLE_PERIOD_NS,
+    prop_append_behavior(&f->base, PROP_SAMPLE_PERIOD_NS,
                         BEHAVIOR_OP_PRESERVE, NULL, OUTPUT_ALL);
     
     return Bp_EC_OK;
@@ -135,9 +135,9 @@ Bp_EC my_sink_init(MySink_t* sink, MySink_config_t config)
     
     // Declare what we require from input
     SampleDtype_t required_type = DTYPE_FLOAT;
-    prop_append_constraint(&sink->base, 0, PROP_DATA_TYPE,
+    prop_append_constraint(&sink->base, PROP_DATA_TYPE,
                           CONSTRAINT_OP_EQ, &required_type, INPUT_0);
-    prop_append_constraint(&sink->base, 0, PROP_SAMPLE_PERIOD_NS,
+    prop_append_constraint(&sink->base, PROP_SAMPLE_PERIOD_NS,
                           CONSTRAINT_OP_EXISTS, NULL, INPUT_0);
     
     return Bp_EC_OK;
@@ -153,7 +153,7 @@ Some properties may be unknown at initialization time:
 if (config.sample_rate_hz > 0) {
     // User provided sample rate
     uint64_t period = 1000000000ULL / config.sample_rate_hz;
-    prop_append_behavior(&src->base, 0, PROP_SAMPLE_PERIOD_NS,
+    prop_append_behavior(&src->base, PROP_SAMPLE_PERIOD_NS,
                         BEHAVIOR_OP_SET, &period, OUTPUT_0);
 }
 // If not set, property remains UNKNOWN
@@ -167,7 +167,7 @@ Filters with multiple inputs can require alignment:
 
 ```c
 // Mixer requires all inputs to have same sample rate
-prop_append_constraint(&mixer->base, 0, PROP_SAMPLE_PERIOD_NS,
+prop_append_constraint(&mixer->base, PROP_SAMPLE_PERIOD_NS,
                       CONSTRAINT_OP_MULTI_INPUT_ALIGNED, NULL, INPUT_ALL);
 ```
 

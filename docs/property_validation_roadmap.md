@@ -5,147 +5,155 @@ This roadmap defines the incremental steps to implement pipeline-wide property v
 
 ## Current Implementation Status
 
-### Already Implemented
-- ✅ Basic `prop_propagate()` function (single input/output only)
+### Completed (Phases 0-3)
+- ✅ `prop_set_all_unknown()` for creating UNKNOWN property tables
+- ✅ `prop_propagate()` function with multi-input support
 - ✅ `prop_validate_connection()` for constraint checking
-- ✅ `prop_validate_multi_input_alignment()` function exists
+- ✅ `prop_validate_multi_input_alignment()` for aligned input validation
+- ✅ `pipeline_validate_properties()` function (linear validation)
 - ✅ Filter structure has single `output_properties` field
 - ✅ Filter structure has `input_properties[MAX_INPUTS]` array
 - ✅ Constraint and behavior declaration functions
 - ✅ Property table operations (set/get)
-- ✅ Source filters set output_properties directly (not via prop_propagate)
+- ✅ Source filters using behaviors and prop_propagate
+- ✅ Validation automatically called during `pipeline_start()`
+- ✅ Basic error message generation
 
-### Not Implemented
-- ❌ `pipeline_validate_properties()` function
-- ❌ Multi-input support in `prop_propagate()`
+### Not Yet Implemented (Phases 4-5)
 - ❌ Multi-output support (no `MAX_OUTPUTS` or array)
-- ❌ Output port parameter in `prop_propagate()`
-- ❌ Topological DAG traversal for validation
-- ❌ Validation called before pipeline start
-- ❌ Source filters using prop_propagate with UNKNOWN
-- ❌ Error message context tracking
+- ❌ Output port parameter actually used in `prop_propagate()` (always 0)
+- ❌ Topological DAG traversal (linear order only)
+- ❌ Nested pipeline external inputs support
+- ❌ Advanced error message context tracking
+- ❌ Property negotiation
+- ❌ Channel count property
 
-## Phase 0: Minimal Viable Validation (Week 0 - Can Start Immediately)
+## Phase 0: Minimal Viable Validation ✅ COMPLETED
 
-### 0.1 Add prop_set_all_unknown()
-- **File**: `bpipe/properties.c`
-- **Simple**: Just sets all properties to known=false
-- **Enables**: Source filters to use prop_propagate
+### 0.1 Add prop_set_all_unknown() ✅
+- **Status**: COMPLETED
+- **Location**: `bpipe/properties.c`
+- **Implementation**: Sets all properties to known=false
+- **Result**: Source filters can now use prop_propagate
 
-### 0.2 Update Source Filters to Use Behaviors
-- **File**: `bpipe/signal_generator.c` (start with one)
-- **Current**: Direct `prop_set_*()` calls
-- **Change to**:
-  ```c
-  // Add behaviors during init
-  prop_append_behavior(&sg->base, PROP_DATA_TYPE, BEHAVIOR_OP_SET, &dtype);
-  // Then propagate from UNKNOWN
-  PropertyTable_t unknown = prop_table_init();
-  prop_set_all_unknown(&unknown);
-  sg->base.output_properties = prop_propagate(&unknown, &sg->base.contract);
-  ```
+### 0.2 Update Source Filters to Use Behaviors ✅
+- **Status**: COMPLETED
+- **Example**: `bpipe/signal_generator.c`
+- **Implementation**: Source filters now:
+  - Add behaviors during init via `prop_append_behavior()`
+  - Use prop_propagate with UNKNOWN inputs
+  - Compute output_properties from behaviors
 
-### 0.3 Simple Linear Pipeline Validation
-- **File**: `bpipe/pipeline.c`
-- **Implement**: Basic `pipeline_validate_properties()` for linear pipelines only
-- **Skip**: Topological sort (assume filters array is already ordered)
-- **Benefit**: Get validation working for 80% of use cases
+### 0.3 Simple Linear Pipeline Validation ✅
+- **Status**: COMPLETED
+- **Location**: `bpipe/pipeline.c`
+- **Implementation**: `pipeline_validate_properties()` validates linear pipelines
+- **Note**: Topological sort not yet implemented (uses filter array order)
+- **Result**: Validation working for most common use cases
 
-## Phase 1: Enhance Core Infrastructure (Week 1)
+## Phase 1: Enhance Core Infrastructure ✅ COMPLETED
 
-### 1.1 Upgrade prop_propagate() for multi-input/output
-- **File**: `bpipe/properties.c`
-- **Current**: Takes single upstream PropertyTable, returns single downstream
-- **Needed**: 
-  - Accept array of input PropertyTables
-  - Add n_inputs parameter
-  - Add output_port parameter
-  - Update PRESERVE behavior to use operand.u32 for input selection
-  - Handle UNKNOWN inputs for source filters
+### 1.1 Upgrade prop_propagate() for multi-input/output ✅
+- **Status**: COMPLETED
+- **Location**: `bpipe/properties.c`
+- **Implementation**: 
+  - ✅ Accepts array of input PropertyTables
+  - ✅ Has n_inputs parameter
+  - ✅ Has output_port parameter (but always 0 currently)
+  - ✅ PRESERVE behavior uses operand.u32 for input selection
+  - ✅ Handles UNKNOWN inputs for source filters
 
-### 1.2 Add Multi-Output Support (if needed)
-- **File**: `bpipe/core.h`
+### 1.2 Add Multi-Output Support ❌ DEFERRED
+- **Status**: NOT IMPLEMENTED (deferred to Phase 4)
 - **Current**: Single `PropertyTable_t output_properties`
-- **Decision Required**: Do we need multi-output now or defer?
-- **If yes**:
+- **Rationale**: Single output sufficient for current use cases
+- **Future work**:
   - Define `MAX_OUTPUTS` (default 8)
   - Change to `PropertyTable_t output_properties[MAX_OUTPUTS]`
   - Add `uint32_t n_outputs` field
   - Update all filter initializations
 
-### 1.3 Update Source Filters
-- **Files**: All source filters (signal_generator, csv_source, etc.)
-- **Current**: Directly call `prop_set_*()` functions on output_properties
-- **Needed**:
-  - Convert to use SET behaviors via `prop_append_behavior()`
-  - Create UNKNOWN property table
-  - Call upgraded `prop_propagate()` with UNKNOWN inputs
-  - Store result in output_properties
+### 1.3 Update Source Filters ✅
+- **Status**: COMPLETED
+- **Files**: signal_generator.c, csv_source.c, and others
+- **Implementation**:
+  - ✅ Use SET behaviors via `prop_append_behavior()`
+  - ✅ Create UNKNOWN property table with `prop_set_all_unknown()`
+  - ✅ Call `prop_propagate()` with UNKNOWN inputs
+  - ✅ Store result in output_properties
 
-## Phase 2: Pipeline Validation Core (Week 2)
+## Phase 2: Pipeline Validation Core ✅ COMPLETED
 
-### 2.1 Implement Topological Sort
-- **File**: `bpipe/pipeline.c`
-- **Tasks**:
+### 2.1 Implement Topological Sort ❌ DEFERRED
+- **Status**: NOT IMPLEMENTED (deferred to Phase 4)
+- **Current**: Linear validation using filter array order
+- **Rationale**: Linear order sufficient for most pipelines
+- **Future tasks**:
   - Add DAG traversal function for topological ordering
   - Identify source filters (no inputs)
   - Handle cycles detection and error reporting
 
-### 2.2 Implement pipeline_validate_properties()
-- **File**: `bpipe/pipeline.c`
-- **Priority**: CRITICAL - main validation entry point
+### 2.2 Implement pipeline_validate_properties() ✅
+- **Status**: COMPLETED
+- **Location**: `bpipe/pipeline.c`
+- **Implementation**:
+  - ✅ Processes filters in linear order (topological sort deferred)
+  - ✅ Propagates properties through each filter
+  - ✅ Validates constraints at each step
+  - ✅ Generates basic error messages
+  - ⚠️ External inputs parameter exists but not used (nested pipelines not supported)
+
+### 2.3 Basic Constraint Validation ✅
+- **Status**: COMPLETED
+- **Location**: `bpipe/properties.c`
+- **Implementation**:
+  - ✅ Constraint checking (EXISTS, EQ, GTE, LTE)
+  - ✅ Basic error messages for failures
+  - ⚠️ Limited validation path tracking (basic context only)
+
+## Phase 3: Integration ✅ COMPLETED
+
+### 3.1 Update Pipeline Start ✅
+- **Status**: COMPLETED
+- **Location**: `bpipe/pipeline.c`
+- **Implementation**:
+  - ✅ Calls `pipeline_validate_properties()` before starting filters
+  - ✅ Returns error with message if validation fails
+  - ✅ Only starts filters if validation passes
+  - ✅ Error messages printed to stderr
+
+### 3.2 Update Transform Filters ✅
+- **Status**: COMPLETED
+- **Files**: map.c, batch_matcher.c, sample_aligner.c, etc.
+- **Implementation**:
+  - ✅ Behaviors properly declared
+  - ✅ Use constraint and behavior declarations
+  - ✅ Properties computed during validation
+
+### 3.3 Testing Infrastructure ✅
+- **Status**: COMPLETED
+- **Location**: `tests/test_property_validation.c`
+- **Coverage**:
+  - ✅ Successful validation paths
+  - ✅ Constraint failure types
+  - ✅ UNKNOWN property propagation
+  - ⚠️ Complex DAG topologies (limited by linear validation)
+
+## Phase 4: Advanced Features ⏳ IN PROGRESS
+
+### 4.1 Multi-Input Alignment ✅
+- **Status**: COMPLETED
+- **Location**: `bpipe/properties.c`
+- **Implementation**:
+  - ✅ CONSTRAINT_OP_MULTI_INPUT_ALIGNED defined
+  - ✅ `prop_validate_multi_input_alignment()` validates matching properties
+  - ✅ Called during pipeline validation
+
+### 4.2 Multi-Output Support ❌ NOT STARTED
+- **Status**: NOT IMPLEMENTED
+- **Blockers**: Requires structural changes to Filter_t
 - **Tasks**:
-  - Process filters in topological order
-  - Propagate properties through each filter
-  - Validate constraints at each step
-  - Generate comprehensive error messages
-  - Handle external inputs for nested pipelines
-
-### 2.3 Basic Constraint Validation
-- **File**: `bpipe/properties.c`
-- **Tasks**:
-  - Implement constraint checking (EXISTS, EQ, GTE, LTE)
-  - Generate specific error messages for failures
-  - Track validation path for error context
-
-## Phase 3: Integration (Week 3)
-
-### 3.1 Update Pipeline Start
-- **File**: `bpipe/pipeline.c`
-- **Current**: `pipeline_start()` directly starts all filters without validation
-- **Needed**:
-  - Call `pipeline_validate_properties()` before loop
-  - Return error with message if validation fails
-  - Only start filters if validation passes
-  - Consider adding bypass flag for backward compatibility
-
-### 3.2 Update Transform Filters
-- **Files**: All transform filters (map, batch_matcher, etc.)
-- **Tasks**:
-  - Remove any hardcoded property assumptions
-  - Ensure behaviors are properly declared
-  - Update to use cached properties from validation
-
-### 3.3 Testing Infrastructure
-- **Files**: `tests/test_property_validation.c`
-- **Tasks**:
-  - Test successful validation paths
-  - Test each constraint failure type
-  - Test UNKNOWN property propagation
-  - Test complex DAG topologies
-
-## Phase 4: Advanced Features (Week 4)
-
-### 4.1 Multi-Input Alignment
-- **File**: `bpipe/properties.c`
-- **Tasks**:
-  - Implement CONSTRAINT_OP_MULTI_INPUT_ALIGNED
-  - Validate properties match across specified inputs
-  - Add tests for alignment validation
-
-### 4.2 Multi-Output Support
-- **Files**: Router/splitter filters
-- **Tasks**:
+  - Add MAX_OUTPUTS and output_properties array
   - Update filters to compute properties per output port
   - Test property propagation through multi-output filters
   - Validate downstream connections from each port
@@ -173,13 +181,15 @@ This roadmap defines the incremental steps to implement pipeline-wide property v
 
 ## Success Criteria
 
-Each phase must pass before moving to the next:
+### Completed Phases ✅
+1. **Phase 0**: ✅ prop_set_all_unknown() and source filter migration complete
+2. **Phase 1**: ✅ `prop_propagate()` correctly computes properties with multi-input support
+3. **Phase 2**: ✅ Linear pipelines validate correctly
+4. **Phase 3**: ✅ Integration complete, validation called during pipeline_start()
 
-1. **Phase 1**: `prop_propagate()` correctly computes properties for all test cases
-2. **Phase 2**: Simple linear pipelines validate correctly
-3. **Phase 3**: Complex DAGs with multiple paths validate correctly
-4. **Phase 4**: Multi-input/output filters validate correctly
-5. **Phase 5**: All existing tests pass with validation enabled
+### Remaining Work
+5. **Phase 4**: ⏳ Multi-output support and topological sort pending
+6. **Phase 5**: ⏳ Complete filter migration and documentation updates
 
 ## Testing Strategy
 
@@ -204,7 +214,10 @@ Each phase must pass before moving to the next:
 
 ## Next Steps
 
-1. Start with Phase 1.1 - implement `prop_propagate()`
-2. Create test harness for property propagation
-3. Update one source filter as proof of concept
-4. Review and adjust roadmap based on learnings
+With Phases 0-3 complete, focus on:
+
+1. **Multi-output support** (Phase 4.2) - Add structural support for multiple output ports
+2. **Topological sort** (Phase 4) - Enable validation of complex DAG topologies
+3. **Complete filter migration** (Phase 5) - Ensure all filters use property system
+4. **Documentation polish** - Update all guides to reflect current implementation
+5. **Advanced features** - Property negotiation, channel count support

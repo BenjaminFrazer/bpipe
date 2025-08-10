@@ -2,13 +2,18 @@
 
 ## Implementation Status
 
-**This document describes the DESIGN SPECIFICATION for pipeline-wide property validation.**
+**This document describes the pipeline-wide property validation system.**
 
-**Current Status**: NOT YET IMPLEMENTED
-- The algorithms and APIs described here are the target design
-- Individual filters can declare constraints and behaviors (implemented)
-- Pipeline-wide validation and property propagation (not implemented)
-- See `filter_capability_system.md` for what's currently implemented
+**Current Status**: IMPLEMENTED (Phases 0-3)
+- ✅ Pipeline-wide validation via `pipeline_validate_properties()` 
+- ✅ Property propagation through `prop_propagate()` with multi-input support
+- ✅ Validation automatically called during `pipeline_start()`
+- ✅ Source filters using behaviors and prop_propagate
+- ✅ Multi-input alignment validation
+- ✅ Input property tables for filters (input_properties[MAX_INPUTS])
+- ❌ Multi-output support (single output_properties only)
+- ❌ Nested pipeline external inputs (top-level pipelines only)
+- See `filter_capability_system.md` for detailed feature status
 
 ## Overview
 
