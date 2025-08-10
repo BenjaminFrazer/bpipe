@@ -290,33 +290,38 @@ Pipelines can contain other pipelines as filters, creating a hierarchical struct
 
 ### Pipeline as Filter - Property Encapsulation
 
-A `Pipeline_t` contains a `Filter_t base` member, making it appear as a regular filter to containing pipelines. The key principle is **complete encapsulation**: the pipeline's external property contract is derived from its internal topology.
+A `Pipeline_t` contains a `Filter_t base` member, making it appear as a regular filter to containing pipelines. The key principle is **complete encapsulation**: the pipeline presents an explicitly declared external contract, hiding its internal topology.
 
-#### Property Contract Derivation
+#### Property Contract Declaration
 
-The pipeline's external contract is computed from the path between its designated input and output filters:
+Pipelines must explicitly declare their external contract during initialization, just like any other filter:
 
-1. **Input Constraints** (Backward Flow):
-   - Aggregated from ALL filters on the path from input to output
-   - Represents the union of requirements that must be satisfied
-   - Most restrictive constraints dominate
+1. **Input Constraints**: What the pipeline requires from external inputs
+2. **Output Behaviors**: How the pipeline transforms or generates properties
 
-2. **Output Behaviors** (Forward Flow):
-   - Composed from behaviors along the path from input to output  
-   - Describes how the pipeline transforms properties
-   - Last SET behavior wins for each property
+The pipeline designer is responsible for ensuring the declared contract matches what the internal topology actually does. This is verified through compliance testing.
 
-#### Example Contract Computation
+#### Example Contract Declaration
 
-```
-Internal: [Input] → [Passthrough] → [BatchMatcher] → [CSVSink] → [Output]
-          ↓          ↓                ↓                ↓
-          none       PRESERVE all     ADAPT batch     Requires float,
-                                      SET full        known rate
-
-Pipeline External Contract:
-- Input Constraints: dtype==float, sample_period EXISTS (aggregated backward)
-- Output Behaviors: dtype PRESERVE, period PRESERVE, batch SET (composed forward)
+```c
+Bp_EC audio_pipeline_init(Pipeline_t* pipe, Pipeline_config_t config)
+{
+    // ... internal filter setup ...
+    
+    // Explicitly declare what this pipeline requires
+    prop_append_constraint(&pipe->base, INPUT_0, PROP_DATA_TYPE,
+                          CONSTRAINT_OP_EQ, &(SampleDtype_t){DTYPE_FLOAT});
+    prop_append_constraint(&pipe->base, INPUT_0, PROP_SAMPLE_PERIOD_NS,
+                          CONSTRAINT_OP_EXISTS, NULL);
+    
+    // Explicitly declare what this pipeline outputs
+    prop_append_behavior(&pipe->base, OUTPUT_0, PROP_DATA_TYPE,
+                        BEHAVIOR_OP_PRESERVE, NULL);
+    prop_append_behavior(&pipe->base, OUTPUT_0, PROP_SAMPLE_PERIOD_NS,
+                        BEHAVIOR_OP_PRESERVE, NULL);
+    
+    return Bp_EC_OK;
+}
 ```
 
 This encapsulation means:
@@ -334,15 +339,15 @@ This encapsulation means:
 4. **Property propagation**: Apply behaviors to compute outputs
 5. **Constraint validation**: Check all requirements are met
 
-#### Pipeline Contract Computation
+#### Pipeline Internal Validation
 
-At init time, pipelines compute their external contract from internal topology:
+During validation, pipelines:
 
-1. **Backward aggregation**: Collect all constraints from filters on the path
-2. **Forward composition**: Combine behaviors along the path
-3. **Port mapping**: Only expose constraints/behaviors for designated input/output ports
+1. **Validate internal topology**: Use provided external inputs (or none for top-level)
+2. **Check contract accuracy**: Verify declared behaviors match actual behavior
+3. **Report context**: Include nested pipeline path in error messages
 
-Note: Behaviors (transformations) can be computed statically, but actual property values require input properties.
+The pipeline's declared contract is trusted by outer pipelines - internal validation happens separately to verify correctness.
 
 ### Example: Nested Pipeline Validation
 
