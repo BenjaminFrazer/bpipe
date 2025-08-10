@@ -239,9 +239,154 @@ Bp_EC validate_multi_input_alignment(const PropertyTable_t* inputs[],
 3. Unaligned multi-inputs
 4. Cyclic dependencies
 
+## Nested Pipeline Handling
+
+### Overview
+
+Pipelines can contain other pipelines as filters, creating a hierarchical structure. The validation system must handle this recursively while maintaining efficiency and clear error reporting.
+
+### Pipeline as Filter
+
+A `Pipeline_t` contains a `Filter_t base` member, making it appear as a regular filter to containing pipelines. The pipeline's external interface is determined by its designated input and output filters.
+
+### Validation Approach
+
+#### 1. Recursive Validation (Depth-First)
+
+```c
+Bp_EC pipeline_validate_properties(const Pipeline_t* pipeline,
+                                   char* error_msg, size_t error_msg_size)
+{
+    // Step 1: Validate nested pipelines first
+    for (size_t i = 0; i < pipeline->n_filters; i++) {
+        if (pipeline->filters[i]->filt_type == FILT_T_PIPELINE) {
+            Pipeline_t* nested = (Pipeline_t*)pipeline->filters[i];
+            
+            // Recursively validate nested pipeline
+            Bp_EC err = pipeline_validate_properties(nested, error_msg, error_msg_size);
+            if (err != Bp_EC_OK) {
+                // Prepend context to error message
+                prepend_context(error_msg, "In nested pipeline '%s': ", nested->base.name);
+                return err;
+            }
+        }
+    }
+    
+    // Step 2: Validate current level
+    return validate_pipeline_level(pipeline, error_msg, error_msg_size);
+}
+```
+
+#### 2. Property Computation for Nested Pipelines
+
+After validating a nested pipeline's internals, compute its external properties:
+
+```c
+void compute_nested_pipeline_properties(Pipeline_t* nested,
+                                        ValidationState_t* parent_state)
+{
+    // The nested pipeline's output properties are the computed properties
+    // of its designated output filter after internal validation
+    size_t output_filter_idx = find_filter_index(nested, nested->output_filter);
+    PropertyTable_t* output_props = &nested->internal_computed_props[output_filter_idx];
+    
+    // Set the pipeline filter's output properties for parent validation
+    nested->base.output_properties = *output_props;
+    
+    // The pipeline's input constraints come from its input filter
+    if (nested->input_filter) {
+        copy_constraints(&nested->base, nested->input_filter);
+    }
+}
+```
+
+#### 3. Connection Mapping
+
+When validating connections to/from nested pipelines:
+
+```c
+// Connection to nested pipeline input
+if (to_filter->filt_type == FILT_T_PIPELINE) {
+    Pipeline_t* nested = (Pipeline_t*)to_filter;
+    // Validate against the nested pipeline's input filter constraints
+    Filter_t* actual_input = nested->input_filter;
+    validate_connection(from_filter, actual_input);
+}
+
+// Connection from nested pipeline output  
+if (from_filter->filt_type == FILT_T_PIPELINE) {
+    Pipeline_t* nested = (Pipeline_t*)from_filter;
+    // Use computed properties from nested pipeline's output filter
+    PropertyTable_t* actual_output_props = get_computed_props(nested->output_filter);
+    validate_with_properties(actual_output_props, to_filter);
+}
+```
+
+### Example: Nested Pipeline Validation
+
+```
+Outer Pipeline:
+  SignalGen → [NestedPipeline] → Sink
+  
+  NestedPipeline:
+    Input → Passthrough → BatchMatcher → Output
+```
+
+Validation sequence:
+1. Validate NestedPipeline internally:
+   - Input has no constraints
+   - Passthrough preserves properties
+   - BatchMatcher adapts batch size
+   - Output properties computed: float, 48kHz, batch=512
+2. Set NestedPipeline's external properties:
+   - Input constraints: none (from Input filter)
+   - Output properties: float, 48kHz, batch=512 (from Output filter)
+3. Validate Outer Pipeline:
+   - SignalGen output: float, 48kHz, batch=256
+   - NestedPipeline accepts any input (no constraints)
+   - NestedPipeline output: float, 48kHz, batch=512
+   - Sink validates against: float, 48kHz, batch=512 ✓
+
+### Error Reporting for Nested Pipelines
+
+Include full path in error messages:
+
+```
+Property validation failed:
+  In pipeline 'Main':
+    In nested pipeline 'AudioProcessor':
+      In nested pipeline 'EffectsChain':
+        At filter 'Reverb':
+          Input sample_period (22675ns) doesn't match required (20833ns)
+  Path: Main → AudioProcessor → EffectsChain → Reverb
+```
+
+### Performance Considerations
+
+1. **Cache Validation Results**: Don't re-validate unchanged nested pipelines
+2. **Lazy Validation**: Only validate when pipeline structure changes
+3. **Partial Validation**: Validate only affected sub-graphs when possible
+
+### Special Cases
+
+#### Recursive Pipeline References
+Detect and prevent infinite recursion:
+```c
+if (is_in_ancestor_chain(pipeline, nested)) {
+    return Bp_EC_CIRCULAR_REFERENCE;
+}
+```
+
+#### Dynamic Pipeline Modification
+If nested pipelines can change at runtime:
+- Invalidate cached validation results
+- Re-validate affected portions
+- Propagate changes to parent pipelines
+
 ## Future Enhancements
 
 1. **Incremental Validation**: Re-validate only affected portions when pipeline changes
 2. **Property Negotiation**: Allow filters to adjust properties based on downstream needs
 3. **Constraint Solving**: Automatically find valid property configurations
 4. **Runtime Property Updates**: Support dynamic property changes during execution
+5. **Pipeline Templates**: Pre-validated pipeline patterns for common use cases
