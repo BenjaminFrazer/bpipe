@@ -490,7 +490,7 @@ Bp_EC filt_connect(Filter_t* source, size_t source_output, Filter_t* sink,
     char error_msg[256];
     Bp_EC err =
         prop_validate_connection(&source->output_properties, &sink->contract,
-                                 error_msg, sizeof(error_msg));
+                                 sink_input, error_msg, sizeof(error_msg));
     if (err != Bp_EC_OK) {
       // TODO: Log error_msg when logging is available
       return err;

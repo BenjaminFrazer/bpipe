@@ -13,15 +13,18 @@ While pairwise connection validation catches obvious mismatches, it cannot:
 
 ## Solution: Topological Property Propagation
 
+### Core Principle
+
+Top-level pipelines are self-contained with no external inputs - all sources are internal and must fully define their output properties through SET behaviors. Nested pipelines receive external input properties from their containing pipeline during validation.
+
 ### Algorithm Overview
 
-1. **Build Dependency Graph**: Identify filter connections and dependencies
-2. **Find Sources**: Locate filters with no inputs (sources) or external inputs
-3. **Topological Traversal**: Process filters in dependency order
-4. **Property Propagation**: Compute each filter's actual output properties based on:
-   - Input properties (computed from upstream)
-   - Filter's declared behaviors (PRESERVE, SET, etc.)
-5. **Constraint Validation**: At each filter, validate:
+1. **Initialize Starting Points**: 
+   - For source filters: Propagate UNKNOWN property table through SET behaviors
+   - For external inputs: Use provided property tables from container
+2. **Topological Traversal**: Process filters in dependency order
+3. **Property Propagation**: Compute output properties by applying behaviors to input properties
+4. **Constraint Validation**: At each filter, validate:
    - Input properties meet filter constraints
    - Multi-input alignment requirements are satisfied
 
@@ -39,16 +42,32 @@ typedef struct {
 
 ```c
 Bp_EC pipeline_validate_properties(const Pipeline_t* pipeline,
+                                   PropertyTable_t* external_inputs,
+                                   size_t n_external_inputs,
                                    char* error_msg, 
                                    size_t error_msg_size);
 ```
 
+For top-level pipelines, `external_inputs` is NULL and `n_external_inputs` is 0.
+For nested pipelines, external inputs are provided by the containing pipeline.
+
 ## Property Propagation Rules
 
 ### 1. Source Filters
-Source filters use their declared `output_properties` directly:
+Source filters (no inputs) propagate from UNKNOWN through their SET behaviors:
 ```c
-computed_props[source_idx] = source->output_properties;
+PropertyTable_t unknown;
+prop_set_all_unknown(&unknown);
+computed_props[source_idx] = propagate_properties(source, &unknown, 0);
+```
+
+Source filters must use SET behaviors for all properties they generate:
+```c
+// Signal generator example
+prop_append_behavior(&sg->base, OUTPUT_0, PROP_DATA_TYPE, 
+                    BEHAVIOR_OP_SET, &(SampleDtype_t){DTYPE_FLOAT});
+prop_append_behavior(&sg->base, OUTPUT_0, PROP_SAMPLE_PERIOD_NS,
+                    BEHAVIOR_OP_SET, &period_ns);
 ```
 
 ### 2. Transform Filters
@@ -195,8 +214,13 @@ Property validation failed at 'Mixer':
 ### Main Validation
 ```c
 Bp_EC pipeline_validate_properties(const Pipeline_t* pipeline,
+                                   PropertyTable_t* external_inputs,
+                                   size_t n_external_inputs,
                                    char* error_msg, size_t error_msg_size);
 ```
+
+- Top-level pipelines: Call with `external_inputs=NULL, n_external_inputs=0`
+- Nested pipelines: Provide actual input properties from containing pipeline
 
 ### Helper Functions
 ```c
@@ -283,29 +307,37 @@ This encapsulation means:
 
 ### Validation Approach
 
-#### 1. Recursive Validation (Depth-First)
+#### 1. Validation with External Inputs
 
 ```c
 Bp_EC pipeline_validate_properties(const Pipeline_t* pipeline,
+                                   PropertyTable_t* external_inputs,
+                                   size_t n_external_inputs,
                                    char* error_msg, size_t error_msg_size)
 {
-    // Step 1: Validate nested pipelines first
+    ValidationState_t state;
+    
+    // Initialize starting points
     for (size_t i = 0; i < pipeline->n_filters; i++) {
-        if (pipeline->filters[i]->filt_type == FILT_T_PIPELINE) {
-            Pipeline_t* nested = (Pipeline_t*)pipeline->filters[i];
-            
-            // Recursively validate nested pipeline
-            Bp_EC err = pipeline_validate_properties(nested, error_msg, error_msg_size);
-            if (err != Bp_EC_OK) {
-                // Prepend context to error message
-                prepend_context(error_msg, "In nested pipeline '%s': ", nested->base.name);
-                return err;
-            }
+        Filter_t* filter = pipeline->filters[i];
+        
+        if (is_source_filter(filter)) {
+            // Sources: propagate UNKNOWN through SET behaviors
+            PropertyTable_t unknown;
+            prop_set_all_unknown(&unknown);
+            state.computed_props[i] = propagate_properties(filter, &unknown, 0);
+            state.validated[i] = true;
         }
     }
     
-    // Step 2: Validate current level
-    return validate_pipeline_level(pipeline, error_msg, error_msg_size);
+    // Use external inputs if provided (for nested pipelines)
+    if (n_external_inputs > 0) {
+        // Map external inputs to pipeline input filters
+        apply_external_inputs(&state, pipeline, external_inputs, n_external_inputs);
+    }
+    
+    // Topological propagation and validation
+    return validate_pipeline_dag(&state, pipeline, error_msg, error_msg_size);
 }
 ```
 

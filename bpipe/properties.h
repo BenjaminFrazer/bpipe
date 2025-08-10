@@ -60,10 +60,27 @@ typedef struct {
       properties[PROP_COUNT_MVP + 1];  // +1 for PROP_SLOT_AVAILABLE at index 0
 } PropertyTable_t;
 
+/* Port mask definitions for targeting specific inputs/outputs */
+#define INPUT_0 0x00000001 /* Port 0 only */
+#define INPUT_1 0x00000002 /* Port 1 only */
+#define INPUT_2 0x00000004 /* Port 2 only */
+#define INPUT_3 0x00000008 /* Port 3 only */
+#define INPUT_ALL \
+  0xFFFFFFFF /* All input ports (default for backward compatibility) */
+
+#define OUTPUT_0 0x00000001 /* Port 0 only */
+#define OUTPUT_1 0x00000002 /* Port 1 only */
+#define OUTPUT_2 0x00000004 /* Port 2 only */
+#define OUTPUT_3 0x00000008 /* Port 3 only */
+#define OUTPUT_ALL \
+  0xFFFFFFFF /* All output ports (default for backward compatibility) */
+
 /* Input constraint structure */
 typedef struct {
   SignalProperty_t property;
   ConstraintOp_t op;
+  uint32_t input_mask; /* Bitmask indicating which input ports this constraint
+                          applies to */
   union {
     SampleDtype_t dtype;
     uint32_t u32;
@@ -75,6 +92,8 @@ typedef struct {
 typedef struct {
   SignalProperty_t property;
   BehaviorOp_t op;
+  uint32_t output_mask; /* Bitmask indicating which output ports this behavior
+                           applies to */
   union {
     SampleDtype_t dtype;
     uint32_t u32;
@@ -109,10 +128,13 @@ bool prop_get_max_batch_capacity(const PropertyTable_t* table,
                                  uint32_t* capacity);
 bool prop_get_sample_period(const PropertyTable_t* table, uint64_t* period_ns);
 
-/* Validate that upstream properties meet downstream constraints */
+/* Validate that upstream properties meet downstream constraints
+ * @param input_port: The specific input port being connected (0-based index)
+ */
 Bp_EC prop_validate_connection(const PropertyTable_t* upstream_props,
                                const FilterContract_t* downstream_contract,
-                               char* error_msg, size_t error_msg_size);
+                               uint32_t input_port, char* error_msg,
+                               size_t error_msg_size);
 
 /* Propagate properties through a filter (inheritance + behaviors) */
 PropertyTable_t prop_propagate(const PropertyTable_t* upstream,
@@ -128,16 +150,22 @@ PropertyTable_t prop_from_buffer_config(const BatchBuffer_config* config);
 /* Append a constraint to a filter's input constraints array
  * Returns true if successful, false if array is full
  * The array must have been initialized with PROP_SENTINEL at the end
+ * @param input_mask: Bitmask indicating which input ports this constraint
+ * applies to
  */
 bool prop_append_constraint(struct _Filter_t* filter, SignalProperty_t prop,
-                            ConstraintOp_t op, const void* operand);
+                            ConstraintOp_t op, const void* operand,
+                            uint32_t input_mask);
 
 /* Append a behavior to a filter's output behaviors array
  * Returns true if successful, false if array is full
  * The array must have been initialized with PROP_SENTINEL at the end
+ * @param output_mask: Bitmask indicating which output ports this behavior
+ * applies to
  */
 bool prop_append_behavior(struct _Filter_t* filter, SignalProperty_t prop,
-                          BehaviorOp_t op, const void* operand);
+                          BehaviorOp_t op, const void* operand,
+                          uint32_t output_mask);
 
 /* Generate input constraints from buffer configuration
  * Appends constraints to the filter's input_constraints array

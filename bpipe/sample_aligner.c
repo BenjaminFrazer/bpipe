@@ -323,7 +323,7 @@ Bp_EC sample_aligner_init(SampleAligner_t* f, SampleAligner_config_t config)
 
   // Require known sample period
   prop_append_constraint(&f->base, PROP_SAMPLE_PERIOD_NS, CONSTRAINT_OP_EXISTS,
-                         NULL);
+                         NULL, INPUT_ALL);
 
   // Set output behaviors based on method
   if (config.method == INTERP_LINEAR || config.method == INTERP_SINC ||

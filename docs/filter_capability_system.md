@@ -15,15 +15,24 @@ Without explicit capability declarations, filters fail at runtime when connected
 
 ### Properties
 
-The system tracks four essential properties:
+The system tracks essential properties:
 - **Data Type**: The sample data type (float, int32, etc.)
 - **Batch Capacity**: Min/max batch sizes the filter can process
 - **Sample Period**: Time between samples in nanoseconds (0 = variable/unknown)
+- **Channel Count**: Number of channels (future)
 
 ### Constraints and Behaviors
 
 - **Input Constraints**: Requirements a filter has for its inputs
-- **Output Behaviors**: How a filter sets or modifies properties
+- **Output Behaviors**: How a filter generates or transforms properties
+  - **SET**: Source filters use SET to define properties they generate
+  - **PRESERVE**: Transform filters use PRESERVE to pass through properties
+
+### Property Computation
+
+Output properties are not stored directly but computed during validation by:
+1. For source filters: Propagating an UNKNOWN property table through SET behaviors
+2. For transform filters: Propagating input properties through behaviors (PRESERVE/SET)
 
 ## Filter API Usage
 
@@ -39,17 +48,23 @@ prop_append_constraint(&sink->base, PROP_SAMPLE_PERIOD_NS, CONSTRAINT_OP_EXISTS,
                       NULL);
 ```
 
-### Setting Output Properties
+### Declaring Output Behaviors
 
-Source filters and transforms set their output properties:
+Filters declare how they generate or transform properties using behaviors:
 
 ```c
-// Signal generator sets output properties
-prop_set_dtype(&sg->base.output_properties, DTYPE_FLOAT);
-prop_set_sample_period(&sg->base.output_properties, sample_rate_to_period_ns(48000));
-prop_set_min_batch_capacity(&sg->base.output_properties, batch_capacity);
-prop_set_max_batch_capacity(&sg->base.output_properties, batch_capacity);
+// Source filter: Uses SET behaviors to define output properties
+prop_append_behavior(&sg->base, OUTPUT_0, PROP_DATA_TYPE,
+                    BEHAVIOR_OP_SET, &(SampleDtype_t){DTYPE_FLOAT});
+prop_append_behavior(&sg->base, OUTPUT_0, PROP_SAMPLE_PERIOD_NS,
+                    BEHAVIOR_OP_SET, &sample_period_ns);
+
+// Transform filter: Uses PRESERVE to pass through properties
+prop_append_behavior(&filter->base, OUTPUT_0, PROP_DATA_TYPE,
+                    BEHAVIOR_OP_PRESERVE, NULL);
 ```
+
+Note: Output properties are computed by propagating input properties (or UNKNOWN for sources) through these behaviors during validation.
 
 ### Buffer-Based Constraints
 
@@ -121,15 +136,18 @@ Bp_EC signal_generator_init(SignalGenerator_t* sg, SignalGenerator_config_t conf
 {
     // ... initialization code ...
     
-    // Set output properties based on configuration
-    prop_set_dtype(&sg->base.output_properties, config.buff_config.dtype);
+    // Source filters use SET behaviors to define all output properties
+    prop_append_behavior(&sg->base, OUTPUT_0, PROP_DATA_TYPE,
+                        BEHAVIOR_OP_SET, &config.buff_config.dtype);
     
-    // Set sample period from configuration
-    prop_set_sample_period(&sg->base.output_properties, config.sample_period_ns);
+    prop_append_behavior(&sg->base, OUTPUT_0, PROP_SAMPLE_PERIOD_NS,
+                        BEHAVIOR_OP_SET, &config.sample_period_ns);
     
     uint32_t batch_capacity = 1U << config.buff_config.batch_capacity_expo;
-    prop_set_min_batch_capacity(&sg->base.output_properties, batch_capacity);
-    prop_set_max_batch_capacity(&sg->base.output_properties, batch_capacity);
+    prop_append_behavior(&sg->base, OUTPUT_0, PROP_MIN_BATCH_CAPACITY,
+                        BEHAVIOR_OP_SET, &batch_capacity);
+    prop_append_behavior(&sg->base, OUTPUT_0, PROP_MAX_BATCH_CAPACITY,
+                        BEHAVIOR_OP_SET, &batch_capacity);
     
     return Bp_EC_OK;
 }
@@ -208,12 +226,10 @@ Bp_EC stereo_splitter_init(StereoSplitter_t* splitter, config)
 
 ## API Reference
 
-### Setting Properties
-- `prop_set_dtype(PropertyTable_t* table, SampleDtype_t dtype)`
-- `prop_set_min_batch_capacity(PropertyTable_t* table, uint32_t capacity)`
-- `prop_set_max_batch_capacity(PropertyTable_t* table, uint32_t capacity)`
-- `prop_set_sample_period(PropertyTable_t* table, uint64_t period_ns)`
-- `prop_set_sample_rate_hz(PropertyTable_t* table, uint32_t rate_hz)` - Helper that converts Hz to period
+### Property Table Functions (for validation/testing)
+- `prop_set_all_unknown(PropertyTable_t* table)` - Initialize table with all properties unknown
+- `prop_get_dtype(PropertyTable_t* table, SampleDtype_t* dtype)` - Read property value
+- `prop_get_sample_period(PropertyTable_t* table, uint64_t* period_ns)` - Read property value
 
 ### Adding Constraints
 - `prop_append_constraint(Filter_t* filter, uint32_t input_mask, SignalProperty_t prop, ConstraintOp_t op, const void* operand)` - Apply constraint to specific inputs via bitmask

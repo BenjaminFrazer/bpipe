@@ -238,7 +238,8 @@ static bool validate_constraint(const Property_t* prop,
 /* Validate that upstream properties meet downstream constraints */
 Bp_EC prop_validate_connection(const PropertyTable_t* upstream_props,
                                const FilterContract_t* downstream_contract,
-                               char* error_msg, size_t error_msg_size)
+                               uint32_t input_port, char* error_msg,
+                               size_t error_msg_size)
 {
   if (!upstream_props || !downstream_contract) {
     return Bp_EC_NULL_POINTER;
@@ -251,8 +252,15 @@ Bp_EC prop_validate_connection(const PropertyTable_t* upstream_props,
 
   /* Check each constraint using count */
   const InputConstraint_t* constraints = downstream_contract->input_constraints;
+  uint32_t port_mask = 1U << input_port; /* Convert port index to bitmask */
+
   for (size_t i = 0; i < downstream_contract->n_input_constraints; i++) {
     const InputConstraint_t* constraint = &constraints[i];
+
+    /* Skip constraints that don't apply to this input port */
+    if ((constraint->input_mask & port_mask) == 0) {
+      continue;
+    }
 
     /* Validate property index */
     if (constraint->property > PROP_COUNT_MVP || constraint->property < 1) {
@@ -400,9 +408,13 @@ const char* prop_get_name(SignalProperty_t prop)
 
 /* Append a constraint to filter's input constraints array */
 bool prop_append_constraint(Filter_t* filter, SignalProperty_t prop,
-                            ConstraintOp_t op, const void* operand)
+                            ConstraintOp_t op, const void* operand,
+                            uint32_t input_mask)
 {
-  if (!filter || !operand) return false;
+  if (!filter) return false;
+
+  /* CONSTRAINT_OP_EXISTS doesn't need an operand, others do */
+  if (op != CONSTRAINT_OP_EXISTS && !operand) return false;
 
   /* Check if array is full */
   if (filter->n_input_constraints >= MAX_CONSTRAINTS) {
@@ -414,14 +426,17 @@ bool prop_append_constraint(Filter_t* filter, SignalProperty_t prop,
       &filter->input_constraints[filter->n_input_constraints];
   constraint->property = prop;
   constraint->op = op;
+  constraint->input_mask = input_mask;
 
-  /* Set operand based on property type */
-  if (prop == PROP_DATA_TYPE) {
-    constraint->operand.dtype = *(const SampleDtype_t*) operand;
-  } else if (prop == PROP_SAMPLE_PERIOD_NS) {
-    constraint->operand.u64 = *(const uint64_t*) operand;
-  } else {
-    constraint->operand.u32 = *(const uint32_t*) operand;
+  /* Set operand based on property type (only if operand provided) */
+  if (operand) {
+    if (prop == PROP_DATA_TYPE) {
+      constraint->operand.dtype = *(const SampleDtype_t*) operand;
+    } else if (prop == PROP_SAMPLE_PERIOD_NS) {
+      constraint->operand.u64 = *(const uint64_t*) operand;
+    } else {
+      constraint->operand.u32 = *(const uint32_t*) operand;
+    }
   }
 
   /* Increment count */
@@ -435,9 +450,13 @@ bool prop_append_constraint(Filter_t* filter, SignalProperty_t prop,
 
 /* Append a behavior to filter's output behaviors array */
 bool prop_append_behavior(Filter_t* filter, SignalProperty_t prop,
-                          BehaviorOp_t op, const void* operand)
+                          BehaviorOp_t op, const void* operand,
+                          uint32_t output_mask)
 {
-  if (!filter || !operand) return false;
+  if (!filter) return false;
+
+  /* BEHAVIOR_OP_PRESERVE doesn't need an operand, others do */
+  if (op != BEHAVIOR_OP_PRESERVE && !operand) return false;
 
   /* Check if array is full */
   if (filter->n_output_behaviors >= MAX_BEHAVIORS) {
@@ -449,14 +468,17 @@ bool prop_append_behavior(Filter_t* filter, SignalProperty_t prop,
       &filter->output_behaviors[filter->n_output_behaviors];
   behavior->property = prop;
   behavior->op = op;
+  behavior->output_mask = output_mask;
 
-  /* Set operand based on property type */
-  if (prop == PROP_DATA_TYPE) {
-    behavior->operand.dtype = *(const SampleDtype_t*) operand;
-  } else if (prop == PROP_SAMPLE_PERIOD_NS) {
-    behavior->operand.u64 = *(const uint64_t*) operand;
-  } else {
-    behavior->operand.u32 = *(const uint32_t*) operand;
+  /* Set operand based on property type (only if operand provided) */
+  if (operand) {
+    if (prop == PROP_DATA_TYPE) {
+      behavior->operand.dtype = *(const SampleDtype_t*) operand;
+    } else if (prop == PROP_SAMPLE_PERIOD_NS) {
+      behavior->operand.u64 = *(const uint64_t*) operand;
+    } else {
+      behavior->operand.u32 = *(const uint32_t*) operand;
+    }
   }
 
   /* Increment count */
@@ -477,7 +499,7 @@ void prop_constraints_from_buffer_append(Filter_t* filter,
 
   /* Add data type constraint */
   prop_append_constraint(filter, PROP_DATA_TYPE, CONSTRAINT_OP_EQ,
-                         &config->dtype);
+                         &config->dtype, INPUT_ALL);
 
   uint32_t capacity = 1U << config->batch_capacity_expo;
 
@@ -485,15 +507,15 @@ void prop_constraints_from_buffer_append(Filter_t* filter,
     /* Can handle any size from 1 to capacity */
     uint32_t min = 1;
     prop_append_constraint(filter, PROP_MIN_BATCH_CAPACITY, CONSTRAINT_OP_GTE,
-                           &min);
+                           &min, INPUT_ALL);
     prop_append_constraint(filter, PROP_MAX_BATCH_CAPACITY, CONSTRAINT_OP_LTE,
-                           &capacity);
+                           &capacity, INPUT_ALL);
   } else {
     /* Requires exact capacity */
     prop_append_constraint(filter, PROP_MIN_BATCH_CAPACITY, CONSTRAINT_OP_EQ,
-                           &capacity);
+                           &capacity, INPUT_ALL);
     prop_append_constraint(filter, PROP_MAX_BATCH_CAPACITY, CONSTRAINT_OP_EQ,
-                           &capacity);
+                           &capacity, INPUT_ALL);
   }
 }
 
@@ -505,11 +527,12 @@ void prop_set_output_behavior_for_buffer_filter(
   if (!filter || !config) return;
 
   /* Set data type behavior - always preserve */
-  prop_append_behavior(filter, PROP_DATA_TYPE, BEHAVIOR_OP_PRESERVE, NULL);
+  prop_append_behavior(filter, PROP_DATA_TYPE, BEHAVIOR_OP_PRESERVE, NULL,
+                       OUTPUT_ALL);
 
   /* Set sample period behavior - always preserve */
   prop_append_behavior(filter, PROP_SAMPLE_PERIOD_NS, BEHAVIOR_OP_PRESERVE,
-                       NULL);
+                       NULL, OUTPUT_ALL);
 
   uint32_t capacity = 1U << config->batch_capacity_expo;
 
@@ -522,15 +545,15 @@ void prop_set_output_behavior_for_buffer_filter(
     if (guarantee_full) {
       /* Always output full batches */
       prop_append_behavior(filter, PROP_MIN_BATCH_CAPACITY, BEHAVIOR_OP_SET,
-                           &capacity);
+                           &capacity, OUTPUT_ALL);
       prop_append_behavior(filter, PROP_MAX_BATCH_CAPACITY, BEHAVIOR_OP_SET,
-                           &capacity);
+                           &capacity, OUTPUT_ALL);
     } else {
       /* Output sizes can vary - preserve input behavior */
       prop_append_behavior(filter, PROP_MIN_BATCH_CAPACITY,
-                           BEHAVIOR_OP_PRESERVE, NULL);
+                           BEHAVIOR_OP_PRESERVE, NULL, OUTPUT_ALL);
       prop_append_behavior(filter, PROP_MAX_BATCH_CAPACITY,
-                           BEHAVIOR_OP_PRESERVE, NULL);
+                           BEHAVIOR_OP_PRESERVE, NULL, OUTPUT_ALL);
     }
   }
 }

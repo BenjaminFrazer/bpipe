@@ -58,7 +58,7 @@ void test_constraint_validation_exists(void)
 
   // Constraint requires sample rate to exist
   InputConstraint_t constraints[] = {
-      {PROP_SAMPLE_PERIOD_NS, CONSTRAINT_OP_EXISTS, {0}}};
+      {PROP_SAMPLE_PERIOD_NS, CONSTRAINT_OP_EXISTS, INPUT_ALL, {0}}};
 
   FilterContract_t contract = {.input_constraints = constraints,
                                .n_input_constraints = 1,
@@ -68,14 +68,14 @@ void test_constraint_validation_exists(void)
   char error_msg[256];
 
   // Should fail when property is unknown
-  Bp_EC err =
-      prop_validate_connection(&table, &contract, error_msg, sizeof(error_msg));
+  Bp_EC err = prop_validate_connection(&table, &contract, 0, error_msg,
+                                       sizeof(error_msg));
   TEST_ASSERT_EQUAL(Bp_EC_PROPERTY_MISMATCH, err);
 
   // Should pass when property is set
   prop_set_sample_rate_hz(&table, 48000);
-  err =
-      prop_validate_connection(&table, &contract, error_msg, sizeof(error_msg));
+  err = prop_validate_connection(&table, &contract, 0, error_msg,
+                                 sizeof(error_msg));
   TEST_ASSERT_EQUAL(Bp_EC_OK, err);
 }
 
@@ -86,7 +86,7 @@ void test_constraint_validation_equality(void)
 
   // Constraint requires DTYPE_I32
   InputConstraint_t constraints[] = {
-      {PROP_DATA_TYPE, CONSTRAINT_OP_EQ, {.dtype = DTYPE_I32}}};
+      {PROP_DATA_TYPE, CONSTRAINT_OP_EQ, INPUT_ALL, {.dtype = DTYPE_I32}}};
 
   FilterContract_t contract = {.input_constraints = constraints,
                                .n_input_constraints = 1,
@@ -96,14 +96,14 @@ void test_constraint_validation_equality(void)
   char error_msg[256];
 
   // Should fail - type mismatch
-  Bp_EC err =
-      prop_validate_connection(&table, &contract, error_msg, sizeof(error_msg));
+  Bp_EC err = prop_validate_connection(&table, &contract, 0, error_msg,
+                                       sizeof(error_msg));
   TEST_ASSERT_EQUAL(Bp_EC_PROPERTY_MISMATCH, err);
 
   // Should pass when types match
   prop_set_dtype(&table, DTYPE_I32);
-  err =
-      prop_validate_connection(&table, &contract, error_msg, sizeof(error_msg));
+  err = prop_validate_connection(&table, &contract, 0, error_msg,
+                                 sizeof(error_msg));
   TEST_ASSERT_EQUAL(Bp_EC_OK, err);
 }
 
@@ -114,7 +114,7 @@ void test_constraint_validation_range(void)
 
   // Constraint requires min batch capacity >= 128
   InputConstraint_t constraints[] = {
-      {PROP_MIN_BATCH_CAPACITY, CONSTRAINT_OP_GTE, {.u32 = 128}}};
+      {PROP_MIN_BATCH_CAPACITY, CONSTRAINT_OP_GTE, INPUT_ALL, {.u32 = 128}}};
 
   FilterContract_t contract = {.input_constraints = constraints,
                                .n_input_constraints = 1,
@@ -124,14 +124,14 @@ void test_constraint_validation_range(void)
   char error_msg[256];
 
   // Should fail - 64 < 128
-  Bp_EC err =
-      prop_validate_connection(&table, &contract, error_msg, sizeof(error_msg));
+  Bp_EC err = prop_validate_connection(&table, &contract, 0, error_msg,
+                                       sizeof(error_msg));
   TEST_ASSERT_EQUAL(Bp_EC_PROPERTY_MISMATCH, err);
 
   // Should pass when value meets requirement
   prop_set_min_batch_capacity(&table, 256);
-  err =
-      prop_validate_connection(&table, &contract, error_msg, sizeof(error_msg));
+  err = prop_validate_connection(&table, &contract, 0, error_msg,
+                                 sizeof(error_msg));
   TEST_ASSERT_EQUAL(Bp_EC_OK, err);
 }
 
@@ -142,8 +142,10 @@ void test_property_propagation_set(void)
 
   // Filter sets output to 44100 Hz (convert to period)
   uint64_t period_44100 = sample_rate_to_period_ns(44100);
-  OutputBehavior_t behaviors[] = {
-      {PROP_SAMPLE_PERIOD_NS, BEHAVIOR_OP_SET, {.u64 = period_44100}}};
+  OutputBehavior_t behaviors[] = {{PROP_SAMPLE_PERIOD_NS,
+                                   BEHAVIOR_OP_SET,
+                                   OUTPUT_ALL,
+                                   {.u64 = period_44100}}};
 
   FilterContract_t contract = {.input_constraints = NULL,
                                .n_input_constraints = 0,
@@ -332,6 +334,123 @@ void test_property_name_lookup(void)
   TEST_ASSERT_EQUAL_STRING("unknown", prop_get_name(PROP_COUNT_MVP));
 }
 
+// Port-specific constraint and behavior tests
+void test_port_specific_constraint_validation(void)
+{
+  PropertyTable_t table = prop_table_init();
+  prop_set_dtype(&table, DTYPE_FLOAT);
+
+  // Create constraints for different ports
+  InputConstraint_t constraints[2] = {
+      {PROP_DATA_TYPE, CONSTRAINT_OP_EQ, INPUT_0, {.dtype = DTYPE_FLOAT}},
+      {PROP_DATA_TYPE, CONSTRAINT_OP_EQ, INPUT_1, {.dtype = DTYPE_I32}}};
+
+  FilterContract_t contract = {.input_constraints = constraints,
+                               .n_input_constraints = 2,
+                               .output_behaviors = NULL,
+                               .n_output_behaviors = 0};
+
+  char error_msg[256];
+
+  // Input port 0 should pass (DTYPE_FLOAT matches)
+  Bp_EC err = prop_validate_connection(&table, &contract, 0, error_msg,
+                                       sizeof(error_msg));
+  TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+
+  // Input port 1 should fail (DTYPE_FLOAT != DTYPE_I32)
+  err = prop_validate_connection(&table, &contract, 1, error_msg,
+                                 sizeof(error_msg));
+  TEST_ASSERT_EQUAL(Bp_EC_PROPERTY_MISMATCH, err);
+
+  // Input port 2 should pass (no constraints apply to port 2)
+  err = prop_validate_connection(&table, &contract, 2, error_msg,
+                                 sizeof(error_msg));
+  TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+}
+
+void test_input_all_mask_validation(void)
+{
+  PropertyTable_t table = prop_table_init();
+  prop_set_dtype(&table, DTYPE_FLOAT);
+
+  // Constraint applies to all input ports
+  InputConstraint_t constraints[1] = {
+      {PROP_DATA_TYPE, CONSTRAINT_OP_EQ, INPUT_ALL, {.dtype = DTYPE_FLOAT}}};
+
+  FilterContract_t contract = {.input_constraints = constraints,
+                               .n_input_constraints = 1,
+                               .output_behaviors = NULL,
+                               .n_output_behaviors = 0};
+
+  char error_msg[256];
+
+  // All ports should be validated against INPUT_ALL constraint
+  for (int port = 0; port < 4; port++) {
+    Bp_EC err = prop_validate_connection(&table, &contract, port, error_msg,
+                                         sizeof(error_msg));
+    TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+  }
+}
+
+void test_bitmask_combination_constraints(void)
+{
+  PropertyTable_t table = prop_table_init();
+  prop_set_dtype(&table, DTYPE_FLOAT);
+
+  // Constraint applies to INPUT_0 | INPUT_2 (ports 0 and 2)
+  InputConstraint_t constraints[1] = {{PROP_DATA_TYPE,
+                                       CONSTRAINT_OP_EQ,
+                                       INPUT_0 | INPUT_2,
+                                       {.dtype = DTYPE_FLOAT}}};
+
+  FilterContract_t contract = {.input_constraints = constraints,
+                               .n_input_constraints = 1,
+                               .output_behaviors = NULL,
+                               .n_output_behaviors = 0};
+
+  char error_msg[256];
+
+  // Port 0 should be validated (included in mask)
+  Bp_EC err = prop_validate_connection(&table, &contract, 0, error_msg,
+                                       sizeof(error_msg));
+  TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+
+  // Port 1 should pass (not included in mask, so constraint doesn't apply)
+  err = prop_validate_connection(&table, &contract, 1, error_msg,
+                                 sizeof(error_msg));
+  TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+
+  // Port 2 should be validated (included in mask)
+  err = prop_validate_connection(&table, &contract, 2, error_msg,
+                                 sizeof(error_msg));
+  TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+
+  // Port 3 should pass (not included in mask)
+  err = prop_validate_connection(&table, &contract, 3, error_msg,
+                                 sizeof(error_msg));
+  TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+}
+
+void test_port_mask_constants(void)
+{
+  // Test that the port mask constants have expected values
+  TEST_ASSERT_EQUAL_UINT32(0x00000001, INPUT_0);
+  TEST_ASSERT_EQUAL_UINT32(0x00000002, INPUT_1);
+  TEST_ASSERT_EQUAL_UINT32(0x00000004, INPUT_2);
+  TEST_ASSERT_EQUAL_UINT32(0x00000008, INPUT_3);
+  TEST_ASSERT_EQUAL_UINT32(0xFFFFFFFF, INPUT_ALL);
+
+  TEST_ASSERT_EQUAL_UINT32(0x00000001, OUTPUT_0);
+  TEST_ASSERT_EQUAL_UINT32(0x00000002, OUTPUT_1);
+  TEST_ASSERT_EQUAL_UINT32(0x00000004, OUTPUT_2);
+  TEST_ASSERT_EQUAL_UINT32(0x00000008, OUTPUT_3);
+  TEST_ASSERT_EQUAL_UINT32(0xFFFFFFFF, OUTPUT_ALL);
+
+  // Test combinations
+  TEST_ASSERT_EQUAL_UINT32(0x00000003, INPUT_0 | INPUT_1);
+  TEST_ASSERT_EQUAL_UINT32(0x0000000C, INPUT_2 | INPUT_3);
+}
+
 int main(void)
 {
   UNITY_BEGIN();
@@ -357,6 +476,12 @@ int main(void)
 
   // Utility functions
   RUN_TEST(test_property_name_lookup);
+
+  // Port-specific constraint and behavior tests
+  RUN_TEST(test_port_specific_constraint_validation);
+  RUN_TEST(test_input_all_mask_validation);
+  RUN_TEST(test_bitmask_combination_constraints);
+  RUN_TEST(test_port_mask_constants);
 
   return UNITY_END();
 }

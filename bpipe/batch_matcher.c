@@ -167,7 +167,7 @@ Bp_EC batch_matcher_init(BatchMatcher_t* matcher, BatchMatcher_config_t config)
 
   // Require known sample period
   prop_append_constraint(&matcher->base, PROP_SAMPLE_PERIOD_NS,
-                         CONSTRAINT_OP_EXISTS, NULL);
+                         CONSTRAINT_OP_EXISTS, NULL, INPUT_ALL);
 
   // Set output behaviors - adaptive mode with full batches
   prop_set_output_behavior_for_buffer_filter(&matcher->base,
