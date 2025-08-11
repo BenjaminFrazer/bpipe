@@ -116,6 +116,13 @@ test-c: all
 	done
 	@echo "All C tests passed!"
 
+test-c-quiet: all
+	@echo "Running C tests (quiet mode)..."
+	@for test in $(TEST_EXECUTABLES); do \
+		scripts/run_test_quiet.sh 4 $$test || exit 1; \
+	done
+	@echo "All C tests passed!"
+
 test-py: build-py
 	@echo "Running Python tests..."
 	python -m pytest py-tests -v

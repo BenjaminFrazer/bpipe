@@ -135,7 +135,7 @@ void test_dataflow_backpressure(void)
   }
 
   // Let it run for a bit
-  usleep(500000);  // 500ms to give backpressure time to work
+  usleep(1000);  // 500ms to give backpressure time to work
 
   // Stop pipeline
   if (producers) {

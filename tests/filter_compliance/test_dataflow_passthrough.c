@@ -139,9 +139,9 @@ void test_dataflow_passthrough(void)
     }
   } else if (consumer) {
     // For source filters, wait a reasonable time for data generation
-    usleep(100000);  // 100ms
+    usleep(1000);  // 100ms
   }
-  usleep(10000);  // Extra time for data to flow through
+  usleep(1000);  // Extra time for data to flow through
 
   // Stop pipeline
   if (producers) {
