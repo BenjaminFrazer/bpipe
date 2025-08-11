@@ -7,6 +7,7 @@
 #include "batch_buffer.h"
 #include "map.h"
 #include "pipeline.h"
+#include "signal_generator.h"
 #include "tee.h"
 #include "test_utils.h"
 #include "unity.h"
@@ -203,8 +204,24 @@ void test_pipeline_multi_branch_dag(void)
 
 void test_pipeline_lifecycle_and_errors(void)
 {
-  // Create simple pipeline for lifecycle testing
+  // Create simple pipeline for lifecycle testing with a source
+  SignalGenerator_t source;
   Map_filt_t gain_filter, offset_filter;
+
+  // Add a source filter to make this a valid root pipeline
+  SignalGenerator_config_t source_config = {
+      .name = "test_source",
+      .buff_config = default_buffer_config(),
+      .waveform_type = WAVEFORM_SINE,
+      .frequency_hz = 100.0,
+      .sample_period_ns = 1000000,  // 1ms
+      .amplitude = 1.0,
+      .offset = 0.0,
+      .phase_rad = 0.0,
+      .max_samples = 1000,  // Limit output for testing
+      .timeout_us = 1000000
+  };
+  CHECK_ERR(signal_generator_init(&source, source_config));
 
   Map_config_t multiply_by_2_config = {.name = "gain_x2",
                                        .buff_config = default_buffer_config(),
@@ -219,18 +236,21 @@ void test_pipeline_lifecycle_and_errors(void)
   CHECK_ERR(map_init(&gain_filter, multiply_by_2_config));
   CHECK_ERR(map_init(&offset_filter, add_10_config));
 
-  Filter_t* filters[] = {&gain_filter.base, &offset_filter.base};
+  Filter_t* filters[] = {&source.base, &gain_filter.base, &offset_filter.base};
 
-  Connection_t connections[] = {{&gain_filter.base, 0, &offset_filter.base, 0}};
+  Connection_t connections[] = {
+      {&source.base, 0, &gain_filter.base, 0},
+      {&gain_filter.base, 0, &offset_filter.base, 0}
+  };
 
   Pipeline_config_t config = {.name = "lifecycle_test",
                               .buff_config = default_buffer_config(),
                               .timeout_us = 1000000,
                               .filters = filters,
-                              .n_filters = 2,
+                              .n_filters = 3,
                               .connections = connections,
-                              .n_connections = 1,
-                              .input_filter = &gain_filter.base,
+                              .n_connections = 2,
+                              .input_filter = &source.base,
                               .input_port = 0,
                               .output_filter = &offset_filter.base,
                               .output_port = 0};
@@ -254,6 +274,9 @@ void test_pipeline_lifecycle_and_errors(void)
   TEST_ASSERT_FALSE(atomic_load(&pipeline.base.running));
 
   filt_deinit(&pipeline.base);
+  filt_deinit(&source.base);
+  filt_deinit(&gain_filter.base);
+  filt_deinit(&offset_filter.base);
 }
 
 void test_pipeline_connection_validation(void)

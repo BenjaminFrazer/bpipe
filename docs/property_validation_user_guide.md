@@ -176,12 +176,17 @@ prop_append_constraint(&mixer->base, PROP_SAMPLE_PERIOD_NS,
 For filters that receive external data into the pipeline:
 
 ```c
-// Declare a filter as pipeline input with expected properties
-PropertyTable_t expected_props = prop_table_init();
-prop_set_dtype(&expected_props, DTYPE_FLOAT);
-prop_set_sample_period(&expected_props, period_ns);
+// Declare which filter receives external input
+pipeline_declare_external_input(&pipeline, 0, &input_filter, 0);
 
-pipeline_add_input(&pipeline, &input_filter, &expected_props, 1);
+// Prepare external input properties for validation
+PropertyTable_t external_inputs[1];
+external_inputs[0] = prop_table_init();
+prop_set_dtype(&external_inputs[0], DTYPE_FLOAT);
+prop_set_sample_period(&external_inputs[0], period_ns);
+
+// Validate with external inputs
+pipeline_validate_properties(&pipeline, external_inputs, 1, error_msg, sizeof(error_msg));
 ```
 
 ## Error Messages

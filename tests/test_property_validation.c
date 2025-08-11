@@ -181,7 +181,7 @@ void test_linear_pipeline_property_validation(void)
 
   // Validate properties directly (before start)
   char error_msg[256];
-  Bp_EC validation_result = pipeline_validate_properties(&pipeline, error_msg, sizeof(error_msg));
+  Bp_EC validation_result = pipeline_validate_properties(&pipeline, NULL, 0, error_msg, sizeof(error_msg));
   
   // Check validation passed
   if (validation_result != Bp_EC_OK) {
@@ -308,7 +308,7 @@ void test_pipeline_validation_failure(void)
 
   // Validate properties - should fail due to type mismatch
   char error_msg[256];
-  Bp_EC validation_result = pipeline_validate_properties(&pipeline, error_msg, sizeof(error_msg));
+  Bp_EC validation_result = pipeline_validate_properties(&pipeline, NULL, 0, error_msg, sizeof(error_msg));
   
   // Debug output to understand the failure
   if (validation_result != Bp_EC_PROPERTY_MISMATCH) {
@@ -413,7 +413,7 @@ void test_diamond_dag_property_validation(void)
   // Validate properties - should handle DAG correctly
   char error_msg[256];
   TEST_ASSERT_EQUAL(Bp_EC_OK, 
-                    pipeline_validate_properties(&pipeline, error_msg, sizeof(error_msg)));
+                    pipeline_validate_properties(&pipeline, NULL, 0, error_msg, sizeof(error_msg)));
   
   // Clean up
   filt_deinit(&pipeline.base);
@@ -481,24 +481,27 @@ void test_pipeline_input_declaration(void)
   Pipeline_t pipeline;
   TEST_ASSERT_EQUAL(Bp_EC_OK, pipeline_init(&pipeline, pipe_config));
   
-  // Declare expected properties for pipeline input
-  PropertyTable_t expected_props = prop_table_init();
-  expected_props.properties[PROP_DATA_TYPE].known = true;
-  expected_props.properties[PROP_DATA_TYPE].value.dtype = DTYPE_FLOAT;
-  expected_props.properties[PROP_SAMPLE_PERIOD_NS].known = true;
-  expected_props.properties[PROP_SAMPLE_PERIOD_NS].value.u64 = 1000000;  // 1ms period
-  expected_props.properties[PROP_MIN_BATCH_CAPACITY].known = true;
-  expected_props.properties[PROP_MIN_BATCH_CAPACITY].value.u32 = 64;
-  expected_props.properties[PROP_MAX_BATCH_CAPACITY].known = true;
-  expected_props.properties[PROP_MAX_BATCH_CAPACITY].value.u32 = 64;
+  // Declare which filter receives external input
+  TEST_ASSERT_EQUAL(Bp_EC_OK,
+                    pipeline_declare_external_input(&pipeline, 0, &input_filter.base, 0));
   
-  TEST_ASSERT_EQUAL(Bp_EC_OK, 
-                    pipeline_add_input(&pipeline, &input_filter.base, &expected_props, 1));
+  // Prepare external input properties
+  PropertyTable_t external_inputs[1];
+  external_inputs[0] = prop_table_init();
+  external_inputs[0].properties[PROP_DATA_TYPE].known = true;
+  external_inputs[0].properties[PROP_DATA_TYPE].value.dtype = DTYPE_FLOAT;
+  external_inputs[0].properties[PROP_SAMPLE_PERIOD_NS].known = true;
+  external_inputs[0].properties[PROP_SAMPLE_PERIOD_NS].value.u64 = 1000000;  // 1ms period
+  external_inputs[0].properties[PROP_MIN_BATCH_CAPACITY].known = true;
+  external_inputs[0].properties[PROP_MIN_BATCH_CAPACITY].value.u32 = 64;
+  external_inputs[0].properties[PROP_MAX_BATCH_CAPACITY].known = true;
+  external_inputs[0].properties[PROP_MAX_BATCH_CAPACITY].value.u32 = 64;
   
-  // Validate should succeed with declared input properties
+  // Validate should succeed with external input properties
   char error_msg[256];
   TEST_ASSERT_EQUAL(Bp_EC_OK,
-                    pipeline_validate_properties(&pipeline, error_msg, sizeof(error_msg)));
+                    pipeline_validate_properties(&pipeline, external_inputs, 1, 
+                                                error_msg, sizeof(error_msg)));
   
   // Clean up
   filt_deinit(&pipeline.base);
@@ -572,9 +575,18 @@ void test_cycle_detection(void)
   Pipeline_t pipeline;
   TEST_ASSERT_EQUAL(Bp_EC_OK, pipeline_init(&pipeline, pipe_config));
   
+  // Declare external input to make this a nested pipeline (to test cycle, not source requirement)
+  TEST_ASSERT_EQUAL(Bp_EC_OK, 
+                    pipeline_declare_external_input(&pipeline, 0, &filter1.base, 0));
+  
+  // Prepare dummy external inputs
+  PropertyTable_t external_inputs[1];
+  external_inputs[0] = prop_table_init();
+  prop_set_all_unknown(&external_inputs[0]);
+  
   // Validation should fail due to cycle
   char error_msg[256];
-  Bp_EC result = pipeline_validate_properties(&pipeline, error_msg, sizeof(error_msg));
+  Bp_EC result = pipeline_validate_properties(&pipeline, external_inputs, 1, error_msg, sizeof(error_msg));
   TEST_ASSERT_EQUAL(Bp_EC_INVALID_CONFIG, result);
   TEST_ASSERT_TRUE(strstr(error_msg, "cycle") != NULL);
   
@@ -640,7 +652,7 @@ void test_disconnected_subgraph(void)
   // Validation might fail for disconnected subgraphs
   // The pipeline validation may not handle disconnected components well
   char error_msg[256];
-  Bp_EC result = pipeline_validate_properties(&pipeline, error_msg, sizeof(error_msg));
+  Bp_EC result = pipeline_validate_properties(&pipeline, NULL, 0, error_msg, sizeof(error_msg));
   // For now, accept that disconnected graphs may cause validation issues
   // This is a limitation of the current implementation
   (void)result;  // Suppress unused warning
@@ -813,9 +825,19 @@ void test_long_filter_chain(void)
   Pipeline_t pipeline;
   TEST_ASSERT_EQUAL(Bp_EC_OK, pipeline_init(&pipeline, pipe_config));
   
+  // Declare external input to make this a nested pipeline
+  TEST_ASSERT_EQUAL(Bp_EC_OK,
+                    pipeline_declare_external_input(&pipeline, 0, &filters[0].base, 0));
+  
+  // Prepare external inputs with known properties
+  PropertyTable_t external_inputs[1];
+  external_inputs[0] = prop_table_init();
+  external_inputs[0].properties[PROP_DATA_TYPE].known = true;
+  external_inputs[0].properties[PROP_DATA_TYPE].value.dtype = DTYPE_FLOAT;
+  
   // Validation should pass for long chains
   char error_msg[256];
-  Bp_EC result = pipeline_validate_properties(&pipeline, error_msg, sizeof(error_msg));
+  Bp_EC result = pipeline_validate_properties(&pipeline, external_inputs, 1, error_msg, sizeof(error_msg));
   TEST_ASSERT_EQUAL(Bp_EC_OK, result);
   
   // Verify properties propagated through entire chain
