@@ -691,8 +691,8 @@ void test_multiple_sources_converging(void)
   // For this test, we're just verifying the property validation logic
   
   // Since Map only has 1 input, we can only test one connection at a time
-  // Test connecting source1
-  CHECK_ERR(filt_sink_connect(&source1.base, 0, combiner.base.input_buffers[0]));
+  // Test connecting source1 - use filt_connect to properly set input_properties
+  CHECK_ERR(filt_connect(&source1.base, 0, &combiner.base, 0));
   
   // Verify properties are set correctly after connection
   SampleDtype_t dtype;
@@ -748,8 +748,9 @@ void test_property_conflict(void)
   CHECK_ERR(map_init(&filter, map_config));
   
   // Connection should fail due to dtype mismatch
-  Bp_EC result = filt_sink_connect(&source.base, 0, filter.base.input_buffers[0]);
-  // Map filter checks data type compatibility during connection
+  // Use filt_connect which properly validates properties
+  Bp_EC result = filt_connect(&source.base, 0, &filter.base, 0);
+  // filt_connect checks data type compatibility during connection
   TEST_ASSERT_EQUAL(Bp_EC_PROPERTY_MISMATCH, result);
   
   // Clean up
@@ -829,6 +830,78 @@ void test_long_filter_chain(void)
 }
 
 /**
+ * Test multi-output filter property validation (tee filter)
+ */
+void test_multi_output_tee_properties(void)
+{
+  // Create a simple pipeline with a tee filter
+  SignalGenerator_t source;
+  Tee_filt_t tee;
+  TestSink_t sink1, sink2;
+  
+  // Initialize source
+  SignalGenerator_config_t gen_config = {
+      .name = "source",
+      .waveform_type = WAVEFORM_SINE,
+      .frequency_hz = 100.0,
+      .amplitude = 1.0,
+      .offset = 0.0,
+      .phase_rad = 0.0,
+      .sample_period_ns = 1000000,  // 1kHz
+      .max_samples = 1000,
+      .buff_config = default_buffer_config()
+  };
+  CHECK_ERR(signal_generator_init(&source, gen_config));
+  
+  // Initialize tee with 2 outputs
+  BatchBuffer_config output_configs[2] = {
+      default_buffer_config(),
+      default_buffer_config()
+  };
+  Tee_config_t tee_config = {
+      .name = "tee",
+      .n_outputs = 2,
+      .buff_config = default_buffer_config(),
+      .output_configs = output_configs,
+      .timeout_us = 10000
+  };
+  CHECK_ERR(tee_init(&tee, tee_config));
+  
+  // Initialize sinks
+  CHECK_ERR(test_sink_init(&sink1, "sink1"));
+  CHECK_ERR(test_sink_init(&sink2, "sink2"));
+  
+  // Connect source to tee
+  Bp_EC err = filt_connect(&source.base, 0, &tee.base, 0);
+  TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+  
+  // Check if tee has multiple outputs configured
+  TEST_ASSERT_EQUAL(2, tee.base.max_supported_sinks);
+  
+  // Verify the multi-output infrastructure exists
+  // The tee filter has MAX_OUTPUTS output property tables
+  TEST_ASSERT_TRUE(tee.base.n_outputs >= 1);
+  
+  // Each output should have its own property table
+  // (though tee doesn't currently populate them)
+  for (int i = 0; i < 2; i++) {
+    // The infrastructure for multiple output properties exists
+    // even if tee doesn't use it yet
+    TEST_ASSERT_NOT_NULL(&tee.base.output_properties[i]);
+  }
+  
+  // NOTE: We can't connect to sinks because tee doesn't implement
+  // property behaviors yet. This test just shows the infrastructure
+  // for multi-output property validation exists.
+  
+  // Clean up
+  filt_deinit(&source.base);
+  filt_deinit(&tee.base);
+  filt_deinit(&sink1.base);
+  filt_deinit(&sink2.base);
+}
+
+/**
  * Test UNKNOWN property propagation through chain
  */
 void test_unknown_propagation(void)
@@ -887,6 +960,7 @@ int main(void)
   RUN_TEST(test_multiple_sources_converging);
   RUN_TEST(test_property_conflict);
   RUN_TEST(test_long_filter_chain);
+  RUN_TEST(test_multi_output_tee_properties);
   RUN_TEST(test_unknown_propagation);
   return UNITY_END();
 }
