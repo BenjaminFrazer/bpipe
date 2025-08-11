@@ -26,6 +26,12 @@ void test_buffer_overflow_drop_head(void);
 void test_buffer_overflow_drop_tail(void);
 void test_buffer_large_batches(void);
 
+// Behavioral compliance tests
+void test_partial_batch_handling(void);
+void test_data_type_compatibility(void);
+void test_sample_rate_preservation(void);
+void test_data_integrity(void);
+
 // Example default configurations for testing
 static ControllableProducerConfig_t default_producer_config = {
     .name = "default_producer",
@@ -124,6 +130,16 @@ static ComplianceTest_t compliance_tests[] = {
      "tests/filter_compliance/test_buffer_edge_cases.c"},
     {test_buffer_large_batches, "test_buffer_large_batches",
      "tests/filter_compliance/test_buffer_edge_cases.c"},
+
+    // Behavioral compliance tests
+    {test_partial_batch_handling, "test_partial_batch_handling",
+     "tests/filter_compliance/test_behavioral_compliance.c"},
+    {test_data_type_compatibility, "test_data_type_compatibility",
+     "tests/filter_compliance/test_behavioral_compliance.c"},
+    {test_sample_rate_preservation, "test_sample_rate_preservation",
+     "tests/filter_compliance/test_behavioral_compliance.c"},
+    {test_data_integrity, "test_data_integrity",
+     "tests/filter_compliance/test_behavioral_compliance.c"},
 };
 
 int main(int argc, char* argv[])
