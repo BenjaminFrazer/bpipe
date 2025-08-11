@@ -14,6 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
    - `docs/error_handling_guide.md` - MUST follow error patterns
    - `docs/filter_capability_system.md` - MUST understand property constraints and behaviors
    - `docs/pipeline_property_validation.md` - MUST understand pipeline-wide validation
+   - `docs/pipeline.md` - MUST understand Pipeline filter lifecycle and usage
 
 **IMPORTANT**: If you have not read the above documents, STOP and read them NOW. Do not proceed with any implementation work until you understand these core concepts. This is non-negotiable.
 

@@ -111,6 +111,14 @@ Exports data to CSV files with configurable formatting.
 - Append mode support
 - Buffered writing for performance
 
+## Container Filters
+
+### Pipeline (`pipeline.h`)
+
+Encapsulates a DAG of filters as a single reusable unit with automatic lifecycle management.
+
+See [Pipeline Documentation](pipeline.md) for detailed usage and behavior.
+
 ## Utility Filters
 
 ### Tee Filter (`tee.h`)
