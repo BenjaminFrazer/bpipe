@@ -4,6 +4,8 @@
 
 The `Pipeline_t` filter is a container that encapsulates a directed acyclic graph (DAG) of interconnected filters, presenting them as a single filter with a unified interface. This enables modular, reusable processing topologies while maintaining the simplicity of bpipe2's filter model.
 
+**Important**: A **root pipeline** (one with no external connections) must contain at least one source filter to generate data. Pipelines without source filters can only exist as nested components within other pipelines.
+
 ## Key Concepts
 
 ### Automatic Lifecycle Management
@@ -160,6 +162,8 @@ Pipeline_config_t config = {
 Pipelines participate in property validation:
 - The pipeline validates internal connections during `pipeline_init()`
 - Full pipeline validation occurs during `filt_start()` before starting internal filters
+- Root pipelines (no external connections) must contain at least one source filter or validation fails
+- Nested pipelines may consist entirely of transform filters
 - Validation errors are reported with clear context about which filters failed
 
 ## Common Pitfalls
@@ -185,7 +189,19 @@ CHECK_ERR(filt_start(&source.base));    // External source
 CHECK_ERR(filt_start(&pipeline.base));  // Pipeline and its internals
 ```
 
-### 3. Wrong Cleanup Order
+### 3. Creating Root Pipeline Without Sources
+```c
+// WRONG - Root pipeline with no source filters
+Pipeline[Tee -> Map1, Map2]  // Will fail validation!
+
+// CORRECT - Include source in pipeline
+Pipeline[SignalGen -> Tee -> Map1, Map2]
+
+// OR - Use as nested pipeline component
+OuterPipeline[SignalGen -> InnerPipeline[Tee -> Map1, Map2]]
+```
+
+### 4. Wrong Cleanup Order
 ```c
 // WRONG - Deinit pipeline before stopping
 CHECK_ERR(filt_deinit(&pipeline.base));

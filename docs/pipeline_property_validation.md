@@ -30,16 +30,19 @@ While pairwise connection validation catches obvious mismatches, it cannot:
 
 ### Core Principle
 
-Top-level pipelines are self-contained with no external inputs - all sources are internal and must fully define their output properties through SET behaviors. Nested pipelines receive external input properties from their containing pipeline during validation.
+**Root pipelines** (those with no external inputs) must be self-contained systems with at least one internal source filter that generates data. A root pipeline without any source filters is invalid and will fail validation. **Nested pipelines** (embedded within other pipelines) receive external input properties from their containing pipeline during validation and may consist entirely of transform filters.
 
 ### Algorithm Overview
 
-1. **Initialize Starting Points**: 
+1. **Validate Pipeline Completeness**:
+   - Root pipelines: Must contain at least one source filter (n_inputs == 0)
+   - Nested pipelines: May be pure transform chains (source filters optional)
+2. **Initialize Starting Points**: 
    - For source filters: Propagate UNKNOWN property table through SET behaviors
    - For external inputs: Use provided property tables from container
-2. **Topological Traversal**: Process filters in dependency order
-3. **Property Propagation**: Compute output properties by applying behaviors to input properties
-4. **Constraint Validation**: At each filter, validate:
+3. **Topological Traversal**: Process filters in dependency order
+4. **Property Propagation**: Compute output properties by applying behaviors to input properties
+5. **Constraint Validation**: At each filter, validate:
    - Input properties meet filter constraints
    - Multi-input alignment requirements are satisfied
 
@@ -54,7 +57,7 @@ Bp_EC pipeline_validate_properties(const Pipeline_t* pipeline,
                                    size_t error_msg_size);
 ```
 
-For top-level pipelines, `external_inputs` is NULL and `n_external_inputs` is 0.
+For root pipelines, `external_inputs` is NULL and `n_external_inputs` is 0. The validation will fail if no source filters are found.
 For nested pipelines, external inputs are provided by the containing pipeline.
 
 ## Property Propagation Rules
@@ -345,6 +348,18 @@ Error messages should include:
 
 ### Common Validation Failures
 
+#### Incomplete Root Pipeline
+```
+Pipeline validation failed: 'dag_pipeline'
+  Error: Root pipeline has no source filters
+  A root pipeline must contain at least one source filter to generate data
+  
+  Solutions:
+  - Add a source filter (SignalGenerator, CSVSource, etc.) to the pipeline
+  - If this pipeline needs external input, embed it within another pipeline
+  - Restructure as a nested pipeline component
+```
+
 #### Unknown Property Required
 ```
 Property validation failed at 'CSVSink':
@@ -499,8 +514,8 @@ Bp_EC pipeline_validate_properties(const Pipeline_t* pipeline,
                                    char* error_msg, size_t error_msg_size);
 ```
 
-- Top-level pipelines: Call with `external_inputs=NULL, n_external_inputs=0`
-- Nested pipelines: Provide actual input properties from containing pipeline
+- Root pipelines: Call with `external_inputs=NULL, n_external_inputs=0` (validation fails if no source filters present)
+- Nested pipelines: Provide actual input properties from containing pipeline (source filters optional)
 
 
 ## Nested Pipeline Handling
@@ -564,7 +579,7 @@ This encapsulation means:
 
 When `pipeline_validate_properties()` is called:
 
-1. **Initialize sources or use external inputs**: Top-level uses internal sources, nested uses provided inputs
+1. **Initialize sources or use external inputs**: Root pipelines must have internal sources, nested pipelines use provided inputs
 2. **Validate internal topology**: Propagate properties through internal filters
 3. **Verify contract**: Ensure declared behaviors match computed outputs
 4. **Report errors with context**: Include full path for nested pipelines

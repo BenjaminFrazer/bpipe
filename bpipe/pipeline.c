@@ -459,11 +459,19 @@ Bp_EC pipeline_validate_properties(const Pipeline_t* pipeline,
     error_msg[0] = '\0';
   }
 
-  /* Check if this is a root pipeline (no external inputs) */
-  bool is_root = (external_inputs == NULL || n_external_inputs == 0);
+  /* Check if pipeline needs source filters:
+   * A pipeline needs at least one source filter if:
+   * 1. No external inputs are provided, AND
+   * 2. No input_filter is configured (or it would receive external data)
+   * 
+   * Note: This is independent of whether it's a "root" or "nested" pipeline.
+   * It's about whether the pipeline has any data source.
+   */
+  bool has_external_inputs = (external_inputs != NULL && n_external_inputs > 0);
+  bool expects_external_input = (pipeline->input_filter != NULL);
   
-  if (is_root) {
-    /* Root pipeline must have at least one source filter */
+  if (!has_external_inputs && !expects_external_input) {
+    /* Pipeline has no external data source - must have internal source */
     bool has_source = false;
     for (size_t i = 0; i < pipeline->n_filters; i++) {
       if (pipeline->filters[i] && pipeline->filters[i]->n_input_buffers == 0) {
@@ -474,8 +482,8 @@ Bp_EC pipeline_validate_properties(const Pipeline_t* pipeline,
     if (!has_source) {
       if (error_msg && error_msg_size > 0) {
         snprintf(error_msg, error_msg_size,
-                 "Root pipeline has no source filters. A root pipeline must contain "
-                 "at least one source filter to generate data.");
+                 "Pipeline has no data source. A pipeline without external inputs "
+                 "must contain at least one source filter to generate data.");
       }
       return Bp_EC_INVALID_CONFIG;
     }
@@ -565,16 +573,18 @@ Bp_EC pipeline_validate_properties(const Pipeline_t* pipeline,
             filter->input_properties[input_port] = 
                 upstream->output_properties[upstream_port];
           } else if (filter == pipeline->input_filter && input_port == pipeline->input_port) {
-            /* This is the pipeline's input port - use UNKNOWN for root, error for nested */
-            if (is_root) {
+            /* This is the pipeline's designated input port */
+            if (!has_external_inputs) {
+              /* No external inputs provided - use UNKNOWN for standalone validation */
               PropertyTable_t unknown = prop_table_init();
               prop_set_all_unknown(&unknown);
               filter->input_properties[input_port] = unknown;
             } else {
-              /* Nested pipeline should have external input declared for this */
+              /* External inputs provided but not mapped to this port */
               if (error_msg && error_msg_size > 0) {
                 snprintf(error_msg, error_msg_size,
-                         "Pipeline input filter '%s' port %zu requires external input but none provided",
+                         "Pipeline input filter '%s' port %zu is designated as pipeline input but no "
+                         "external input mapping was declared for it",
                          filter->name, input_port);
               }
               return Bp_EC_INVALID_CONFIG;
