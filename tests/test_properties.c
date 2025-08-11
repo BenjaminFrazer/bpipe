@@ -33,14 +33,17 @@ void test_property_setters_getters(void)
   PropertyTable_t table = prop_table_init();
 
   // Test data type property
-  CHECK_ERR(prop_set_dtype(&table, DTYPE_FLOAT));
+  table.properties[PROP_DATA_TYPE].known = true;
+  table.properties[PROP_DATA_TYPE].value.dtype = DTYPE_FLOAT;
   SampleDtype_t dtype;
   TEST_ASSERT_TRUE(prop_get_dtype(&table, &dtype));
   TEST_ASSERT_EQUAL(DTYPE_FLOAT, dtype);
 
   // Test batch capacity properties
-  CHECK_ERR(prop_set_min_batch_capacity(&table, 64));
-  CHECK_ERR(prop_set_max_batch_capacity(&table, 1024));
+  table.properties[PROP_MIN_BATCH_CAPACITY].known = true;
+  table.properties[PROP_MIN_BATCH_CAPACITY].value.u32 = 64;
+  table.properties[PROP_MAX_BATCH_CAPACITY].known = true;
+  table.properties[PROP_MAX_BATCH_CAPACITY].value.u32 = 1024;
   uint32_t min_cap, max_cap;
   TEST_ASSERT_TRUE(prop_get_min_batch_capacity(&table, &min_cap));
   TEST_ASSERT_TRUE(prop_get_max_batch_capacity(&table, &max_cap));
@@ -84,7 +87,8 @@ void test_constraint_validation_exists(void)
 void test_constraint_validation_equality(void)
 {
   PropertyTable_t table = prop_table_init();
-  prop_set_dtype(&table, DTYPE_FLOAT);
+  table.properties[PROP_DATA_TYPE].known = true;
+  table.properties[PROP_DATA_TYPE].value.dtype = DTYPE_FLOAT;
 
   // Constraint requires DTYPE_I32
   InputConstraint_t constraints[] = {
@@ -103,7 +107,8 @@ void test_constraint_validation_equality(void)
   TEST_ASSERT_EQUAL(Bp_EC_PROPERTY_MISMATCH, err);
 
   // Should pass when types match
-  prop_set_dtype(&table, DTYPE_I32);
+  table.properties[PROP_DATA_TYPE].known = true;
+  table.properties[PROP_DATA_TYPE].value.dtype = DTYPE_I32;
   err = prop_validate_connection(&table, &contract, 0, error_msg,
                                  sizeof(error_msg));
   TEST_ASSERT_EQUAL(Bp_EC_OK, err);
@@ -112,7 +117,8 @@ void test_constraint_validation_equality(void)
 void test_constraint_validation_range(void)
 {
   PropertyTable_t table = prop_table_init();
-  prop_set_min_batch_capacity(&table, 64);
+  table.properties[PROP_MIN_BATCH_CAPACITY].known = true;
+  table.properties[PROP_MIN_BATCH_CAPACITY].value.u32 = 64;
 
   // Constraint requires min batch capacity >= 128
   InputConstraint_t constraints[] = {
@@ -131,7 +137,8 @@ void test_constraint_validation_range(void)
   TEST_ASSERT_EQUAL(Bp_EC_PROPERTY_MISMATCH, err);
 
   // Should pass when value meets requirement
-  prop_set_min_batch_capacity(&table, 256);
+  table.properties[PROP_MIN_BATCH_CAPACITY].known = true;
+  table.properties[PROP_MIN_BATCH_CAPACITY].value.u32 = 256;
   err = prop_validate_connection(&table, &contract, 0, error_msg,
                                  sizeof(error_msg));
   TEST_ASSERT_EQUAL(Bp_EC_OK, err);
@@ -164,7 +171,8 @@ void test_property_propagation_set(void)
 void test_property_propagation_preserve(void)
 {
   PropertyTable_t upstream = prop_table_init();
-  prop_set_dtype(&upstream, DTYPE_FLOAT);
+  upstream.properties[PROP_DATA_TYPE].known = true;
+  upstream.properties[PROP_DATA_TYPE].value.dtype = DTYPE_FLOAT;
   prop_set_sample_rate_hz(&upstream, 48000);
 
   // Filter preserves all properties (empty behaviors)
@@ -228,7 +236,8 @@ void test_buffer_config_properties_partial(void)
   TEST_ASSERT_EQUAL(128, max_cap);
 
   // Filters that support partial batches would override like this:
-  prop_set_min_batch_capacity(&table, 1);
+  table.properties[PROP_MIN_BATCH_CAPACITY].known = true;
+  table.properties[PROP_MIN_BATCH_CAPACITY].value.u32 = 1;
   TEST_ASSERT_TRUE(prop_get_min_batch_capacity(&table, &min_cap));
   TEST_ASSERT_EQUAL(1, min_cap);    // Now accepts partial
   TEST_ASSERT_EQUAL(128, max_cap);  // Max unchanged
@@ -340,7 +349,8 @@ void test_property_name_lookup(void)
 void test_port_specific_constraint_validation(void)
 {
   PropertyTable_t table = prop_table_init();
-  prop_set_dtype(&table, DTYPE_FLOAT);
+  table.properties[PROP_DATA_TYPE].known = true;
+  table.properties[PROP_DATA_TYPE].value.dtype = DTYPE_FLOAT;
 
   // Create constraints for different ports
   InputConstraint_t constraints[2] = {
@@ -373,7 +383,8 @@ void test_port_specific_constraint_validation(void)
 void test_input_all_mask_validation(void)
 {
   PropertyTable_t table = prop_table_init();
-  prop_set_dtype(&table, DTYPE_FLOAT);
+  table.properties[PROP_DATA_TYPE].known = true;
+  table.properties[PROP_DATA_TYPE].value.dtype = DTYPE_FLOAT;
 
   // Constraint applies to all input ports
   InputConstraint_t constraints[1] = {
@@ -397,7 +408,8 @@ void test_input_all_mask_validation(void)
 void test_bitmask_combination_constraints(void)
 {
   PropertyTable_t table = prop_table_init();
-  prop_set_dtype(&table, DTYPE_FLOAT);
+  table.properties[PROP_DATA_TYPE].known = true;
+  table.properties[PROP_DATA_TYPE].value.dtype = DTYPE_FLOAT;
 
   // Constraint applies to INPUT_0 | INPUT_2 (ports 0 and 2)
   InputConstraint_t constraints[1] = {{PROP_DATA_TYPE,
@@ -482,8 +494,10 @@ void test_multi_input_alignment_matching_properties(void)
   // Create source properties with matching data types
   PropertyTable_t source1_props = prop_table_init();
   PropertyTable_t source2_props = prop_table_init();
-  prop_set_dtype(&source1_props, DTYPE_FLOAT);
-  prop_set_dtype(&source2_props, DTYPE_FLOAT);
+  source1_props.properties[PROP_DATA_TYPE].known = true;
+  source1_props.properties[PROP_DATA_TYPE].value.dtype = DTYPE_FLOAT;
+  source2_props.properties[PROP_DATA_TYPE].known = true;
+  source2_props.properties[PROP_DATA_TYPE].value.dtype = DTYPE_FLOAT;
 
   char error_msg[256];
 
@@ -530,8 +544,10 @@ void test_multi_input_alignment_mismatched_properties(void)
   // Create source properties with mismatched data types
   PropertyTable_t source1_props = prop_table_init();
   PropertyTable_t source2_props = prop_table_init();
-  prop_set_dtype(&source1_props, DTYPE_FLOAT);
-  prop_set_dtype(&source2_props, DTYPE_I32);
+  source1_props.properties[PROP_DATA_TYPE].known = true;
+  source1_props.properties[PROP_DATA_TYPE].value.dtype = DTYPE_FLOAT;
+  source2_props.properties[PROP_DATA_TYPE].known = true;
+  source2_props.properties[PROP_DATA_TYPE].value.dtype = DTYPE_I32;
 
   char error_msg[256];
 
@@ -583,9 +599,12 @@ void test_multi_input_alignment_input_all_mask(void)
   PropertyTable_t source1_props = prop_table_init();
   PropertyTable_t source2_props = prop_table_init();
   PropertyTable_t source3_props = prop_table_init();
-  prop_set_sample_period(&source1_props, 1000000);  // 1ms period
-  prop_set_sample_period(&source2_props, 1000000);  // 1ms period
-  prop_set_sample_period(&source3_props, 1000000);  // 1ms period
+  source1_props.properties[PROP_SAMPLE_PERIOD_NS].known = true;
+  source1_props.properties[PROP_SAMPLE_PERIOD_NS].value.u64 = 1000000;  // 1ms period
+  source2_props.properties[PROP_SAMPLE_PERIOD_NS].known = true;
+  source2_props.properties[PROP_SAMPLE_PERIOD_NS].value.u64 = 1000000;  // 1ms period
+  source3_props.properties[PROP_SAMPLE_PERIOD_NS].known = true;
+  source3_props.properties[PROP_SAMPLE_PERIOD_NS].value.u64 = 1000000;  // 1ms period
 
   char error_msg[256];
 
@@ -643,10 +662,14 @@ void test_multi_input_alignment_specific_input_masks(void)
   for (int i = 0; i < 4; i++) {
     source_props[i] = prop_table_init();
   }
-  prop_set_dtype(&source_props[0], DTYPE_FLOAT);
-  prop_set_dtype(&source_props[1], DTYPE_FLOAT);
-  prop_set_dtype(&source_props[2], DTYPE_I32);
-  prop_set_dtype(&source_props[3], DTYPE_I32);
+  source_props[0].properties[PROP_DATA_TYPE].known = true;
+  source_props[0].properties[PROP_DATA_TYPE].value.dtype = DTYPE_FLOAT;
+  source_props[1].properties[PROP_DATA_TYPE].known = true;
+  source_props[1].properties[PROP_DATA_TYPE].value.dtype = DTYPE_FLOAT;
+  source_props[2].properties[PROP_DATA_TYPE].known = true;
+  source_props[2].properties[PROP_DATA_TYPE].value.dtype = DTYPE_I32;
+  source_props[3].properties[PROP_DATA_TYPE].known = true;
+  source_props[3].properties[PROP_DATA_TYPE].value.dtype = DTYPE_I32;
 
   char error_msg[256];
 
@@ -701,7 +724,8 @@ void test_multi_input_alignment_unknown_properties(void)
   // Create source properties - first has known type, second has unknown type
   PropertyTable_t source1_props = prop_table_init();
   PropertyTable_t source2_props = prop_table_init();
-  prop_set_dtype(&source1_props, DTYPE_FLOAT);
+  source1_props.properties[PROP_DATA_TYPE].known = true;
+  source1_props.properties[PROP_DATA_TYPE].value.dtype = DTYPE_FLOAT;
   // source2_props deliberately left with unknown data type
 
   char error_msg[256];

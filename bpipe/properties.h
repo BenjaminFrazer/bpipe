@@ -121,11 +121,6 @@ PropertyTable_t prop_table_init(void);
  */
 void prop_set_all_unknown(PropertyTable_t* table);
 
-/* Set a property in the table */
-Bp_EC prop_set_dtype(PropertyTable_t* table, SampleDtype_t dtype);
-Bp_EC prop_set_min_batch_capacity(PropertyTable_t* table, uint32_t capacity);
-Bp_EC prop_set_max_batch_capacity(PropertyTable_t* table, uint32_t capacity);
-Bp_EC prop_set_sample_period(PropertyTable_t* table, uint64_t period_ns);
 
 /* Get a property from the table (returns false if unknown) */
 bool prop_get_dtype(const PropertyTable_t* table, SampleDtype_t* dtype);
@@ -239,8 +234,11 @@ static inline uint32_t period_ns_to_sample_rate(uint64_t period_ns)
 static inline Bp_EC prop_set_sample_rate_hz(PropertyTable_t* table,
                                             uint32_t rate_hz)
 {
+  if (!table) return Bp_EC_NULL_POINTER;
   uint64_t period_ns = sample_rate_to_period_ns(rate_hz);
-  return prop_set_sample_period(table, period_ns);
+  table->properties[PROP_SAMPLE_PERIOD_NS].known = true;
+  table->properties[PROP_SAMPLE_PERIOD_NS].value.u64 = period_ns;
+  return Bp_EC_OK;
 }
 
 static inline bool prop_get_sample_rate_hz(const PropertyTable_t* table,

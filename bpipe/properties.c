@@ -32,38 +32,6 @@ void prop_set_all_unknown(PropertyTable_t* table)
   }
 }
 
-/* Set a property in the table */
-Bp_EC prop_set_dtype(PropertyTable_t* table, SampleDtype_t dtype)
-{
-  if (!table) return Bp_EC_NULL_POINTER;
-  table->properties[PROP_DATA_TYPE].known = true;
-  table->properties[PROP_DATA_TYPE].value.dtype = dtype;
-  return Bp_EC_OK;
-}
-
-Bp_EC prop_set_min_batch_capacity(PropertyTable_t* table, uint32_t capacity)
-{
-  if (!table) return Bp_EC_NULL_POINTER;
-  table->properties[PROP_MIN_BATCH_CAPACITY].known = true;
-  table->properties[PROP_MIN_BATCH_CAPACITY].value.u32 = capacity;
-  return Bp_EC_OK;
-}
-
-Bp_EC prop_set_max_batch_capacity(PropertyTable_t* table, uint32_t capacity)
-{
-  if (!table) return Bp_EC_NULL_POINTER;
-  table->properties[PROP_MAX_BATCH_CAPACITY].known = true;
-  table->properties[PROP_MAX_BATCH_CAPACITY].value.u32 = capacity;
-  return Bp_EC_OK;
-}
-
-Bp_EC prop_set_sample_period(PropertyTable_t* table, uint64_t period_ns)
-{
-  if (!table) return Bp_EC_NULL_POINTER;
-  table->properties[PROP_SAMPLE_PERIOD_NS].known = true;
-  table->properties[PROP_SAMPLE_PERIOD_NS].value.u64 = period_ns;
-  return Bp_EC_OK;
-}
 
 /* Get a property from the table (returns false if unknown) */
 bool prop_get_dtype(const PropertyTable_t* table, SampleDtype_t* dtype)
@@ -546,15 +514,18 @@ PropertyTable_t prop_from_buffer_config(const BatchBuffer_config* config)
   /* Set data type property using utility function */
   SampleDtype_t dtype = prop_dtype_from_buff_config(config);
   if (dtype != DTYPE_NDEF) {
-    prop_set_dtype(&table, dtype);
+    table.properties[PROP_DATA_TYPE].known = true;
+    table.properties[PROP_DATA_TYPE].value.dtype = dtype;
   }
 
   /* Set batch capacity properties - default to exact capacity match
    * Filters that support partial batches should override these after init */
   uint32_t batch_capacity = prop_batch_cap_from_buff_config(config);
   if (batch_capacity > 0) {
-    prop_set_min_batch_capacity(&table, batch_capacity);
-    prop_set_max_batch_capacity(&table, batch_capacity);
+    table.properties[PROP_MIN_BATCH_CAPACITY].known = true;
+    table.properties[PROP_MIN_BATCH_CAPACITY].value.u32 = batch_capacity;
+    table.properties[PROP_MAX_BATCH_CAPACITY].known = true;
+    table.properties[PROP_MAX_BATCH_CAPACITY].value.u32 = batch_capacity;
   }
 
   /* Note: Sample rate is not available in buffer config,

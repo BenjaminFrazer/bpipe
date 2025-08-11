@@ -483,10 +483,14 @@ void test_pipeline_input_declaration(void)
   
   // Declare expected properties for pipeline input
   PropertyTable_t expected_props = prop_table_init();
-  prop_set_dtype(&expected_props, DTYPE_FLOAT);
-  prop_set_sample_period(&expected_props, 1000000);  // 1ms period
-  prop_set_min_batch_capacity(&expected_props, 64);
-  prop_set_max_batch_capacity(&expected_props, 64);
+  expected_props.properties[PROP_DATA_TYPE].known = true;
+  expected_props.properties[PROP_DATA_TYPE].value.dtype = DTYPE_FLOAT;
+  expected_props.properties[PROP_SAMPLE_PERIOD_NS].known = true;
+  expected_props.properties[PROP_SAMPLE_PERIOD_NS].value.u64 = 1000000;  // 1ms period
+  expected_props.properties[PROP_MIN_BATCH_CAPACITY].known = true;
+  expected_props.properties[PROP_MIN_BATCH_CAPACITY].value.u32 = 64;
+  expected_props.properties[PROP_MAX_BATCH_CAPACITY].known = true;
+  expected_props.properties[PROP_MAX_BATCH_CAPACITY].value.u32 = 64;
   
   TEST_ASSERT_EQUAL(Bp_EC_OK, 
                     pipeline_add_input(&pipeline, &input_filter.base, &expected_props, 1));
