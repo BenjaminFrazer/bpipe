@@ -148,18 +148,11 @@ static Bp_EC pipeline_start(Filter_t* self)
 {
   Pipeline_t* pipe = (Pipeline_t*) self;
 
-  /* Phase 0.4: Validate properties before starting filters */
-  char error_msg[256];
-  /* Root pipeline validation - no external inputs */
-  Bp_EC validation_err =
-      pipeline_validate_properties(pipe, NULL, 0, error_msg, sizeof(error_msg));
-  if (validation_err != Bp_EC_OK) {
-    /* Log error message if validation fails */
-    if (strlen(error_msg) > 0) {
-      fprintf(stderr, "Pipeline validation failed: %s\n", error_msg);
-    }
-    return validation_err;
-  }
+  /* Note: Pipeline validation should be done explicitly before starting.
+   * This allows for validation with different external inputs, testing
+   * configurations without starting, and clearer error handling.
+   * Call pipeline_validate_properties() before pipeline_start().
+   */
 
   /* Start internal filters (order doesn't matter - they're already connected)
    */
