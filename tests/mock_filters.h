@@ -125,6 +125,41 @@ typedef struct {
     atomic_size_t current_queue_depth;
 } PassthroughMetrics_t;
 
+// Variable Batch Producer Filter - for testing partial batch handling
+typedef struct {
+    const char* name;
+    long timeout_us;
+    uint32_t* batch_sizes;         // Array of batch sizes to produce
+    size_t n_batch_sizes;          // Number of batch sizes in array
+    bool cycle_batch_sizes;        // Loop through sizes or stop after one pass
+    ProducerPattern_t pattern;     // Data pattern to fill batches
+    uint64_t sample_period_ns;     // Timing metadata for batches
+    uint32_t start_sequence;       // Starting sequence number for PATTERN_SEQUENTIAL
+} VariableBatchProducerConfig_t;
+
+typedef struct {
+    Filter_t base;
+    
+    // Configuration
+    uint32_t* batch_sizes;
+    size_t n_batch_sizes;
+    bool cycle_batch_sizes;
+    ProducerPattern_t pattern;
+    uint64_t sample_period_ns;
+    uint32_t start_sequence;
+    
+    // Runtime state
+    size_t current_batch_index;
+    uint32_t next_sequence;
+    float sine_phase;
+    uint64_t next_batch_time_ns;
+    
+    // Metrics
+    atomic_size_t total_batches;
+    atomic_size_t total_samples;
+    atomic_size_t cycles_completed;
+} VariableBatchProducer_t;
+
 // Error Injection Filter
 typedef enum {
     ERROR_NONE,
@@ -164,6 +199,7 @@ Bp_EC controllable_producer_init(ControllableProducer_t* cp, ControllableProduce
 Bp_EC controllable_consumer_init(ControllableConsumer_t* cc, ControllableConsumerConfig_t config);
 Bp_EC passthrough_metrics_init(PassthroughMetrics_t* pm, PassthroughMetricsConfig_t config);
 Bp_EC error_injection_init(ErrorInjection_t* ei, ErrorInjectionConfig_t config);
+Bp_EC variable_batch_producer_init(VariableBatchProducer_t* vbp, VariableBatchProducerConfig_t config);
 
 // Metrics getters
 void controllable_producer_get_metrics(ControllableProducer_t* cp, 
@@ -183,5 +219,10 @@ void passthrough_metrics_get_metrics(PassthroughMetrics_t* pm,
                                    size_t* samples,
                                    uint64_t* avg_latency_ns,
                                    size_t* max_queue);
+
+void variable_batch_producer_get_metrics(VariableBatchProducer_t* vbp,
+                                       size_t* batches,
+                                       size_t* samples,
+                                       size_t* cycles);
 
 #endif // MOCK_FILTERS_H

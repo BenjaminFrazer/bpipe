@@ -253,6 +253,13 @@ Bp_EC signal_generator_init(SignalGenerator_t* sg,
   prop_append_behavior(&sg->base, PROP_MAX_BATCH_CAPACITY, BEHAVIOR_OP_SET,
                        &batch_capacity, OUTPUT_ALL);
 
+  // Set max total samples if specified (0 means unlimited)
+  if (config.max_samples > 0) {
+    uint64_t max_samples = config.max_samples;
+    prop_append_behavior(&sg->base, PROP_MAX_TOTAL_SAMPLES, BEHAVIOR_OP_SET,
+                         &max_samples, OUTPUT_ALL);
+  }
+
   // Now propagate from UNKNOWN to compute output properties for port 0
   // Signal generator is a source filter (0 inputs) and has 1 output
   sg->base.output_properties[0] = prop_propagate(NULL, 0, &sg->base.contract, 0);

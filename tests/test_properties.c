@@ -748,6 +748,209 @@ void test_multi_input_alignment_unknown_properties(void)
   CHECK_ERR(filt_deinit(&filter));
 }
 
+// Test throughput properties
+static void test_throughput_properties(void)
+{
+  PropertyTable_t table = prop_table_init();
+  
+  // Test min throughput
+  table.properties[PROP_MIN_THROUGHPUT_HZ].known = true;
+  table.properties[PROP_MIN_THROUGHPUT_HZ].value.u32 = 44100;
+  
+  uint32_t min_throughput;
+  TEST_ASSERT_TRUE(prop_get_min_throughput(&table, &min_throughput));
+  TEST_ASSERT_EQUAL_UINT32(44100, min_throughput);
+  
+  // Test max throughput
+  table.properties[PROP_MAX_THROUGHPUT_HZ].known = true;
+  table.properties[PROP_MAX_THROUGHPUT_HZ].value.u32 = 96000;
+  
+  uint32_t max_throughput;
+  TEST_ASSERT_TRUE(prop_get_max_throughput(&table, &max_throughput));
+  TEST_ASSERT_EQUAL_UINT32(96000, max_throughput);
+  
+  // Test unknown throughput
+  PropertyTable_t unknown_table = prop_table_init();
+  TEST_ASSERT_FALSE(prop_get_min_throughput(&unknown_table, &min_throughput));
+  TEST_ASSERT_FALSE(prop_get_max_throughput(&unknown_table, &max_throughput));
+}
+
+// Test max total samples property
+static void test_max_samples_property(void)
+{
+  PropertyTable_t table = prop_table_init();
+  
+  // Set max samples
+  table.properties[PROP_MAX_TOTAL_SAMPLES].known = true;
+  table.properties[PROP_MAX_TOTAL_SAMPLES].value.u64 = 1000000;
+  
+  uint64_t max_samples;
+  TEST_ASSERT_TRUE(prop_get_max_total_samples(&table, &max_samples));
+  TEST_ASSERT_EQUAL_UINT64(1000000, max_samples);
+  
+  // Test unknown max samples
+  PropertyTable_t unknown_table = prop_table_init();
+  TEST_ASSERT_FALSE(prop_get_max_total_samples(&unknown_table, &max_samples));
+}
+
+// Test throughput constraint validation
+static void test_throughput_constraint_validation(void)
+{
+  // Test minimum throughput requirement
+  PropertyTable_t upstream = prop_table_init();
+  upstream.properties[PROP_MIN_THROUGHPUT_HZ].known = true;
+  upstream.properties[PROP_MIN_THROUGHPUT_HZ].value.u32 = 22050;
+  
+  InputConstraint_t constraints[] = {
+    {PROP_MIN_THROUGHPUT_HZ, CONSTRAINT_OP_GTE, INPUT_ALL, {.u32 = 44100}}
+  };
+  
+  FilterContract_t contract = {
+    .input_constraints = constraints,
+    .n_input_constraints = 1,
+    .output_behaviors = NULL,
+    .n_output_behaviors = 0
+  };
+  
+  char error_msg[256];
+  Bp_EC err = prop_validate_connection(&upstream, &contract, 0, error_msg, sizeof(error_msg));
+  TEST_ASSERT_NOT_EQUAL(Bp_EC_OK, err);
+  TEST_ASSERT_TRUE(strstr(error_msg, "less than required minimum") != NULL);
+  
+  // Test maximum throughput constraint
+  upstream.properties[PROP_MAX_THROUGHPUT_HZ].known = true;
+  upstream.properties[PROP_MAX_THROUGHPUT_HZ].value.u32 = 96000;
+  
+  InputConstraint_t max_constraints[] = {
+    {PROP_MAX_THROUGHPUT_HZ, CONSTRAINT_OP_LTE, INPUT_ALL, {.u32 = 48000}}
+  };
+  
+  contract.input_constraints = max_constraints;
+  contract.n_input_constraints = 1;
+  
+  err = prop_validate_connection(&upstream, &contract, 0, error_msg, sizeof(error_msg));
+  TEST_ASSERT_NOT_EQUAL(Bp_EC_OK, err);
+  TEST_ASSERT_TRUE(strstr(error_msg, "greater than required maximum") != NULL);
+}
+
+// Test property propagation for throughput properties
+static void test_throughput_property_propagation(void)
+{
+  PropertyTable_t upstream = prop_table_init();
+  upstream.properties[PROP_MIN_THROUGHPUT_HZ].known = true;
+  upstream.properties[PROP_MIN_THROUGHPUT_HZ].value.u32 = 48000;
+  upstream.properties[PROP_MAX_THROUGHPUT_HZ].known = true;
+  upstream.properties[PROP_MAX_THROUGHPUT_HZ].value.u32 = 96000;
+  
+  // Test PRESERVE behavior
+  OutputBehavior_t behaviors[] = {
+    {PROP_MIN_THROUGHPUT_HZ, BEHAVIOR_OP_PRESERVE, OUTPUT_ALL, {0}},
+    {PROP_MAX_THROUGHPUT_HZ, BEHAVIOR_OP_PRESERVE, OUTPUT_ALL, {0}}
+  };
+  
+  FilterContract_t contract = {
+    .input_constraints = NULL,
+    .n_input_constraints = 0,
+    .output_behaviors = behaviors,
+    .n_output_behaviors = 2
+  };
+  
+  PropertyTable_t downstream = prop_propagate(&upstream, 1, &contract, 0);
+  
+  uint32_t min_throughput, max_throughput;
+  TEST_ASSERT_TRUE(prop_get_min_throughput(&downstream, &min_throughput));
+  TEST_ASSERT_EQUAL_UINT32(48000, min_throughput);
+  TEST_ASSERT_TRUE(prop_get_max_throughput(&downstream, &max_throughput));
+  TEST_ASSERT_EQUAL_UINT32(96000, max_throughput);
+  
+  // Test SET behavior
+  OutputBehavior_t set_behaviors[] = {
+    {PROP_MAX_THROUGHPUT_HZ, BEHAVIOR_OP_SET, OUTPUT_ALL, {.u32 = 44100}}
+  };
+  
+  contract.output_behaviors = set_behaviors;
+  contract.n_output_behaviors = 1;
+  
+  downstream = prop_propagate(&upstream, 1, &contract, 0);
+  TEST_ASSERT_TRUE(prop_get_max_throughput(&downstream, &max_throughput));
+  TEST_ASSERT_EQUAL_UINT32(44100, max_throughput);
+}
+
+// Test max samples property propagation
+static void test_max_samples_property_propagation(void)
+{
+  PropertyTable_t upstream = prop_table_init();
+  upstream.properties[PROP_MAX_TOTAL_SAMPLES].known = true;
+  upstream.properties[PROP_MAX_TOTAL_SAMPLES].value.u64 = 1000000;
+  
+  // Test PRESERVE behavior
+  OutputBehavior_t behaviors[] = {
+    {PROP_MAX_TOTAL_SAMPLES, BEHAVIOR_OP_PRESERVE, OUTPUT_ALL, {0}}
+  };
+  
+  FilterContract_t contract = {
+    .input_constraints = NULL,
+    .n_input_constraints = 0,
+    .output_behaviors = behaviors,
+    .n_output_behaviors = 1
+  };
+  
+  PropertyTable_t downstream = prop_propagate(&upstream, 1, &contract, 0);
+  
+  uint64_t max_samples;
+  TEST_ASSERT_TRUE(prop_get_max_total_samples(&downstream, &max_samples));
+  TEST_ASSERT_EQUAL_UINT64(1000000, max_samples);
+}
+
+// Test signal generator with max samples property
+static void test_signal_generator_max_samples_property(void)
+{
+  SignalGenerator_t sg;
+  SignalGenerator_config_t config = {
+    .name = "test_gen",
+    .buff_config = {
+      .dtype = DTYPE_FLOAT,
+      .batch_capacity_expo = 8,
+      .ring_capacity_expo = 8,
+      .overflow_behaviour = OVERFLOW_BLOCK
+    },
+    .timeout_us = 1000000,
+    .waveform_type = WAVEFORM_SINE,
+    .frequency_hz = 1000.0,
+    .phase_rad = 0.0,
+    .sample_period_ns = 1000000,
+    .amplitude = 1.0,
+    .offset = 0.0,
+    .max_samples = 48000,  // Set max samples
+    .allow_aliasing = false,
+    .start_time_ns = 0
+  };
+  
+  Bp_EC err = signal_generator_init(&sg, config);
+  TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+  
+  // Check that max samples property was set
+  uint64_t max_samples;
+  bool has_max = prop_get_max_total_samples(&sg.base.output_properties[0], &max_samples);
+  TEST_ASSERT_TRUE(has_max);
+  TEST_ASSERT_EQUAL_UINT64(48000, max_samples);
+  
+  // Clean up
+  filt_deinit(&sg.base);
+  
+  // Test with unlimited samples (max_samples = 0)
+  config.max_samples = 0;
+  err = signal_generator_init(&sg, config);
+  TEST_ASSERT_EQUAL(Bp_EC_OK, err);
+  
+  // Check that max samples property is not set when unlimited
+  has_max = prop_get_max_total_samples(&sg.base.output_properties[0], &max_samples);
+  TEST_ASSERT_FALSE(has_max);
+  
+  // Clean up
+  filt_deinit(&sg.base);
+}
+
 int main(void)
 {
   UNITY_BEGIN();
@@ -786,6 +989,14 @@ int main(void)
   RUN_TEST(test_multi_input_alignment_input_all_mask);
   RUN_TEST(test_multi_input_alignment_specific_input_masks);
   RUN_TEST(test_multi_input_alignment_unknown_properties);
+
+  // New property tests (throughput and sample limits)
+  RUN_TEST(test_throughput_properties);
+  RUN_TEST(test_max_samples_property);
+  RUN_TEST(test_throughput_constraint_validation);
+  RUN_TEST(test_throughput_property_propagation);
+  RUN_TEST(test_max_samples_property_propagation);
+  RUN_TEST(test_signal_generator_max_samples_property);
 
   return UNITY_END();
 }

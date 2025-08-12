@@ -45,6 +45,8 @@ The system tracks essential properties:
 - **Data Type**: The sample data type (float, int32, etc.)
 - **Batch Capacity**: Min/max batch sizes the filter can process
 - **Sample Period**: Time between samples in nanoseconds (0 = variable/unknown)
+- **Min/Max Throughput**: Guaranteed minimum and maximum samples per second
+- **Max Total Samples**: Total number of samples a source will produce (0 = unlimited)
 - **Channel Count**: Number of channels (future)
 
 ### Constraints and Behaviors
@@ -256,6 +258,12 @@ Bp_EC signal_generator_init(SignalGenerator_t* sg, SignalGenerator_config_t conf
     prop_append_behavior(&sg->base, OUTPUT_0, PROP_MAX_BATCH_CAPACITY,
                         BEHAVIOR_OP_SET, &batch_capacity);
     
+    // Set max total samples if specified (0 means unlimited)
+    if (config.max_samples > 0) {
+        prop_append_behavior(&sg->base, OUTPUT_0, PROP_MAX_TOTAL_SAMPLES,
+                            BEHAVIOR_OP_SET, &config.max_samples);
+    }
+    
     return Bp_EC_OK;
 }
 ```
@@ -321,6 +329,58 @@ Bp_EC stereo_splitter_init(StereoSplitter_t* splitter, config)
 }
 ```
 
+### Throughput Constraints and Rate Limiting
+
+Filters can declare minimum and maximum throughput requirements:
+
+```c
+// Throttle filter: Limits output rate to 48kHz max
+Bp_EC throttle_init(ThrottleFilter_t* throttle, ThrottleConfig_t config)
+{
+    // ... initialization code ...
+    
+    // Declare max throughput limit
+    uint32_t max_throughput = 48000;  // samples per second
+    prop_append_behavior(&throttle->base, OUTPUT_0, PROP_MAX_THROUGHPUT_HZ,
+                        BEHAVIOR_OP_SET, &max_throughput);
+    
+    // Preserve other properties
+    prop_append_behavior(&throttle->base, OUTPUT_0, PROP_DATA_TYPE,
+                        BEHAVIOR_OP_PRESERVE, NULL);
+    
+    return Bp_EC_OK;
+}
+
+// Real-time processing filter: Requires minimum throughput guarantee
+Bp_EC realtime_processor_init(RealtimeProcessor_t* proc, ProcessorConfig_t config)
+{
+    // ... initialization code ...
+    
+    // Require minimum throughput from input
+    uint32_t min_throughput = 44100;  // Need at least 44.1kHz
+    prop_append_constraint(&proc->base, INPUT_0, PROP_MIN_THROUGHPUT_HZ,
+                          CONSTRAINT_OP_GTE, &min_throughput);
+    
+    return Bp_EC_OK;
+}
+```
+
+### Sample Limit Properties
+
+Source filters can declare the total number of samples they will produce:
+
+```c
+// Test signal generator with finite output
+SignalGenerator_config_t test_config = {
+    .max_samples = 48000,  // Generate exactly 1 second at 48kHz
+    .sample_period_ns = 20833,  // 48kHz
+    // ...
+};
+
+// The signal generator will automatically set PROP_MAX_TOTAL_SAMPLES
+// This allows downstream filters to know the stream is finite
+```
+
 ## Migration Guide
 
 ### For New Filters
@@ -341,6 +401,9 @@ Bp_EC stereo_splitter_init(StereoSplitter_t* splitter, config)
 - `prop_set_all_unknown(PropertyTable_t* table)` - Initialize table with all properties unknown
 - `prop_get_dtype(PropertyTable_t* table, SampleDtype_t* dtype)` - Read property value
 - `prop_get_sample_period(PropertyTable_t* table, uint64_t* period_ns)` - Read property value
+- `prop_get_min_throughput(PropertyTable_t* table, uint32_t* throughput_hz)` - Read min throughput
+- `prop_get_max_throughput(PropertyTable_t* table, uint32_t* throughput_hz)` - Read max throughput
+- `prop_get_max_total_samples(PropertyTable_t* table, uint64_t* max_samples)` - Read sample limit
 
 ### Adding Constraints
 - `prop_append_constraint(Filter_t* filter, uint32_t input_mask, SignalProperty_t prop, ConstraintOp_t op, const void* operand)` - Apply constraint to specific inputs via bitmask

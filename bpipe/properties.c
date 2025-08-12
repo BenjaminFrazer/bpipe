@@ -9,7 +9,10 @@ static const char* property_names[PROP_COUNT_MVP + 1] = {
     [PROP_DATA_TYPE] = "data_type",
     [PROP_MIN_BATCH_CAPACITY] = "min_batch_capacity",
     [PROP_MAX_BATCH_CAPACITY] = "max_batch_capacity",
-    [PROP_SAMPLE_PERIOD_NS] = "sample_period_ns"};
+    [PROP_SAMPLE_PERIOD_NS] = "sample_period_ns",
+    [PROP_MIN_THROUGHPUT_HZ] = "min_throughput_hz",
+    [PROP_MAX_THROUGHPUT_HZ] = "max_throughput_hz",
+    [PROP_MAX_TOTAL_SAMPLES] = "max_total_samples"};
 
 /* Initialize a property table with default values */
 PropertyTable_t prop_table_init(void)
@@ -68,6 +71,30 @@ bool prop_get_sample_period(const PropertyTable_t* table, uint64_t* period_ns)
   return true;
 }
 
+bool prop_get_min_throughput(const PropertyTable_t* table, uint32_t* throughput_hz)
+{
+  if (!table || !throughput_hz) return false;
+  if (!table->properties[PROP_MIN_THROUGHPUT_HZ].known) return false;
+  *throughput_hz = table->properties[PROP_MIN_THROUGHPUT_HZ].value.u32;
+  return true;
+}
+
+bool prop_get_max_throughput(const PropertyTable_t* table, uint32_t* throughput_hz)
+{
+  if (!table || !throughput_hz) return false;
+  if (!table->properties[PROP_MAX_THROUGHPUT_HZ].known) return false;
+  *throughput_hz = table->properties[PROP_MAX_THROUGHPUT_HZ].value.u32;
+  return true;
+}
+
+bool prop_get_max_total_samples(const PropertyTable_t* table, uint64_t* max_samples)
+{
+  if (!table || !max_samples) return false;
+  if (!table->properties[PROP_MAX_TOTAL_SAMPLES].known) return false;
+  *max_samples = table->properties[PROP_MAX_TOTAL_SAMPLES].value.u64;
+  return true;
+}
+
 /* Validate a single constraint */
 static bool validate_constraint(const Property_t* prop,
                                 const InputConstraint_t* constraint,
@@ -104,7 +131,8 @@ static bool validate_constraint(const Property_t* prop,
           }
           return false;
         }
-      } else if (constraint->property == PROP_SAMPLE_PERIOD_NS) {
+      } else if (constraint->property == PROP_SAMPLE_PERIOD_NS ||
+                 constraint->property == PROP_MAX_TOTAL_SAMPLES) {
         if (prop->value.u64 != constraint->operand.u64) {
           if (error_msg) {
             snprintf(error_msg, error_msg_size,
@@ -131,7 +159,8 @@ static bool validate_constraint(const Property_t* prop,
     case CONSTRAINT_OP_GTE:
       if (!prop->known) {
         if (error_msg) {
-          if (constraint->property == PROP_SAMPLE_PERIOD_NS) {
+          if (constraint->property == PROP_SAMPLE_PERIOD_NS ||
+              constraint->property == PROP_MAX_TOTAL_SAMPLES) {
             snprintf(error_msg, error_msg_size,
                      "Property '%s' is not present but must be >= %llu",
                      property_names[constraint->property],
@@ -145,7 +174,8 @@ static bool validate_constraint(const Property_t* prop,
         }
         return false;
       }
-      if (constraint->property == PROP_SAMPLE_PERIOD_NS) {
+      if (constraint->property == PROP_SAMPLE_PERIOD_NS ||
+          constraint->property == PROP_MAX_TOTAL_SAMPLES) {
         if (prop->value.u64 < constraint->operand.u64) {
           if (error_msg) {
             snprintf(
@@ -173,7 +203,8 @@ static bool validate_constraint(const Property_t* prop,
     case CONSTRAINT_OP_LTE:
       if (!prop->known) {
         if (error_msg) {
-          if (constraint->property == PROP_SAMPLE_PERIOD_NS) {
+          if (constraint->property == PROP_SAMPLE_PERIOD_NS ||
+              constraint->property == PROP_MAX_TOTAL_SAMPLES) {
             snprintf(error_msg, error_msg_size,
                      "Property '%s' is not present but must be <= %llu",
                      property_names[constraint->property],
@@ -187,7 +218,8 @@ static bool validate_constraint(const Property_t* prop,
         }
         return false;
       }
-      if (constraint->property == PROP_SAMPLE_PERIOD_NS) {
+      if (constraint->property == PROP_SAMPLE_PERIOD_NS ||
+          constraint->property == PROP_MAX_TOTAL_SAMPLES) {
         if (prop->value.u64 > constraint->operand.u64) {
           if (error_msg) {
             snprintf(
@@ -419,7 +451,8 @@ static void apply_behavior(Property_t* prop, const OutputBehavior_t* behavior,
       prop->known = true;
       if (behavior->property == PROP_DATA_TYPE) {
         prop->value.dtype = behavior->operand.dtype;
-      } else if (behavior->property == PROP_SAMPLE_PERIOD_NS) {
+      } else if (behavior->property == PROP_SAMPLE_PERIOD_NS ||
+                 behavior->property == PROP_MAX_TOTAL_SAMPLES) {
         prop->value.u64 = behavior->operand.u64;
       } else {
         prop->value.u32 = behavior->operand.u32;
@@ -553,6 +586,11 @@ void prop_describe_table(const PropertyTable_t* table, char* buffer,
         case PROP_DATA_TYPE:
           written += snprintf(buffer + written, size - written, "%d\n",
                               prop->value.dtype);
+          break;
+        case PROP_SAMPLE_PERIOD_NS:
+        case PROP_MAX_TOTAL_SAMPLES:
+          written += snprintf(buffer + written, size - written, "%llu\n",
+                              (unsigned long long)prop->value.u64);
           break;
         default:
           written += snprintf(buffer + written, size - written, "%u\n",

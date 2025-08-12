@@ -26,6 +26,13 @@ typedef enum {
   PROP_SAMPLE_PERIOD_NS, /* Sample period in nanoseconds (0 = variable/unknown)
                           */
 
+  /* Throughput properties (samples per second) */
+  PROP_MIN_THROUGHPUT_HZ, /* Minimum guaranteed throughput */
+  PROP_MAX_THROUGHPUT_HZ, /* Maximum throughput (for throttling) */
+
+  /* Total sample limit */
+  PROP_MAX_TOTAL_SAMPLES, /* Maximum total samples from source (0 = unlimited) */
+
   PROP_COUNT_MVP /* Count of actual properties */
 } SignalProperty_t;
 
@@ -129,6 +136,9 @@ bool prop_get_min_batch_capacity(const PropertyTable_t* table,
 bool prop_get_max_batch_capacity(const PropertyTable_t* table,
                                  uint32_t* capacity);
 bool prop_get_sample_period(const PropertyTable_t* table, uint64_t* period_ns);
+bool prop_get_min_throughput(const PropertyTable_t* table, uint32_t* throughput_hz);
+bool prop_get_max_throughput(const PropertyTable_t* table, uint32_t* throughput_hz);
+bool prop_get_max_total_samples(const PropertyTable_t* table, uint64_t* max_samples);
 
 /* Validate that upstream properties meet downstream constraints
  * @param input_port: The specific input port being connected (0-based index)
