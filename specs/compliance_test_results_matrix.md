@@ -330,31 +330,170 @@ Note: For more detailed failure information, consider adding custom logging
 
 #### Enhanced Error Capture Strategy
 
-To get more detailed failure information, tests should be instrumented:
+##### Stdout/Stderr Capture Per Test
+
+We can capture all output (Unity messages, printf debug, TEST_MESSAGE) for each test by redirecting stdout before each test run:
 
 ```c
-// In individual test files, add context before assertions:
-void test_partial_batch_handling(void) {
-    // ... setup ...
+// Test output capture structure
+typedef struct {
+    int original_stdout;
+    int original_stderr;
+    int capture_pipe[2];
+    char* captured_output;
+    size_t output_size;
+    size_t output_capacity;
+} TestOutputCapture_t;
+
+// Initialize capture before each test
+void test_capture_begin(TestOutputCapture_t* capture) {
+    capture->output_size = 0;
     
-    // Add context before assertions that might fail
-    if (output->head != expected_head) {
-        // Log additional context before the assertion
-        printf("DEBUG: Filter %s failed batch handling\n", g_filter_name);
-        printf("  Expected head: %zu, Actual: %zu\n", expected_head, output->head);
-        printf("  Batch capacity: %zu\n", batch_capacity);
+    // Create pipe for capturing
+    pipe(capture->capture_pipe);
+    
+    // Save original stdout/stderr
+    capture->original_stdout = dup(STDOUT_FILENO);
+    capture->original_stderr = dup(STDERR_FILENO);
+    
+    // Redirect stdout/stderr to pipe
+    dup2(capture->capture_pipe[1], STDOUT_FILENO);
+    dup2(capture->capture_pipe[1], STDERR_FILENO);
+    close(capture->capture_pipe[1]);
+    
+    // Set non-blocking read
+    fcntl(capture->capture_pipe[0], F_SETFL, O_NONBLOCK);
+}
+
+// Read captured output after test
+void test_capture_end(TestOutputCapture_t* capture) {
+    // Restore original stdout/stderr
+    fflush(stdout);
+    fflush(stderr);
+    dup2(capture->original_stdout, STDOUT_FILENO);
+    dup2(capture->original_stderr, STDERR_FILENO);
+    
+    // Read from pipe
+    char buffer[4096];
+    ssize_t bytes;
+    while ((bytes = read(capture->capture_pipe[0], buffer, sizeof(buffer))) > 0) {
+        // Append to capture->captured_output
+        test_capture_append(capture, buffer, bytes);
     }
     
-    TEST_ASSERT_EQUAL(expected_head, output->head);
+    close(capture->capture_pipe[0]);
+    close(capture->original_stdout);
+    close(capture->original_stderr);
 }
 ```
 
-Or use Unity's TEST_MESSAGE for context:
+##### Integration with Test Runner
 
 ```c
-TEST_MESSAGE("Testing partial batch with 32 samples in 64-capacity batch");
-TEST_ASSERT_EQUAL_MESSAGE(32, output->head, 
-                          "Partial batch should preserve sample count");
+// Modified test loop in main.c
+TestOutputCapture_t capture;
+test_capture_init(&capture);
+
+for (size_t i = 0; i < test_matrix.n_tests; i++) {
+    // Start capturing output for this test
+    test_capture_begin(&capture);
+    
+    // Run the test (all TEST_MESSAGE, printf, Unity output captured)
+    int unity_result = UnityDefaultTestRun(...);
+    
+    // Stop capturing and collect output
+    test_capture_end(&capture);
+    
+    // Store result
+    if (Unity.CurrentTestFailed) {
+        row->results[i] = TEST_RESULT_FAIL;
+        
+        // Save captured output for failed tests
+        save_test_failure_details(filter_name, test_name, 
+                                 capture.captured_output);
+    }
+    
+    test_capture_reset(&capture);
+}
+```
+
+##### Rich Failure Output
+
+With capture in place, tests can be instrumented freely:
+
+```c
+void test_partial_batch_handling(void) {
+    TEST_MESSAGE("=== Testing Partial Batch Handling ===");
+    TEST_MESSAGE("Filter under test: " g_filter_name);
+    TEST_MESSAGE("Configuration: 32 samples in 64-capacity batch");
+    
+    // Setup...
+    Batch_t* input = create_partial_batch(32, 64);
+    printf("Input batch created: head=%zu, capacity=%zu\n", 
+           input->head, batch_capacity);
+    
+    // Process...
+    Bp_EC result = process_batch(filter, input, output);
+    printf("Processing result: %s (code=%d)\n", 
+           bp_error_str(result), result);
+    
+    // Detailed diagnostics before assertion
+    printf("Output state: head=%zu, t_ns=%llu, period_ns=%llu\n",
+           output->head, output->t_ns, output->period_ns);
+    
+    // This assertion might fail
+    TEST_ASSERT_EQUAL_MESSAGE(32, output->head,
+                              "Output should preserve input sample count");
+}
+```
+
+##### Resulting Failure Log
+
+```
+================================================================================
+[2025-01-13 14:23:45] csv_source::test_partial_batch_handling FAILED
+--------------------------------------------------------------------------------
+Test File: tests/filter_compliance/test_behavioral_compliance.c:234
+
+Captured Test Output:
+=== Testing Partial Batch Handling ===
+Filter under test: csv_source
+Configuration: 32 samples in 64-capacity batch
+Input batch created: head=32, capacity=64
+Processing result: OK (code=0)
+Output state: head=0, t_ns=1000000, period_ns=20833
+test_behavioral_compliance.c:234:FAIL: Expected 32 Was 0
+  Message: Output should preserve input sample count
+
+Analysis: The filter appears to have lost samples during processing.
+         Input had 32 samples but output has 0.
+================================================================================
+```
+
+##### Alternative: Unity Custom Output
+
+Instead of pipe redirection, we could also define a custom Unity output handler:
+
+```c
+// Buffer for capturing Unity output
+static char g_unity_capture[8192];
+static size_t g_unity_capture_pos;
+
+// Custom output function
+void unity_output_capture(int c) {
+    if (g_unity_capture_pos < sizeof(g_unity_capture) - 1) {
+        g_unity_capture[g_unity_capture_pos++] = c;
+    }
+    // Also output to console
+    putchar(c);
+}
+
+// Before running tests
+#define UNITY_OUTPUT_CHAR(c) unity_output_capture(c)
+
+// Reset before each test
+g_unity_capture_pos = 0;
+memset(g_unity_capture, 0, sizeof(g_unity_capture));
 ```
 
 ## Usage Integration
@@ -481,25 +620,174 @@ test-compliance-test: build
     gh pr comment ${{ github.event.pull_request.number }} --body-file results.md
 ```
 
-## Future Enhancements
+## Phased Implementation Plan
 
-### Phase 1 (Immediate)
-- Basic CSV output with alignment
-- Console output with formatting
-- Pass/fail/skip tracking
+### Phase 1: Basic Matrix (MVP)
+**Goal**: Demonstrate the core concept with minimal changes
 
-### Phase 2 (Near-term)
-- Regression detection via diff
-- Detailed failure logging
-- Summary statistics
+**Deliverables**:
+1. Basic CSV output to `test_results.csv`
+2. Simple console matrix display
+3. Pass/fail/skip counting
+4. Integration with existing Unity test runner
 
-### Phase 3 (Future)
-- JSON output for programmatic access
-- HTML report generation
-- Historical trend tracking
-- Performance metrics per test
-- Test categories and filtering
-- Watch mode for development
+**Implementation**:
+```c
+// Minimal changes to main.c
+ComplianceMatrix_t matrix;
+// Track results during existing test loop
+// Output at end of run
+```
+
+**Success Criteria**:
+- Generates readable CSV file
+- Shows all filters × all tests
+- Preserves existing test functionality
+- Can be diffed between runs
+
+---
+
+### Phase 2: Visual Improvements
+**Goal**: Make the matrix production-ready for daily use
+
+**Deliverables**:
+1. Column width optimization for readability
+2. Colored console output (when terminal supports)
+3. Summary row/column with totals
+4. Abbreviated column headers for wide matrices
+5. Automatic backup of previous results
+
+**Implementation**:
+- Dynamic column width calculation
+- ANSI color codes for pass/fail/skip
+- Smart abbreviation system
+
+**Success Criteria**:
+- Matrix fits in standard terminal width
+- Visual scanning is easy
+- Regressions immediately visible
+
+---
+
+### Phase 3: Basic Failure Logging
+**Goal**: Capture Unity's failure messages
+
+**Deliverables**:
+1. Capture Unity failure output (line number, expected/actual)
+2. Write failures to `test_failures.log`
+3. Link matrix results to failure details
+4. Add timestamp and commit info
+
+**Implementation**:
+```c
+// Capture Unity.CurrentTestFailed state
+// Log Unity.TestFile:CurrentTestLineNumber
+// Save failure message from Unity output
+```
+
+**Success Criteria**:
+- Failed tests have accessible details
+- No loss of existing Unity output
+- Failure log is human-readable
+
+---
+
+### Phase 4: Enhanced Output Capture
+**Goal**: Rich debugging information for failures
+
+**Deliverables**:
+1. Per-test stdout/stderr capture system
+2. TEST_MESSAGE() and printf() capture
+3. Selective storage (only failed tests)
+4. Buffer management (8KB per test limit)
+
+**Implementation**:
+```c
+// Pipe redirection approach
+TestOutputCapture_t capture;
+test_capture_begin(&capture);
+// Run test
+test_capture_end(&capture);
+if (failed) save_output(capture);
+```
+
+**Success Criteria**:
+- All test output captured
+- Failed tests have full context
+- No impact on passing test performance
+- Works with existing TEST_MESSAGE() calls
+
+---
+
+### Phase 5: Advanced Features
+**Goal**: Enterprise-ready test reporting
+
+**Deliverables**:
+1. JSON output for CI/CD integration
+2. HTML report with drill-down
+3. Historical trend tracking
+4. Performance metrics (test duration)
+5. Regression detection and highlighting
+6. Test categorization and filtering
+
+**Implementation**:
+- Multiple output formats
+- SQLite for historical data
+- JavaScript for interactive HTML
+
+**Success Criteria**:
+- CI/CD systems can parse results
+- Trends visible over time
+- Performance regressions detected
+
+---
+
+### Phase 6: Developer Experience
+**Goal**: Optimize for development workflow
+
+**Deliverables**:
+1. Watch mode (re-run on file change)
+2. Focused testing (run single filter/test)
+3. Baseline management (accept new results)
+4. Diff visualization tool
+5. IDE integration helpers
+
+**Implementation**:
+- File system watcher
+- Interactive diff viewer
+- VS Code extension for result viewing
+
+**Success Criteria**:
+- Rapid test-fix-verify cycle
+- Easy regression investigation
+- Integrated into developer workflow
+
+## Implementation Timeline
+
+| Phase | Effort | Priority | Dependencies |
+|-------|--------|----------|--------------|
+| 1. Basic Matrix | 2-3 hours | **HIGH** | None |
+| 2. Visual Improvements | 2-3 hours | **HIGH** | Phase 1 |
+| 3. Basic Failure Logging | 1-2 hours | **MEDIUM** | Phase 1 |
+| 4. Output Capture | 4-6 hours | **MEDIUM** | Phase 3 |
+| 5. Advanced Features | 8-12 hours | **LOW** | Phase 4 |
+| 6. Developer Experience | 6-8 hours | **LOW** | Phase 5 |
+
+## Rollout Strategy
+
+1. **Phase 1-2**: Ship immediately for team feedback
+2. **Phase 3**: Add based on initial usage patterns
+3. **Phase 4**: Implement when debugging needs arise
+4. **Phase 5-6**: Based on team size and CI/CD requirements
+
+## Risk Mitigation
+
+- **Phase 1**: Keep changes minimal, don't break existing tests
+- **Phase 2**: Make visual features optional (--no-color flag)
+- **Phase 3**: Append-only logging to avoid data loss
+- **Phase 4**: Add capture as opt-in (--capture flag initially)
+- **Phase 5**: Keep JSON schema versioned for compatibility
+- **Phase 6**: All features optional, core functionality unchanged
 
 ## Example Test Implementation
 
