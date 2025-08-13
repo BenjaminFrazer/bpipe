@@ -2,12 +2,13 @@
 
 ## Implementation Status
 
-**Implemented (Phases 0-3)**:
+**COMPLETED Features (Phases 0-3)**:
 - ✅ Basic property table structure and operations
 - ✅ Input constraint declarations via `prop_append_constraint()`
 - ✅ Output behavior declarations via `prop_append_behavior()`
 - ✅ SET and PRESERVE behavior operators
 - ✅ Basic constraint operators (EXISTS, EQ, GTE, LTE)
+- ✅ CONSTRAINT_OP_MULTI_INPUT_ALIGNED for synchronized inputs
 - ✅ Helper functions for buffer-based filters
 - ✅ Pipeline-wide validation (`pipeline_validate_properties()`)
 - ✅ Property propagation through `prop_propagate()` with multi-input support
@@ -16,15 +17,17 @@
 - ✅ Validation automatically called during `pipeline_start()`
 - ✅ Source filters using behaviors and prop_propagate
 
-**Not Yet Implemented**:
-- ❌ Multi-output filter support (no MAX_OUTPUTS, single output_properties only)
-- ❌ Nested pipeline external inputs (parameter exists but not used)
-- ❌ Full topological DAG traversal (linear validation only)
-- ❌ Output port parameter in prop_propagate (always uses port 0)
+**Future Work (Phases 4-5)**:
+- Multi-output filter support (currently single output_properties only)
+- Nested pipeline external inputs (parameter exists but not fully integrated)
+- Full topological DAG traversal (currently linear validation only)
+- Output port parameter in prop_propagate (currently always uses port 0)
+- Property negotiation and adaptation
+- Channel count property
 
 **Connection Validation Status**:
 - `filt_connect()` currently only establishes DAG edges, no validation
-- Full validation is deferred to the pipeline validation phase (not yet implemented)
+- Full validation is deferred to the pipeline validation phase (implemented and working)
 
 ## Overview
 
@@ -311,19 +314,20 @@ When implemented, validation will verify that specified properties match across 
 ### Multi-Port Filter Example
 ```c
 // Stereo splitter: 1 stereo input → 2 mono outputs
+// NOTE: PROP_CHANNEL_COUNT is shown for illustration but not yet implemented
 Bp_EC stereo_splitter_init(StereoSplitter_t* splitter, config)
 {
     // Input 0: Must be stereo float
     prop_append_constraint(&splitter->base, INPUT_0, PROP_DATA_TYPE,
                           CONSTRAINT_OP_EQ, &(SampleDtype_t){DTYPE_FLOAT});
-    prop_append_constraint(&splitter->base, INPUT_0, PROP_CHANNEL_COUNT,
-                          CONSTRAINT_OP_EQ, &(uint32_t){2});
+    // prop_append_constraint(&splitter->base, INPUT_0, PROP_CHANNEL_COUNT,
+    //                       CONSTRAINT_OP_EQ, &(uint32_t){2});  // Future work
     
     // Both outputs: Mono float, preserve sample rate
     prop_append_behavior(&splitter->base, OUTPUT_0 | OUTPUT_1, PROP_DATA_TYPE,
                         BEHAVIOR_OP_SET, &(SampleDtype_t){DTYPE_FLOAT});
-    prop_append_behavior(&splitter->base, OUTPUT_0 | OUTPUT_1, PROP_CHANNEL_COUNT,
-                        BEHAVIOR_OP_SET, &(uint32_t){1});
+    // prop_append_behavior(&splitter->base, OUTPUT_0 | OUTPUT_1, PROP_CHANNEL_COUNT,
+    //                     BEHAVIOR_OP_SET, &(uint32_t){1});  // Future work
     prop_append_behavior(&splitter->base, OUTPUT_ALL, PROP_SAMPLE_PERIOD_NS,
                         BEHAVIOR_OP_PRESERVE, NULL);
 }

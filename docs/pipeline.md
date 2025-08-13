@@ -214,5 +214,5 @@ CHECK_ERR(filt_deinit(&pipeline.base));
 ## See Also
 
 - [Core Data Model](core_data_model.md) - Understanding filter architecture
-- [Filter Implementation Guide](filter_implementation_guide.md) - Creating custom filters
-- [Pipeline Property Validation](pipeline_property_validation.md) - How validation works in pipelines
+- [Filter Development Guide](filter_development_guide.md) - Creating custom filters
+- [Property Validation Spec](property_validation_spec.md) - How validation works in pipelines

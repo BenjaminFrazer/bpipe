@@ -8,12 +8,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 1. **Core Concepts (REQUIRED READING)**:
    - `docs/core_data_model.md` - MUST understand data structures, filter types, and architecture
-   - `docs/filter_implementation_guide.md` - MUST learn filter patterns before implementing
+   - `docs/filter_development_guide.md` - MUST learn filter patterns before implementing
    - `docs/public_api_reference.md` - MUST know API conventions
    - `docs/threading_model.md` - MUST understand threading requirements
    - `docs/error_handling_guide.md` - MUST follow error patterns
-   - `docs/filter_capability_system.md` - MUST understand property constraints and behaviors
-   - `docs/pipeline_property_validation.md` - MUST understand pipeline-wide validation
+   - `docs/property_system_reference.md` - MUST understand property constraints and behaviors
+   - `docs/property_validation_spec.md` - MUST understand pipeline-wide validation
    - `docs/pipeline.md` - MUST understand Pipeline filter lifecycle and usage
 
 **IMPORTANT**: If you have not read the above documents, STOP and read them NOW. Do not proceed with any implementation work until you understand these core concepts. This is non-negotiable.

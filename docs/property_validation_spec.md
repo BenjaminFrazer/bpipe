@@ -13,7 +13,7 @@
 - ✅ Input property tables for filters (input_properties[MAX_INPUTS])
 - ❌ Multi-output support (single output_properties only)
 - ❌ Nested pipeline external inputs (top-level pipelines only)
-- See `filter_capability_system.md` for detailed feature status
+- See `property_system_reference.md` for detailed feature status
 
 ## Overview
 
@@ -31,6 +31,8 @@ While pairwise connection validation catches obvious mismatches, it cannot:
 ### Core Principle
 
 **Root pipelines** (those with no external inputs) must be self-contained systems with at least one internal source filter that generates data. A root pipeline without any source filters is invalid and will fail validation. **Nested pipelines** (embedded within other pipelines) receive external input properties from their containing pipeline during validation and may consist entirely of transform filters.
+
+**Important Clarification**: Property validation is completely separate from runtime behavior. The examples in this document illustrate how properties are validated during the pipeline initialization phase, not how filters actually process data at runtime.
 
 ### Algorithm Overview
 
@@ -111,8 +113,9 @@ output_prop.batch_max = 256;
 ```c
 // Batch matcher adapts to downstream requirements
 // Input: float, 48kHz, batch=1-256
-// Detected sink needs: batch=512
+// Detected sink needs: batch=512 (detected at connection time by inspecting sink buffer)
 // Output: float, 48kHz, batch=512-512
+// NOTE: Detection happens at connection time, property validation happens later
 ```
 
 ### 3. Multi-Input Filters

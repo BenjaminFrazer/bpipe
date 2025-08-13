@@ -305,3 +305,47 @@ size_t samples_to_process = MIN(available_input, available_output);
 ```
 
 This pattern ensures consistent behavior across all filters while allowing flexibility through the operations interface.
+
+## Property System Migration Checklist
+
+For filters that haven't been migrated to the property system yet:
+
+### Unmigrated Filters (as of latest update)
+- **passthrough** - Simple pass-through pattern
+- **tee** - Simple pass-through pattern  
+- **debug_output_filter** - Simple pass-through pattern
+- **csv_source** - Source filter pattern
+- **batch_matcher** - Adaptive batch size pattern
+- **sample_aligner** - Adaptive or pass-through pattern
+
+### Migration Patterns
+
+#### Pattern 1: Simple Pass-Through Filter
+For filters like passthrough, tee, debug_output:
+```c
+// In filter_init() after filt_init():
+prop_constraints_from_buffer_append(&filter->base, &config.buff_config, true);
+prop_set_output_behavior_for_buffer_filter(&filter->base, &config.buff_config,
+                                          false,  // passthrough
+                                          false); // allows partial
+```
+
+#### Pattern 2: Source Filter
+For filters with no inputs:
+```c
+// Use SET behaviors to define output properties
+prop_append_behavior(&filter->base, OUTPUT_0, PROP_DATA_TYPE, 
+                    BEHAVIOR_OP_SET, &dtype);
+prop_append_behavior(&filter->base, OUTPUT_0, PROP_SAMPLE_PERIOD_NS,
+                    BEHAVIOR_OP_SET, &period_ns);
+// Leave properties UNKNOWN if can't be determined at init
+```
+
+#### Pattern 3: Adaptive Filter
+For filters that adapt batch sizes:
+```c
+prop_constraints_from_buffer_append(&filter->base, &config.buff_config, true);
+prop_set_output_behavior_for_buffer_filter(&filter->base, &config.buff_config,
+                                          true,   // adapt batch size
+                                          true);  // guarantee full batches
+```
