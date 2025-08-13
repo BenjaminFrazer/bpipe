@@ -31,6 +31,7 @@ void test_partial_batch_handling(void);
 void test_data_type_compatibility(void);
 void test_sample_rate_preservation(void);
 void test_data_integrity(void);
+void test_multi_input_synchronization(void);
 
 // Example default configurations for testing
 static ControllableProducerConfig_t default_producer_config = {
@@ -139,6 +140,8 @@ static ComplianceTest_t compliance_tests[] = {
     {test_sample_rate_preservation, "test_sample_rate_preservation",
      "tests/filter_compliance/test_behavioral_compliance.c"},
     {test_data_integrity, "test_data_integrity",
+     "tests/filter_compliance/test_behavioral_compliance.c"},
+    {test_multi_input_synchronization, "test_multi_input_synchronization",
      "tests/filter_compliance/test_behavioral_compliance.c"},
 };
 
