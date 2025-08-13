@@ -198,4 +198,4 @@ All filters support the standard operations interface:
 
 ## Creating Custom Filters
 
-See the [Filter Development Guide](filter_development_guide.md) for details on creating custom filters.
+See the [Filter Development Guide](../guides/filter_development_guide.md) for details on creating custom filters.

@@ -213,6 +213,6 @@ CHECK_ERR(filt_deinit(&pipeline.base));
 ```
 ## See Also
 
-- [Core Data Model](core_data_model.md) - Understanding filter architecture
-- [Filter Development Guide](filter_development_guide.md) - Creating custom filters
-- [Property Validation Spec](property_validation_spec.md) - How validation works in pipelines
+- [Core Data Model](../architecture/core_data_model.md) - Understanding filter architecture
+- [Filter Development Guide](filter_development_guide.md) - Creating custom filters (same directory)
+- [Property Validation Spec](../reference/property_validation_spec.md) - How validation works in pipelines
