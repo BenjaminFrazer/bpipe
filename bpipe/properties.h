@@ -31,7 +31,8 @@ typedef enum {
   PROP_MAX_THROUGHPUT_HZ, /* Maximum throughput (for throttling) */
 
   /* Total sample limit */
-  PROP_MAX_TOTAL_SAMPLES, /* Maximum total samples from source (0 = unlimited) */
+  PROP_MAX_TOTAL_SAMPLES, /* Maximum total samples from source (0 = unlimited)
+                           */
 
   PROP_COUNT_MVP /* Count of actual properties */
 } SignalProperty_t;
@@ -128,7 +129,6 @@ PropertyTable_t prop_table_init(void);
  */
 void prop_set_all_unknown(PropertyTable_t* table);
 
-
 /* Get a property from the table (returns false if unknown) */
 bool prop_get_dtype(const PropertyTable_t* table, SampleDtype_t* dtype);
 bool prop_get_min_batch_capacity(const PropertyTable_t* table,
@@ -136,9 +136,12 @@ bool prop_get_min_batch_capacity(const PropertyTable_t* table,
 bool prop_get_max_batch_capacity(const PropertyTable_t* table,
                                  uint32_t* capacity);
 bool prop_get_sample_period(const PropertyTable_t* table, uint64_t* period_ns);
-bool prop_get_min_throughput(const PropertyTable_t* table, uint32_t* throughput_hz);
-bool prop_get_max_throughput(const PropertyTable_t* table, uint32_t* throughput_hz);
-bool prop_get_max_total_samples(const PropertyTable_t* table, uint64_t* max_samples);
+bool prop_get_min_throughput(const PropertyTable_t* table,
+                             uint32_t* throughput_hz);
+bool prop_get_max_throughput(const PropertyTable_t* table,
+                             uint32_t* throughput_hz);
+bool prop_get_max_total_samples(const PropertyTable_t* table,
+                                uint64_t* max_samples);
 
 /* Validate that upstream properties meet downstream constraints
  * @param input_port: The specific input port being connected (0-based index)

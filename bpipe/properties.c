@@ -35,7 +35,6 @@ void prop_set_all_unknown(PropertyTable_t* table)
   }
 }
 
-
 /* Get a property from the table (returns false if unknown) */
 bool prop_get_dtype(const PropertyTable_t* table, SampleDtype_t* dtype)
 {
@@ -71,7 +70,8 @@ bool prop_get_sample_period(const PropertyTable_t* table, uint64_t* period_ns)
   return true;
 }
 
-bool prop_get_min_throughput(const PropertyTable_t* table, uint32_t* throughput_hz)
+bool prop_get_min_throughput(const PropertyTable_t* table,
+                             uint32_t* throughput_hz)
 {
   if (!table || !throughput_hz) return false;
   if (!table->properties[PROP_MIN_THROUGHPUT_HZ].known) return false;
@@ -79,7 +79,8 @@ bool prop_get_min_throughput(const PropertyTable_t* table, uint32_t* throughput_
   return true;
 }
 
-bool prop_get_max_throughput(const PropertyTable_t* table, uint32_t* throughput_hz)
+bool prop_get_max_throughput(const PropertyTable_t* table,
+                             uint32_t* throughput_hz)
 {
   if (!table || !throughput_hz) return false;
   if (!table->properties[PROP_MAX_THROUGHPUT_HZ].known) return false;
@@ -87,7 +88,8 @@ bool prop_get_max_throughput(const PropertyTable_t* table, uint32_t* throughput_
   return true;
 }
 
-bool prop_get_max_total_samples(const PropertyTable_t* table, uint64_t* max_samples)
+bool prop_get_max_total_samples(const PropertyTable_t* table,
+                                uint64_t* max_samples)
 {
   if (!table || !max_samples) return false;
   if (!table->properties[PROP_MAX_TOTAL_SAMPLES].known) return false;
@@ -443,8 +445,8 @@ Bp_EC prop_validate_multi_input_alignment(
 
 /* Apply a single behavior */
 static void apply_behavior(Property_t* prop, const OutputBehavior_t* behavior,
-                          const PropertyTable_t* input_properties,
-                          size_t n_inputs)
+                           const PropertyTable_t* input_properties,
+                           size_t n_inputs)
 {
   switch (behavior->op) {
     case BEHAVIOR_OP_SET:
@@ -462,9 +464,10 @@ static void apply_behavior(Property_t* prop, const OutputBehavior_t* behavior,
     case BEHAVIOR_OP_PRESERVE:
       /* Preserve from specified input (default to input 0) */
       if (n_inputs > 0 && input_properties != NULL) {
-        uint32_t input_idx = behavior->operand.u32;  /* Which input to preserve from */
+        uint32_t input_idx =
+            behavior->operand.u32; /* Which input to preserve from */
         if (input_idx >= n_inputs) {
-          input_idx = 0;  /* Default to input 0 if out of range */
+          input_idx = 0; /* Default to input 0 if out of range */
         }
         /* Copy the property from the selected input */
         *prop = input_properties[input_idx].properties[behavior->property];
@@ -480,7 +483,7 @@ PropertyTable_t prop_propagate(const PropertyTable_t* input_properties,
                                uint32_t output_port)
 {
   PropertyTable_t downstream;
-  
+
   /* For source filters (n_inputs == 0), start with UNKNOWN properties */
   if (n_inputs == 0 || input_properties == NULL) {
     downstream = prop_table_init();
@@ -497,7 +500,7 @@ PropertyTable_t prop_propagate(const PropertyTable_t* input_properties,
   /* Apply filter's output behaviors using count */
   const OutputBehavior_t* behaviors = filter_contract->output_behaviors;
   uint32_t output_mask = 1U << output_port;
-  
+
   if (behaviors) {
     for (size_t i = 0; i < filter_contract->n_output_behaviors; i++) {
       const OutputBehavior_t* behavior = &behaviors[i];
@@ -514,7 +517,7 @@ PropertyTable_t prop_propagate(const PropertyTable_t* input_properties,
 
       /* Direct indexing - enums match array indices */
       apply_behavior(&downstream.properties[behavior->property], behavior,
-                    input_properties, n_inputs);
+                     input_properties, n_inputs);
     }
   }
 
@@ -590,7 +593,7 @@ void prop_describe_table(const PropertyTable_t* table, char* buffer,
         case PROP_SAMPLE_PERIOD_NS:
         case PROP_MAX_TOTAL_SAMPLES:
           written += snprintf(buffer + written, size - written, "%llu\n",
-                              (unsigned long long)prop->value.u64);
+                              (unsigned long long) prop->value.u64);
           break;
         default:
           written += snprintf(buffer + written, size - written, "%u\n",

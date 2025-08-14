@@ -311,7 +311,8 @@ Bp_EC filt_init(Filter_t* f, Core_filt_config_t config)
   f->contract.output_behaviors = f->output_behaviors;
   f->contract.n_output_behaviors = 0;  // Will be updated via append functions
 
-  // Initialize output properties (default to 1 output for backward compatibility)
+  // Initialize output properties (default to 1 output for backward
+  // compatibility)
   f->n_outputs = 1;
   for (int i = 0; i < MAX_OUTPUTS; i++) {
     f->output_properties[i] = prop_table_init();
@@ -496,10 +497,11 @@ Bp_EC filt_connect(Filter_t* source, size_t source_output, Filter_t* sink,
   // Check if sink has any input constraints
   if (sink->n_input_constraints > 0) {
     char error_msg[256];
-    // Use output port 0 from source (most common case, source_output parameter validates this)
-    Bp_EC err =
-        prop_validate_connection(&source->output_properties[source_output], &sink->contract,
-                                 sink_input, error_msg, sizeof(error_msg));
+    // Use output port 0 from source (most common case, source_output parameter
+    // validates this)
+    Bp_EC err = prop_validate_connection(
+        &source->output_properties[source_output], &sink->contract, sink_input,
+        error_msg, sizeof(error_msg));
     if (err != Bp_EC_OK) {
       // TODO: Log error_msg when logging is available
       return err;
@@ -509,8 +511,8 @@ Bp_EC filt_connect(Filter_t* source, size_t source_output, Filter_t* sink,
   // Check multi-input alignment constraints before storing properties
   char alignment_error_msg[256];
   Bp_EC alignment_err = prop_validate_multi_input_alignment(
-      sink, sink_input, &source->output_properties[source_output], alignment_error_msg,
-      sizeof(alignment_error_msg));
+      sink, sink_input, &source->output_properties[source_output],
+      alignment_error_msg, sizeof(alignment_error_msg));
   if (alignment_err != Bp_EC_OK) {
     // TODO: Log alignment_error_msg when logging is available
     return alignment_err;

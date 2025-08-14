@@ -32,8 +32,8 @@ typedef struct _Pipeline_config_t {
 
 /* External input mapping - maps external inputs to internal filter ports */
 typedef struct {
-  Filter_t* filter;  /* Target filter to receive external input */
-  size_t port;       /* Which input port on that filter */
+  Filter_t* filter; /* Target filter to receive external input */
+  size_t port;      /* Which input port on that filter */
 } ExternalInputMapping_t;
 
 typedef struct _Pipeline_t {
@@ -76,16 +76,16 @@ Bp_EC pipeline_init(Pipeline_t* pipe, Pipeline_config_t config);
  * @return: Bp_EC_OK on success, error code otherwise
  */
 Bp_EC pipeline_declare_external_input(Pipeline_t* pipeline,
-                                      size_t external_index,
-                                      Filter_t* filter,
+                                      size_t external_index, Filter_t* filter,
                                       size_t filter_port);
 
 /* Validate properties throughout the pipeline
- * This function propagates properties through all filters and validates constraints.
- * For root pipelines (no external inputs), pass NULL for external_inputs.
- * For nested pipelines, provide the external input properties.
+ * This function propagates properties through all filters and validates
+ * constraints. For root pipelines (no external inputs), pass NULL for
+ * external_inputs. For nested pipelines, provide the external input properties.
  * @param pipeline: The pipeline to validate
- * @param external_inputs: Array of property tables for external inputs (NULL for root)
+ * @param external_inputs: Array of property tables for external inputs (NULL
+ * for root)
  * @param n_external_inputs: Number of external inputs (0 for root)
  * @param error_msg: Buffer for error message (optional, can be NULL)
  * @param error_msg_size: Size of error message buffer
@@ -93,8 +93,7 @@ Bp_EC pipeline_declare_external_input(Pipeline_t* pipeline,
  */
 Bp_EC pipeline_validate_properties(const Pipeline_t* pipeline,
                                    PropertyTable_t* external_inputs,
-                                   size_t n_external_inputs,
-                                   char* error_msg,
+                                   size_t n_external_inputs, char* error_msg,
                                    size_t error_msg_size);
 
 /* Standard filter lifecycle (inherited from Filter_t) */

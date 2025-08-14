@@ -219,8 +219,7 @@ void test_pipeline_lifecycle_and_errors(void)
       .offset = 0.0,
       .phase_rad = 0.0,
       .max_samples = 1000,  // Limit output for testing
-      .timeout_us = 1000000
-  };
+      .timeout_us = 1000000};
   CHECK_ERR(signal_generator_init(&source, source_config));
 
   Map_config_t multiply_by_2_config = {.name = "gain_x2",
@@ -238,10 +237,8 @@ void test_pipeline_lifecycle_and_errors(void)
 
   Filter_t* filters[] = {&source.base, &gain_filter.base, &offset_filter.base};
 
-  Connection_t connections[] = {
-      {&source.base, 0, &gain_filter.base, 0},
-      {&gain_filter.base, 0, &offset_filter.base, 0}
-  };
+  Connection_t connections[] = {{&source.base, 0, &gain_filter.base, 0},
+                                {&gain_filter.base, 0, &offset_filter.base, 0}};
 
   Pipeline_config_t config = {.name = "lifecycle_test",
                               .buff_config = default_buffer_config(),

@@ -262,7 +262,8 @@ Bp_EC signal_generator_init(SignalGenerator_t* sg,
 
   // Now propagate from UNKNOWN to compute output properties for port 0
   // Signal generator is a source filter (0 inputs) and has 1 output
-  sg->base.output_properties[0] = prop_propagate(NULL, 0, &sg->base.contract, 0);
+  sg->base.output_properties[0] =
+      prop_propagate(NULL, 0, &sg->base.contract, 0);
 
   return Bp_EC_OK;
 }

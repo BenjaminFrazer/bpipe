@@ -527,7 +527,7 @@ void passthrough_metrics_get_metrics(PassthroughMetrics_t* pm, size_t* batches,
 // Variable Batch Producer Implementation
 static void* variable_batch_producer_worker(void* arg)
 {
-  VariableBatchProducer_t* vbp = (VariableBatchProducer_t*)arg;
+  VariableBatchProducer_t* vbp = (VariableBatchProducer_t*) arg;
   BP_WORKER_ASSERT(&vbp->base, vbp->base.sinks[0] != NULL, Bp_EC_NO_SINK);
   BP_WORKER_ASSERT(&vbp->base, vbp->batch_sizes != NULL, Bp_EC_NULL_POINTER);
   BP_WORKER_ASSERT(&vbp->base, vbp->n_batch_sizes > 0, Bp_EC_INVALID_CONFIG);
@@ -538,13 +538,12 @@ static void* variable_batch_producer_worker(void* arg)
   while (atomic_load(&vbp->base.running)) {
     // Get current batch size from array
     uint32_t current_batch_size = vbp->batch_sizes[vbp->current_batch_index];
-    
+
     // Sanity check batch size
     size_t max_batch_size = bb_batch_size(vbp->base.sinks[0]);
-    BP_WORKER_ASSERT(&vbp->base, current_batch_size <= max_batch_size, 
+    BP_WORKER_ASSERT(&vbp->base, current_batch_size <= max_batch_size,
                      Bp_EC_INVALID_CONFIG);
-    BP_WORKER_ASSERT(&vbp->base, current_batch_size > 0, 
-                     Bp_EC_INVALID_CONFIG);
+    BP_WORKER_ASSERT(&vbp->base, current_batch_size > 0, Bp_EC_INVALID_CONFIG);
 
     // Get output batch
     Batch_t* output = bb_get_head(vbp->base.sinks[0]);
@@ -556,11 +555,11 @@ static void* variable_batch_producer_worker(void* arg)
                      Bp_EC_TYPE_MISMATCH);
 
     // Generate data based on pattern - only fill current_batch_size samples
-    float* data = (float*)output->data;
+    float* data = (float*) output->data;
     for (uint32_t i = 0; i < current_batch_size; i++) {
       switch (vbp->pattern) {
         case PATTERN_SEQUENTIAL:
-          data[i] = (float)(vbp->next_sequence++);
+          data[i] = (float) (vbp->next_sequence++);
           break;
         case PATTERN_CONSTANT:
           data[i] = 1.0f;  // Default constant value
@@ -573,7 +572,7 @@ static void* variable_batch_producer_worker(void* arg)
           }
           break;
         case PATTERN_RANDOM:
-          data[i] = (float)rand() / RAND_MAX;
+          data[i] = (float) rand() / RAND_MAX;
           break;
       }
     }
@@ -636,15 +635,13 @@ Bp_EC variable_batch_producer_init(VariableBatchProducer_t* vbp,
   }
 
   // Build core config - no input buffer needed for source filter
-  Core_filt_config_t core_config = {
-    .name = config.name,
-    .filt_type = FILT_T_MAP,
-    .size = sizeof(VariableBatchProducer_t),
-    .n_inputs = 0,  // Source filter
-    .max_supported_sinks = 1,
-    .timeout_us = config.timeout_us,
-    .worker = variable_batch_producer_worker
-  };
+  Core_filt_config_t core_config = {.name = config.name,
+                                    .filt_type = FILT_T_MAP,
+                                    .size = sizeof(VariableBatchProducer_t),
+                                    .n_inputs = 0,  // Source filter
+                                    .max_supported_sinks = 1,
+                                    .timeout_us = config.timeout_us,
+                                    .worker = variable_batch_producer_worker};
 
   // Initialize base filter
   Bp_EC err = filt_init(&vbp->base, core_config);

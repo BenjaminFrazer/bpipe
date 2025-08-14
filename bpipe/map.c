@@ -225,17 +225,21 @@ Bp_EC map_init(Map_filt_t* f, Map_config_t config)
   // For a Map filter, we know the output data type based on our buffer config
   // even if the input is unknown (e.g., when used as a pipeline input)
   SampleDtype_t dtype = config.buff_config.dtype;
-  prop_append_behavior(&f->base, PROP_DATA_TYPE, BEHAVIOR_OP_SET, &dtype, OUTPUT_ALL);
-  
+  prop_append_behavior(&f->base, PROP_DATA_TYPE, BEHAVIOR_OP_SET, &dtype,
+                       OUTPUT_ALL);
+
   // Preserve sample period from input (or leave unknown if input is unknown)
-  prop_append_behavior(&f->base, PROP_SAMPLE_PERIOD_NS, BEHAVIOR_OP_PRESERVE, NULL, OUTPUT_ALL);
-  
+  prop_append_behavior(&f->base, PROP_SAMPLE_PERIOD_NS, BEHAVIOR_OP_PRESERVE,
+                       NULL, OUTPUT_ALL);
+
   // Map can output various batch sizes based on how it accumulates data
   uint32_t min_batch = 1;  // Can output partial batches
   uint32_t max_batch = 1U << config.buff_config.batch_capacity_expo;
-  prop_append_behavior(&f->base, PROP_MIN_BATCH_CAPACITY, BEHAVIOR_OP_SET, &min_batch, OUTPUT_ALL);
-  prop_append_behavior(&f->base, PROP_MAX_BATCH_CAPACITY, BEHAVIOR_OP_SET, &max_batch, OUTPUT_ALL);
-  
+  prop_append_behavior(&f->base, PROP_MIN_BATCH_CAPACITY, BEHAVIOR_OP_SET,
+                       &min_batch, OUTPUT_ALL);
+  prop_append_behavior(&f->base, PROP_MAX_BATCH_CAPACITY, BEHAVIOR_OP_SET,
+                       &max_batch, OUTPUT_ALL);
+
   // Compute output properties based on contract
   // For a map filter with no inputs (e.g., as pipeline input), this will now
   // produce concrete properties based on the SET behaviors above
