@@ -1,0 +1,70 @@
+# FILTER COMPLIANCE TEST RESULTS - GROUPED FORMAT
+# Generated: 2025-08-14 07:29:22 UTC
+# Commit: 5257e4f
+# Suite Version: 1.0.0
+# Total Filters: 3
+# Total Tests: 23
+#
+
+# Lifecycle Tests
+Filter              ,LifeBasic ,LifeWork  ,LifeRest  ,LifeErr   ,Pass,Fail,Skip,Total
+ControllableProducer,PASS      ,PASS      ,PASS      ,PASS      ,4,0,0,4/4
+ControllableConsumer,PASS      ,PASS      ,PASS      ,PASS      ,4,0,0,4/4
+Passthrough         ,PASS      ,PASS      ,PASS      ,PASS      ,4,0,0,4/4
+TOTAL               ,3/3      ,3/3      ,3/3      ,3/3      ,12,0,0,12/12
+
+# Connection Tests
+Filter              ,ConnSingle,ConnMulti ,ConnType  ,Pass,Fail,Skip,Total
+ControllableProducer,PASS      ,PASS      ,PASS      ,3,0,0,3/3
+ControllableConsumer,PASS      ,PASS      ,PASS      ,3,0,0,3/3
+Passthrough         ,PASS      ,PASS      ,PASS      ,3,0,0,3/3
+TOTAL               ,3/3      ,3/3      ,3/3      ,9,0,0,9/9
+
+# Data Flow Tests
+Filter              ,DataPass  ,DataBkPr  ,Pass,Fail,Skip,Total
+ControllableProducer,PASS      ,PASS      ,2,0,0,2/2
+ControllableConsumer,PASS      ,PASS      ,2,0,0,2/2
+Passthrough         ,PASS      ,PASS      ,2,0,0,2/2
+TOTAL               ,3/3      ,3/3      ,6,0,0,6/6
+
+# Error Handling Tests
+Filter              ,ErrConfig ,ErrTime   ,Pass,Fail,Skip,Total
+ControllableProducer,PASS      ,PASS      ,2,0,0,2/2
+ControllableConsumer,PASS      ,PASS      ,2,0,0,2/2
+Passthrough         ,PASS      ,PASS      ,2,0,0,2/2
+TOTAL               ,3/3      ,3/3      ,6,0,0,6/6
+
+# Threading Tests
+Filter              ,ThrdWork  ,ThrdSync  ,Pass,Fail,Skip,Total
+ControllableProducer,PASS      ,PASS      ,2,0,0,2/2
+ControllableConsumer,PASS      ,PASS      ,2,0,0,2/2
+Passthrough         ,PASS      ,PASS      ,2,0,0,2/2
+TOTAL               ,3/3      ,3/3      ,6,0,0,6/6
+
+# Performance Tests
+Filter              ,PerfThru  ,Pass,Fail,Skip,Total
+ControllableProducer,PASS      ,1,0,0,1/1
+ControllableConsumer,PASS      ,1,0,0,1/1
+Passthrough         ,PASS      ,1,0,0,1/1
+TOTAL               ,3/3      ,3,0,0,3/3
+
+# Buffer Config Tests
+Filter              ,BuffMin   ,BuffDrpH  ,BuffDrpT  ,BuffLarge ,Pass,Fail,Skip,Total
+ControllableProducer,PASS      ,PASS      ,PASS      ,PASS      ,4,0,0,4/4
+ControllableConsumer,PASS      ,PASS      ,PASS      ,PASS      ,4,0,0,4/4
+Passthrough         ,PASS      ,PASS      ,PASS      ,PASS      ,4,0,0,4/4
+TOTAL               ,3/3      ,3/3      ,3/3      ,3/3      ,12,0,0,12/12
+
+# Behavioral Tests
+Filter              ,BehvPart  ,BehvType  ,BehvRate  ,BehvIntg  ,BehvSync  ,Pass,Fail,Skip,Total
+ControllableProducer,PASS      ,PASS      ,PASS      ,PASS      ,PASS      ,5,0,0,5/5
+ControllableConsumer,PASS      ,PASS      ,PASS      ,PASS      ,PASS      ,5,0,0,5/5
+Passthrough         ,PASS      ,PASS      ,PASS      ,PASS      ,PASS      ,5,0,0,5/5
+TOTAL               ,3/3      ,3/3      ,3/3      ,3/3      ,3/3      ,15,0,0,15/15
+
+# OVERALL SUMMARY
+Filter              ,Pass,Fail,Skip,Total,Pass%
+ControllableProducer,23,0,0,23/23,100.0%
+ControllableConsumer,23,0,0,23/23,100.0%
+Passthrough         ,23,0,0,23/23,100.0%
+TOTAL               ,69,0,0,69/69,100.0%

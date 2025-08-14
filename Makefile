@@ -61,7 +61,7 @@ $(BUILD_DIR)/filter_compliance_%.o: $(FILTER_COMPLIANCE_DIR)/%.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(DEP_FLAGS) -c -o $@ $<
 
 # Build the filter compliance test executable
-$(BUILD_DIR)/test_filter_compliance: $(BUILD_DIR)/filter_compliance_main.o $(BUILD_DIR)/filter_compliance_common.o $(FILTER_COMPLIANCE_OBJS) $(BUILD_DIR)/mock_filters.o $(OBJ_FILES) $(BUILD_DIR)/unity.o
+$(BUILD_DIR)/test_filter_compliance: $(BUILD_DIR)/filter_compliance_main.o $(BUILD_DIR)/filter_compliance_common.o $(BUILD_DIR)/filter_compliance_compliance_matrix.o $(FILTER_COMPLIANCE_OBJS) $(BUILD_DIR)/mock_filters.o $(OBJ_FILES) $(BUILD_DIR)/unity.o
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 # Examples target

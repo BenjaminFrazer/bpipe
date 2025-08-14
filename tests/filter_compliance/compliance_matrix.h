@@ -103,6 +103,15 @@ Bp_EC compliance_matrix_write_csv(const ComplianceMatrix_t* matrix,
                                   const char* filename);
 
 /**
+ * Write matrix to CSV file with grouped tests for better readability
+ * @param matrix Matrix to write
+ * @param filename Output file path
+ * @return Bp_EC_OK on success
+ */
+Bp_EC compliance_matrix_write_grouped_csv(const ComplianceMatrix_t* matrix,
+                                          const char* filename);
+
+/**
  * Print matrix to stdout with formatting
  * @param matrix Matrix to print
  * @param use_color Enable ANSI color codes
@@ -110,6 +119,15 @@ Bp_EC compliance_matrix_write_csv(const ComplianceMatrix_t* matrix,
  */
 Bp_EC compliance_matrix_print_stdout(const ComplianceMatrix_t* matrix,
                                      bool use_color);
+
+/**
+ * Print matrix to stdout with grouped tests for better readability
+ * @param matrix Matrix to print
+ * @param use_color Enable ANSI color codes
+ * @return Bp_EC_OK on success
+ */
+Bp_EC compliance_matrix_print_grouped(const ComplianceMatrix_t* matrix,
+                                      bool use_color);
 
 /**
  * Clean up matrix resources

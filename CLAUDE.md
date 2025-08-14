@@ -23,6 +23,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
    - Reference `docs/guides/source_filter_patterns.md` for source filters
    - Use `docs/guides/debugging_guide.md` when issues arise
 
+3. **For Testcase Development**
+    - Reference `docs/reference/filter_compliance_framework_reference.md`
 
 3.  Once you've finished reading this file, Announce a list of the documents you have read. 
 

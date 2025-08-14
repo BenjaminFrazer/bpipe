@@ -4,7 +4,10 @@
  */
 
 #include <stddef.h>  // for offsetof
+#include <stdbool.h> // for bool
+#include <unistd.h>  // for isatty
 #include "common.h"
+#include "compliance_matrix.h"
 
 // Declare all test functions
 void test_lifecycle_basic(void);
@@ -150,12 +153,64 @@ int main(int argc, char* argv[])
   // Command line options
   const char* filter_pattern = NULL;
   const char* test_pattern = NULL;
+  bool enable_matrix = true;  // Enable matrix output by default
 
   for (int i = 1; i < argc; i++) {
     if (strcmp(argv[i], "--filter") == 0 && i + 1 < argc) {
       filter_pattern = argv[++i];
     } else if (strcmp(argv[i], "--test") == 0 && i + 1 < argc) {
       test_pattern = argv[++i];
+    } else if (strcmp(argv[i], "--no-matrix") == 0) {
+      enable_matrix = false;
+    }
+  }
+
+  // Initialize compliance matrix if enabled
+  ComplianceMatrix_t test_matrix;
+  if (enable_matrix) {
+    if (compliance_matrix_init(&test_matrix, 50) != Bp_EC_OK) {
+      printf("Warning: Failed to initialize test matrix\n");
+      enable_matrix = false;
+    } else {
+      // Add all test definitions to matrix
+      for (size_t i = 0; i < sizeof(compliance_tests) / sizeof(compliance_tests[0]); i++) {
+        // Generate short names based on test names
+        char short_name[16] = {0};
+        const char* test_name = compliance_tests[i].test_name;
+        
+        // Create abbreviated names for common test patterns
+        if (strstr(test_name, "lifecycle_basic")) strcpy(short_name, "LifeBasic");
+        else if (strstr(test_name, "lifecycle_with_worker")) strcpy(short_name, "LifeWork");
+        else if (strstr(test_name, "lifecycle_restart")) strcpy(short_name, "LifeRest");
+        else if (strstr(test_name, "lifecycle_errors")) strcpy(short_name, "LifeErr");
+        else if (strstr(test_name, "connection_single")) strcpy(short_name, "ConnSingle");
+        else if (strstr(test_name, "connection_multi")) strcpy(short_name, "ConnMulti");
+        else if (strstr(test_name, "connection_type")) strcpy(short_name, "ConnType");
+        else if (strstr(test_name, "dataflow_passthrough")) strcpy(short_name, "DataPass");
+        else if (strstr(test_name, "dataflow_backpressure")) strcpy(short_name, "DataBkPr");
+        else if (strstr(test_name, "error_invalid")) strcpy(short_name, "ErrConfig");
+        else if (strstr(test_name, "error_timeout")) strcpy(short_name, "ErrTime");
+        else if (strstr(test_name, "thread_worker")) strcpy(short_name, "ThrdWork");
+        else if (strstr(test_name, "thread_shutdown")) strcpy(short_name, "ThrdSync");
+        else if (strstr(test_name, "perf_throughput")) strcpy(short_name, "PerfThru");
+        else if (strstr(test_name, "buffer_minimum")) strcpy(short_name, "BuffMin");
+        else if (strstr(test_name, "overflow_drop_head")) strcpy(short_name, "BuffDrpH");
+        else if (strstr(test_name, "overflow_drop_tail")) strcpy(short_name, "BuffDrpT");
+        else if (strstr(test_name, "buffer_large")) strcpy(short_name, "BuffLarge");
+        else if (strstr(test_name, "partial_batch")) strcpy(short_name, "BehvPart");
+        else if (strstr(test_name, "data_type")) strcpy(short_name, "BehvType");
+        else if (strstr(test_name, "sample_rate")) strcpy(short_name, "BehvRate");
+        else if (strstr(test_name, "data_integrity")) strcpy(short_name, "BehvIntg");
+        else if (strstr(test_name, "multi_input")) strcpy(short_name, "BehvSync");
+        else {
+          // Default: take first 10 chars after "test_"
+          const char* src = test_name;
+          if (strncmp(src, "test_", 5) == 0) src += 5;
+          strncpy(short_name, src, 10);
+        }
+        
+        compliance_matrix_add_test(&test_matrix, test_name, short_name);
+      }
     }
   }
 
@@ -205,6 +260,13 @@ int main(int argc, char* argv[])
     // Clear performance report
     g_perf_report[0] = '\0';
 
+    // Start tracking this filter in the matrix
+    int filter_index = -1;
+    if (enable_matrix) {
+      filter_index = compliance_matrix_start_filter(&test_matrix, 
+                                                    filters[g_current_filter].name);
+    }
+
     UNITY_BEGIN();
 
     for (size_t i = 0;
@@ -221,6 +283,19 @@ int main(int argc, char* argv[])
       // Call UnityDefaultTestRun directly with our test name
       UnityDefaultTestRun(compliance_tests[i].test_func,
                           compliance_tests[i].test_name, __LINE__);
+      
+      // Record result in matrix - check Unity state immediately after test
+      if (enable_matrix && filter_index >= 0) {
+        TestResult_t result;
+        if (Unity.CurrentTestIgnored) {
+          result = TEST_RESULT_SKIP;
+        } else if (Unity.CurrentTestFailed) {
+          result = TEST_RESULT_FAIL;
+        } else {
+          result = TEST_RESULT_PASS;
+        }
+        compliance_matrix_record_result(&test_matrix, filter_index, i, result);
+      }
     }
 
     UNITY_END();
@@ -236,6 +311,46 @@ int main(int argc, char* argv[])
   printf("\n========== SUMMARY ==========\n");
   printf("Tested %zu filters with %zu compliance tests each\n", g_n_filters,
          sizeof(compliance_tests) / sizeof(compliance_tests[0]));
+
+  // Output matrix if enabled
+  if (enable_matrix) {
+    // Write CSV files
+    if (compliance_matrix_write_csv(&test_matrix, "test_results.csv") == Bp_EC_OK) {
+      printf("\nTest results written to test_results.csv\n");
+    } else {
+      printf("\nWarning: Failed to write test results CSV\n");
+    }
+    
+    // Write grouped CSV file
+    if (compliance_matrix_write_grouped_csv(&test_matrix, "test_results_grouped.csv") == Bp_EC_OK) {
+      printf("Grouped test results written to test_results_grouped.csv\n");
+    } else {
+      printf("Warning: Failed to write grouped test results CSV\n");
+    }
+    
+    // Print to console (use grouped display for better readability)
+    bool use_color = isatty(STDOUT_FILENO);
+    compliance_matrix_print_grouped(&test_matrix, use_color);
+    
+    // Check for failures
+    bool has_failures = false;
+    for (int i = 0; i < test_matrix.n_filters; i++) {
+      if (test_matrix.rows[i].fail_count > 0 || 
+          test_matrix.rows[i].error_count > 0) {
+        has_failures = true;
+        break;
+      }
+    }
+    
+    if (has_failures) {
+      printf("\n⚠️  Some tests failed. Review the matrix above for details.\n");
+    } else {
+      printf("\n✅ All tests passed!\n");
+    }
+    
+    // Clean up matrix
+    compliance_matrix_cleanup(&test_matrix);
+  }
 
   return 0;
 }
