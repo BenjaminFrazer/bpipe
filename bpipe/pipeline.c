@@ -297,6 +297,7 @@ Bp_EC pipeline_declare_external_input(Pipeline_t* pipeline,
 }
 
 /* Helper function for topological sort using DFS */
+// NOLINTNEXTLINE(misc-no-recursion) - Intentional recursion for DAG traversal
 static Bp_EC topological_sort_visit(Filter_t* filter, Pipeline_t* pipe,
                                     Filter_t** sorted, size_t* n_sorted,
                                     bool* visited, bool* visiting)
@@ -359,6 +360,7 @@ static Bp_EC topological_sort(Pipeline_t* pipe, Filter_t** sorted,
   /* Start with source filters (no inputs) and pipeline inputs */
   for (size_t i = 0; i < pipe->n_filters; i++) {
     Filter_t* filter = pipe->filters[i];
+    if (!filter) continue;  // Defensive check for null filter
     bool is_source = (filter->n_input_buffers == 0);
     bool is_pipeline_input = false;
 
@@ -613,9 +615,16 @@ Bp_EC pipeline_validate_properties(const Pipeline_t* pipeline,
                 first_port = port;
               } else {
                 /* Compare with first property */
-                if (prop->known != first_prop->known ||
-                    (prop->known && memcmp(&prop->value, &first_prop->value,
-                                           sizeof(prop->value)) != 0)) {
+                bool values_differ = false;
+                if (prop->known && first_prop->known) {
+                  /* Compare based on property type to avoid union comparison
+                   * warning */
+                  /* Since all properties in the same alignment check should
+                   * have the same type, we can safely compare using the largest
+                   * member (u64) */
+                  values_differ = (prop->value.u64 != first_prop->value.u64);
+                }
+                if (prop->known != first_prop->known || values_differ) {
                   if (error_msg && error_msg_size > 0) {
                     snprintf(error_msg, error_msg_size,
                              "Multi-input alignment constraint failed for "

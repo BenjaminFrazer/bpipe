@@ -280,16 +280,20 @@ int main(int argc, char* argv[])
       // Set the correct file for this test
       UnitySetTestFile(compliance_tests[i].test_file);
 
+      // Track Unity counters before test to detect changes
+      unsigned int ignores_before = Unity.TestIgnores;
+      unsigned int failures_before = Unity.TestFailures;
+
       // Call UnityDefaultTestRun directly with our test name
       UnityDefaultTestRun(compliance_tests[i].test_func,
                           compliance_tests[i].test_name, __LINE__);
       
-      // Record result in matrix - check Unity state immediately after test
+      // Record result in matrix - check Unity counters for changes
       if (enable_matrix && filter_index >= 0) {
         TestResult_t result;
-        if (Unity.CurrentTestIgnored) {
+        if (Unity.TestIgnores > ignores_before) {
           result = TEST_RESULT_SKIP;
-        } else if (Unity.CurrentTestFailed) {
+        } else if (Unity.TestFailures > failures_before) {
           result = TEST_RESULT_FAIL;
         } else {
           result = TEST_RESULT_PASS;
