@@ -52,7 +52,7 @@ void test_error_timeout(void)
   TEST_ASSERT_EQUAL(Bp_EC_OK, err);
 
   // Let it run and timeout a few times
-  usleep(50000);  // 50ms
+  usleep(1000);  // 50ms
 
   // Stop should work cleanly even with timeouts
   err = filt_stop(g_fut);

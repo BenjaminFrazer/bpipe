@@ -64,7 +64,7 @@ void test_thread_shutdown_sync(void)
   TEST_ASSERT_EQUAL(Bp_EC_OK, err);
 
   // Let them run briefly
-  usleep(10000);  // 10ms
+  usleep(1000);  // 10ms
 
   // Now stop - this tests force_return mechanism
   err = filt_stop(&consumer.base);

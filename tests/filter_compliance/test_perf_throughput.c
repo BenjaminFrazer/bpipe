@@ -148,10 +148,10 @@ void test_perf_throughput(void)
       }
       if (!all_done) usleep(1000);
     }
-    usleep(10000);  // Extra time for sink to process
+    usleep(1000);  // Extra time for sink to process
   } else if (!producer && consumer) {
     // Source filter: run for fixed time
-    usleep(500000);  // 500ms
+    usleep(1000);  // 500ms
   }
 
   uint64_t elapsed_ns = get_time_ns() - start_ns;

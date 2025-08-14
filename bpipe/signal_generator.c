@@ -13,6 +13,9 @@
 #define M_PI 3.14159265358979323846
 #endif
 
+// Signal generator is a source filter - no input constraints needed
+// Output properties are set explicitly during initialization
+
 // Generate sine waveform
 static void generate_sine(SignalGenerator_t* sg, float* samples, size_t n,
                           uint64_t t_start_ns)
@@ -231,6 +234,36 @@ Bp_EC signal_generator_init(SignalGenerator_t* sg,
   // Initialize runtime state
   sg->next_t_ns = 0;
   sg->samples_generated = 0;
+
+  // Signal generator has no input constraints (source filter)
+  // Configure output behaviors using the new pattern
+
+  // Declare output behaviors for properties we SET
+  SampleDtype_t dtype = config.buff_config.dtype;
+  prop_append_behavior(&sg->base, PROP_DATA_TYPE, BEHAVIOR_OP_SET, &dtype,
+                       OUTPUT_ALL);
+
+  uint64_t period_ns = config.sample_period_ns;
+  prop_append_behavior(&sg->base, PROP_SAMPLE_PERIOD_NS, BEHAVIOR_OP_SET,
+                       &period_ns, OUTPUT_ALL);
+
+  uint32_t batch_capacity = 1U << config.buff_config.batch_capacity_expo;
+  prop_append_behavior(&sg->base, PROP_MIN_BATCH_CAPACITY, BEHAVIOR_OP_SET,
+                       &batch_capacity, OUTPUT_ALL);
+  prop_append_behavior(&sg->base, PROP_MAX_BATCH_CAPACITY, BEHAVIOR_OP_SET,
+                       &batch_capacity, OUTPUT_ALL);
+
+  // Set max total samples if specified (0 means unlimited)
+  if (config.max_samples > 0) {
+    uint64_t max_samples = config.max_samples;
+    prop_append_behavior(&sg->base, PROP_MAX_TOTAL_SAMPLES, BEHAVIOR_OP_SET,
+                         &max_samples, OUTPUT_ALL);
+  }
+
+  // Now propagate from UNKNOWN to compute output properties for port 0
+  // Signal generator is a source filter (0 inputs) and has 1 output
+  sg->base.output_properties[0] =
+      prop_propagate(NULL, 0, &sg->base.contract, 0);
 
   return Bp_EC_OK;
 }

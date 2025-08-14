@@ -57,7 +57,7 @@ void test_lifecycle_restart(void)
     TEST_ASSERT_EQUAL_MESSAGE(Bp_EC_OK, err, "Filter start failed");
     TEST_ASSERT_TRUE(atomic_load(&g_fut->running));
 
-    usleep(5000);  // 5ms
+    usleep(1000);  // 5ms
 
     err = filt_stop(g_fut);
     TEST_ASSERT_EQUAL_MESSAGE(Bp_EC_OK, err, "Filter stop failed");

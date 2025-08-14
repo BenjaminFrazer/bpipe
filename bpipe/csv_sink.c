@@ -16,6 +16,8 @@
 
 #define MAX_LINE_LENGTH 4096
 
+// CSV sink worker function forward declaration
+
 // Forward declarations
 static void* csv_sink_worker(void* arg);
 static Bp_EC open_output_file(CSVSink_t* sink);
@@ -84,6 +86,13 @@ Bp_EC csv_sink_init(CSVSink_t* sink, CSVSink_config_t config)
 
   // Override describe operation
   sink->base.ops.describe = csv_sink_describe;
+
+  // Set up input constraints for CSV sink
+  // CSV sink requires float32 data and known sample rate
+  prop_append_constraint(&sink->base, PROP_DATA_TYPE, CONSTRAINT_OP_EQ,
+                         &(SampleDtype_t){DTYPE_FLOAT}, INPUT_ALL);
+  prop_append_constraint(&sink->base, PROP_SAMPLE_PERIOD_NS,
+                         CONSTRAINT_OP_EXISTS, NULL, INPUT_ALL);
 
   return Bp_EC_OK;
 }

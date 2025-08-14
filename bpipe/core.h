@@ -22,10 +22,12 @@
 #include <unistd.h>
 #include "batch_buffer.h"
 #include "bperr.h"
+#include "properties.h"
 #include "utils.h"
 
 #define MAX_SINKS 10
 #define MAX_INPUTS 10
+#define MAX_OUTPUTS 8              // max 8 output ports per filter
 #define MAX_CAPACITY_EXPO 30       // max 1GB capacity
 #define MAX_RING_CAPACITY_EXPO 12  // max 4016 entries in ring buffer
 //
@@ -141,6 +143,20 @@ typedef struct _Filter_t {
   Batch_buff_t *input_buffers[MAX_INPUTS];
   Batch_buff_t *sinks[MAX_SINKS];
   FilterOps ops;  // Embedded operations interface
+
+/* Property system - static arrays with explicit counts */
+#define MAX_CONSTRAINTS 16
+#define MAX_BEHAVIORS 16
+  InputConstraint_t input_constraints[MAX_CONSTRAINTS];
+  size_t n_input_constraints;  // Number of active constraints
+  OutputBehavior_t output_behaviors[MAX_BEHAVIORS];
+  size_t n_output_behaviors;  // Number of active behaviors
+  FilterContract_t contract;  // Uses above arrays
+  PropertyTable_t
+      output_properties[MAX_OUTPUTS];  // Cached output properties per port
+  uint32_t n_outputs;                  // Number of output ports (default 1)
+  PropertyTable_t
+      input_properties[MAX_INPUTS];  // Properties of connected inputs
 } Filter_t;
 
 Worker_t matched_passthroug;
@@ -155,6 +171,10 @@ Bp_EC filt_sink_connect(Filter_t *f, size_t sink_idx,
                         Batch_buff_t *dest_buffer);
 
 Bp_EC filt_sink_disconnect(Filter_t *f, size_t sink_idx);
+
+/* High-level connection function with property validation */
+Bp_EC filt_connect(Filter_t *source, size_t source_output, Filter_t *sink,
+                   size_t sink_input);
 
 /* Filter lifecycle functions */
 Bp_EC filt_start(Filter_t *filter);

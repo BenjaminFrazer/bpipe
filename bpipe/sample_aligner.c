@@ -318,5 +318,26 @@ Bp_EC sample_aligner_init(SampleAligner_t* f, SampleAligner_config_t config)
   f->base.ops.describe = sample_aligner_describe;
   f->base.ops.get_stats = sample_aligner_get_stats;
 
+  // Set input constraints
+  prop_constraints_from_buffer_append(&f->base, &config.buff_config, true);
+
+  // Require known sample period
+  prop_append_constraint(&f->base, PROP_SAMPLE_PERIOD_NS, CONSTRAINT_OP_EXISTS,
+                         NULL, INPUT_ALL);
+
+  // Set output behaviors based on method
+  if (config.method == INTERP_LINEAR || config.method == INTERP_SINC ||
+      config.method == INTERP_CUBIC) {
+    // Resampling mode - adapt batch sizes
+    prop_set_output_behavior_for_buffer_filter(&f->base, &config.buff_config,
+                                               true,    // adapt batch size
+                                               false);  // may be partial
+  } else {
+    // Just aligning - passthrough sizes
+    prop_set_output_behavior_for_buffer_filter(&f->base, &config.buff_config,
+                                               false,   // passthrough
+                                               false);  // may be partial
+  }
+
   return Bp_EC_OK;
 }

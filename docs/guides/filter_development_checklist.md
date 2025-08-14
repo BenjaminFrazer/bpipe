@@ -5,11 +5,11 @@ A comprehensive checklist for implementing new filters in bpipe2. Follow these s
 ## Pre-Development
 
 - [ ] Read core documentation:
-  - [ ] `docs/core_data_model.md` - Understand data structures
-  - [ ] `docs/filter_implementation_guide.md` - Learn filter patterns
-  - [ ] `docs/public_api_reference.md` - API conventions
-  - [ ] `docs/threading_model.md` - Threading requirements
-  - [ ] `docs/error_handling_guide.md` - Error patterns
+  - [ ] `docs/architecture/core_data_model.md` - Understand data structures
+  - [ ] `docs/guides/filter_development_guide.md` - Learn filter patterns
+  - [ ] `docs/reference/public_api_reference.md` - API conventions
+  - [ ] `docs/architecture/threading_model.md` - Threading requirements
+  - [ ] `docs/architecture/error_handling_guide.md` - Error patterns
 
 - [ ] Determine filter type:
   - [ ] `FILT_T_SOURCE` - No inputs, generates data

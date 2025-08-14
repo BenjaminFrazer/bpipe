@@ -104,7 +104,7 @@ void test_lifecycle_with_worker(void)
   }
 
   // Let it run briefly
-  usleep(10000);  // 10ms
+  usleep(1000);  // 10ms
 
   // Stop all producers first
   if (producers) {

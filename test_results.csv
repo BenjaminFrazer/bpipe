@@ -1,0 +1,12 @@
+# FILTER COMPLIANCE TEST RESULTS
+# Generated: 2025-08-14 17:29:29 UTC
+# Commit: 42439d3
+# Suite Version: 1.0.0
+# Total Filters: 3
+# Total Tests: 23
+#
+Filter              ,LifeBasic ,LifeWork  ,LifeRest  ,LifeErr   ,ConnSingle,ConnMulti ,ConnType  ,DataPass  ,DataBkPr  ,ErrConfig ,ErrTime   ,ThrdWork  ,ThrdSync  ,PerfThru  ,BuffMin   ,BuffDrpH  ,BuffDrpT  ,BuffLarge ,BehvPart  ,BehvType  ,BehvRate  ,BehvIntg  ,BehvSync  ,Pass ,Fail ,Skip ,Total   
+ControllableProducer,PASS      ,PASS      ,PASS      ,PASS      ,PASS      ,SKIP      ,SKIP      ,PASS      ,PASS      ,PASS      ,SKIP      ,PASS      ,PASS      ,PASS      ,SKIP      ,SKIP      ,SKIP      ,SKIP      ,SKIP      ,SKIP      ,SKIP      ,SKIP      ,SKIP      ,11   ,0    ,12   ,11/23
+ControllableConsumer,PASS      ,PASS      ,PASS      ,PASS      ,SKIP      ,SKIP      ,SKIP      ,PASS      ,PASS      ,PASS      ,PASS      ,PASS      ,SKIP      ,PASS      ,PASS      ,PASS      ,PASS      ,PASS      ,SKIP      ,SKIP      ,SKIP      ,SKIP      ,SKIP      ,14   ,0    ,9    ,14/23
+Passthrough         ,PASS      ,PASS      ,PASS      ,PASS      ,PASS      ,SKIP      ,PASS      ,PASS      ,PASS      ,PASS      ,PASS      ,PASS      ,PASS      ,PASS      ,PASS      ,PASS      ,PASS      ,PASS      ,PASS      ,PASS      ,PASS      ,PASS      ,SKIP      ,21   ,0    ,2    ,21/23
+TOTAL               ,3/3      ,3/3      ,3/3      ,3/3      ,2/3      ,0/3      ,1/3      ,3/3      ,3/3      ,3/3      ,2/3      ,3/3      ,2/3      ,3/3      ,2/3      ,2/3      ,2/3      ,2/3      ,1/3      ,1/3      ,1/3      ,1/3      ,0/3      ,46   ,0    ,23   ,46/69

@@ -68,6 +68,10 @@ static Bp_EC default_sink_connect(Filter_t* self, size_t output_port,
     }
   }
 
+  // Note: Property validation should be done at a higher level where we have
+  // access to both the source and destination filters. For now, we skip
+  // property validation here.
+
   self->sinks[output_port] = sink;
   self->n_sinks++;
 
@@ -290,6 +294,35 @@ Bp_EC filt_init(Filter_t* f, Core_filt_config_t config)
   // Initialize operations interface with defaults
   f->ops = default_ops;
 
+  // Initialize property system arrays and counts
+  for (int i = 0; i < MAX_CONSTRAINTS; i++) {
+    f->input_constraints[i].property = PROP_SLOT_AVAILABLE;
+  }
+  f->n_input_constraints = 0;
+
+  for (int i = 0; i < MAX_BEHAVIORS; i++) {
+    f->output_behaviors[i].property = PROP_SLOT_AVAILABLE;
+  }
+  f->n_output_behaviors = 0;
+
+  // Set up contract to use the arrays
+  f->contract.input_constraints = f->input_constraints;
+  f->contract.n_input_constraints = 0;  // Will be updated via append functions
+  f->contract.output_behaviors = f->output_behaviors;
+  f->contract.n_output_behaviors = 0;  // Will be updated via append functions
+
+  // Initialize output properties (default to 1 output for backward
+  // compatibility)
+  f->n_outputs = 1;
+  for (int i = 0; i < MAX_OUTPUTS; i++) {
+    f->output_properties[i] = prop_table_init();
+  }
+
+  // Initialize input properties
+  for (int i = 0; i < MAX_INPUTS; i++) {
+    f->input_properties[i] = prop_table_init();
+  }
+
   return Bp_EC_OK;
 }
 
@@ -447,6 +480,50 @@ Bp_EC filt_stop(Filter_t* f)
   }
 
   return Bp_EC_OK;
+}
+
+Bp_EC filt_connect(Filter_t* source, size_t source_output, Filter_t* sink,
+                   size_t sink_input)
+{
+  if (source == NULL || sink == NULL) {
+    return Bp_EC_NULL_FILTER;
+  }
+
+  if (sink_input >= sink->n_input_buffers) {
+    return Bp_EC_INVALID_SINK_IDX;
+  }
+
+  // First check property compatibility if contracts are defined
+  // Check if sink has any input constraints
+  if (sink->n_input_constraints > 0) {
+    char error_msg[256];
+    // Use output port 0 from source (most common case, source_output parameter
+    // validates this)
+    Bp_EC err = prop_validate_connection(
+        &source->output_properties[source_output], &sink->contract, sink_input,
+        error_msg, sizeof(error_msg));
+    if (err != Bp_EC_OK) {
+      // TODO: Log error_msg when logging is available
+      return err;
+    }
+  }
+
+  // Check multi-input alignment constraints before storing properties
+  char alignment_error_msg[256];
+  Bp_EC alignment_err = prop_validate_multi_input_alignment(
+      sink, sink_input, &source->output_properties[source_output],
+      alignment_error_msg, sizeof(alignment_error_msg));
+  if (alignment_err != Bp_EC_OK) {
+    // TODO: Log alignment_error_msg when logging is available
+    return alignment_err;
+  }
+
+  // Properties are compatible, store the input properties for this connection
+  sink->input_properties[sink_input] = source->output_properties[source_output];
+
+  // Proceed with connection
+  return filt_sink_connect(source, source_output,
+                           sink->input_buffers[sink_input]);
 }
 
 void* matched_passthroug(void* arg)

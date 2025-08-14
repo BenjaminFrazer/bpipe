@@ -148,5 +148,13 @@ Bp_EC passthrough_init(Passthrough_t* pt, Passthrough_config_t* config)
   pt->base.ops.describe = passthrough_describe;
   pt->base.ops.validate_connection = passthrough_validate_connection;
 
+  // Set input constraints based on buffer capacity
+  prop_constraints_from_buffer_append(&pt->base, &config->buff_config, true);
+
+  // Set output behaviors - passthrough mode, allows partial batches
+  prop_set_output_behavior_for_buffer_filter(&pt->base, &config->buff_config,
+                                             false,   // passthrough (not adapt)
+                                             false);  // allows partial batches
+
   return Bp_EC_OK;
 }

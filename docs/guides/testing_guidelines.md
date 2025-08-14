@@ -2,6 +2,8 @@
 
 This guide describes best practices for testing bpipe2 filters and components.
 
+**Note**: For comprehensive automated filter compliance testing, see the [Filter Compliance Framework Reference](../reference/filter_compliance_framework_reference.md).
+
 ## Test Framework
 
 Bpipe2 uses the Unity test framework for C unit tests. Test files are located in the `tests/` directory.

@@ -7,19 +7,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **YOU MUST READ THESE DOCUMENTS FIRST:**
 
 1. **Core Concepts (REQUIRED READING)**:
-   - `docs/core_data_model.md` - MUST understand data structures, filter types, and architecture
-   - `docs/filter_implementation_guide.md` - MUST learn filter patterns before implementing
-   - `docs/public_api_reference.md` - MUST know API conventions
-   - `docs/threading_model.md` - MUST understand threading requirements
-   - `docs/error_handling_guide.md` - MUST follow error patterns
+   - `docs/architecture/core_data_model.md` - MUST understand data structures, filter types, and architecture
+   - `docs/guides/filter_development_guide.md` - MUST learn filter patterns before implementing
+   - `docs/reference/public_api_reference.md` - MUST know API conventions
+   - `docs/architecture/threading_model.md` - MUST understand threading requirements
+   - `docs/architecture/error_handling_guide.md` - MUST follow error patterns
+   - `docs/reference/property_system_reference.md` - MUST understand property constraints and behaviors
+   - `docs/reference/property_validation_spec.md` - MUST understand pipeline-wide validation
+   - `docs/guides/pipeline_filter_guide.md` - MUST understand Pipeline filter lifecycle and usage
 
 **IMPORTANT**: If you have not read the above documents, STOP and read them NOW. Do not proceed with any implementation work until you understand these core concepts. This is non-negotiable.
 
 2. **For New Filter Development** (read AFTER core concepts):
-   - Follow `docs/filter_development_checklist.md`
-   - Reference `docs/zero_input_filter_patterns.md` for source filters
-   - Use `docs/debugging_guide.md` when issues arise
+   - Follow `docs/guides/filter_development_checklist.md`
+   - Reference `docs/guides/source_filter_patterns.md` for source filters
+   - Use `docs/guides/debugging_guide.md` when issues arise
 
+3. **For Testcase Development**
+    - Reference `docs/reference/filter_compliance_framework_reference.md`
 
 3.  Once you've finished reading this file, Announce a list of the documents you have read. 
 

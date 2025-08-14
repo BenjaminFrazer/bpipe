@@ -523,3 +523,157 @@ void passthrough_metrics_get_metrics(PassthroughMetrics_t* pm, size_t* batches,
   }
   if (max_queue) *max_queue = atomic_load(&pm->max_queue_depth);
 }
+
+// Variable Batch Producer Implementation
+static void* variable_batch_producer_worker(void* arg)
+{
+  VariableBatchProducer_t* vbp = (VariableBatchProducer_t*) arg;
+  BP_WORKER_ASSERT(&vbp->base, vbp->base.sinks[0] != NULL, Bp_EC_NO_SINK);
+  BP_WORKER_ASSERT(&vbp->base, vbp->batch_sizes != NULL, Bp_EC_NULL_POINTER);
+  BP_WORKER_ASSERT(&vbp->base, vbp->n_batch_sizes > 0, Bp_EC_INVALID_CONFIG);
+
+  // Initialize timing
+  vbp->next_batch_time_ns = get_time_ns();
+
+  while (atomic_load(&vbp->base.running)) {
+    // Get current batch size from array
+    uint32_t current_batch_size = vbp->batch_sizes[vbp->current_batch_index];
+
+    // Sanity check batch size
+    size_t max_batch_size = bb_batch_size(vbp->base.sinks[0]);
+    BP_WORKER_ASSERT(&vbp->base, current_batch_size <= max_batch_size,
+                     Bp_EC_INVALID_CONFIG);
+    BP_WORKER_ASSERT(&vbp->base, current_batch_size > 0, Bp_EC_INVALID_CONFIG);
+
+    // Get output batch
+    Batch_t* output = bb_get_head(vbp->base.sinks[0]);
+    BP_WORKER_ASSERT(&vbp->base, output != NULL, Bp_EC_NULL_POINTER);
+    BP_WORKER_ASSERT(&vbp->base, output->data != NULL, Bp_EC_NULL_POINTER);
+
+    // Check data type
+    BP_WORKER_ASSERT(&vbp->base, vbp->base.sinks[0]->dtype == DTYPE_FLOAT,
+                     Bp_EC_TYPE_MISMATCH);
+
+    // Generate data based on pattern - only fill current_batch_size samples
+    float* data = (float*) output->data;
+    for (uint32_t i = 0; i < current_batch_size; i++) {
+      switch (vbp->pattern) {
+        case PATTERN_SEQUENTIAL:
+          data[i] = (float) (vbp->next_sequence++);
+          break;
+        case PATTERN_CONSTANT:
+          data[i] = 1.0f;  // Default constant value
+          break;
+        case PATTERN_SINE:
+          data[i] = sinf(vbp->sine_phase);
+          vbp->sine_phase += 0.1f;  // Fixed phase increment
+          if (vbp->sine_phase > 2.0f * M_PI) {
+            vbp->sine_phase -= 2.0f * M_PI;
+          }
+          break;
+        case PATTERN_RANDOM:
+          data[i] = (float) rand() / RAND_MAX;
+          break;
+      }
+    }
+
+    // Set batch metadata - KEY: head is set to actual samples, not capacity!
+    output->head = current_batch_size;
+    output->t_ns = vbp->next_batch_time_ns;
+    output->period_ns = vbp->sample_period_ns;
+    output->ec = Bp_EC_OK;
+
+    // Submit batch
+    Bp_EC err = bb_submit(vbp->base.sinks[0], vbp->base.timeout_us);
+    if (err == Bp_EC_FILTER_STOPPING) {
+      break;
+    }
+    BP_WORKER_ASSERT(&vbp->base, err == Bp_EC_OK, err);
+
+    // Update metrics
+    atomic_fetch_add(&vbp->total_batches, 1);
+    atomic_fetch_add(&vbp->total_samples, current_batch_size);
+
+    // Update timing for next batch
+    vbp->next_batch_time_ns += vbp->sample_period_ns * current_batch_size;
+
+    // Move to next batch size
+    vbp->current_batch_index++;
+    if (vbp->current_batch_index >= vbp->n_batch_sizes) {
+      if (vbp->cycle_batch_sizes) {
+        vbp->current_batch_index = 0;
+        atomic_fetch_add(&vbp->cycles_completed, 1);
+      } else {
+        // Send completion signal and exit
+        Batch_t* completion = bb_get_head(vbp->base.sinks[0]);
+        completion->ec = Bp_EC_COMPLETE;
+        completion->head = 0;
+        err = bb_submit(vbp->base.sinks[0], vbp->base.timeout_us);
+        BP_WORKER_ASSERT(&vbp->base, err == Bp_EC_OK, err);
+        break;
+      }
+    }
+
+    // Simple rate limiting (optional)
+    usleep(1000);  // 1ms between batches
+  }
+
+  return NULL;
+}
+
+Bp_EC variable_batch_producer_init(VariableBatchProducer_t* vbp,
+                                   VariableBatchProducerConfig_t config)
+{
+  if (!vbp) return Bp_EC_NULL_POINTER;
+  if (!config.batch_sizes || config.n_batch_sizes == 0) {
+    return Bp_EC_INVALID_CONFIG;
+  }
+
+  // Check if already initialized
+  if (vbp->base.filt_type != FILT_T_NDEF) {
+    return Bp_EC_ALREADY_RUNNING;
+  }
+
+  // Build core config - no input buffer needed for source filter
+  Core_filt_config_t core_config = {.name = config.name,
+                                    .filt_type = FILT_T_MAP,
+                                    .size = sizeof(VariableBatchProducer_t),
+                                    .n_inputs = 0,  // Source filter
+                                    .max_supported_sinks = 1,
+                                    .timeout_us = config.timeout_us,
+                                    .worker = variable_batch_producer_worker};
+
+  // Initialize base filter
+  Bp_EC err = filt_init(&vbp->base, core_config);
+  if (err != Bp_EC_OK) return err;
+
+  // Copy configuration
+  vbp->batch_sizes = config.batch_sizes;  // Note: using provided array directly
+  vbp->n_batch_sizes = config.n_batch_sizes;
+  vbp->cycle_batch_sizes = config.cycle_batch_sizes;
+  vbp->pattern = config.pattern;
+  vbp->sample_period_ns = config.sample_period_ns;
+  vbp->start_sequence = config.start_sequence;
+
+  // Initialize runtime state
+  vbp->current_batch_index = 0;
+  vbp->next_sequence = config.start_sequence;
+  vbp->sine_phase = 0.0f;
+  vbp->next_batch_time_ns = 0;
+
+  // Initialize metrics
+  atomic_store(&vbp->total_batches, 0);
+  atomic_store(&vbp->total_samples, 0);
+  atomic_store(&vbp->cycles_completed, 0);
+
+  return Bp_EC_OK;
+}
+
+void variable_batch_producer_get_metrics(VariableBatchProducer_t* vbp,
+                                         size_t* batches, size_t* samples,
+                                         size_t* cycles)
+{
+  if (batches) *batches = atomic_load(&vbp->total_batches);
+  if (samples) *samples = atomic_load(&vbp->total_samples);
+  if (cycles) *cycles = atomic_load(&vbp->cycles_completed);
+}
